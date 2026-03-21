@@ -1,0 +1,979 @@
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  Info,
+  FileText,
+  GitBranch,
+  BarChart,
+  BookOpen,
+  History,
+  Share,
+  AlertTriangle,
+  CheckCircle,
+  User,
+  Download,
+  GraduationCap,
+  ClipboardList,
+  ScrollText,
+  Sigma,
+  FlaskConical,
+  Users,
+  Library,
+  Rocket,
+  Save,
+  Send,
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { api, ApiError } from '../api/client';
+import { CriterioEvaluacion, SyllabusData, SyllabusStatus, ValidationObservation, ValidationResult } from '../api/types';
+import BibliographyGuide from '../components/BibliographyGuide';
+import StatusBadge from '../components/StatusBadge';
+import Toast, { useToast } from '../components/Toast';
+
+interface ContentRow {
+  desempeno: string;
+  habilidades: string;
+  semana: string;
+  conocimientos: string;
+  actividades: string;
+  evidencias: string;
+}
+
+interface EvaluationRow {
+  desempeno: string;
+  habilidades: string;
+  evidencias: string;
+  instrumentos: string;
+}
+
+interface UnitSection {
+  id: string;
+  title: string;
+  habilidades: string;
+  rows: ContentRow[];
+}
+
+function EditableField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const isEmpty = !value || value === '—';
+
+  return (
+    <input
+      type="text"
+      value={isEmpty ? '' : value}
+      onChange={(e) => onChange(e.target.value || '—')}
+      placeholder={placeholder || 'Completar...'}
+      className={`w-full border-b text-sm py-0.5 bg-transparent focus:outline-none focus:border-orange-500 ${
+        isEmpty
+          ? 'border-dashed border-slate-300 text-slate-400'
+          : 'border-transparent text-slate-900'
+      }`}
+    />
+  );
+}
+
+function scrollToSection(id: string) {
+  const section = document.getElementById(id);
+  if (!section) return;
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function getObservationStyles(level: string) {
+  if (level === 'error') {
+    return 'bg-red-50 border-red-100 text-red-700';
+  }
+  if (level === 'advertencia') {
+    return 'bg-amber-50 border-amber-100 text-amber-700';
+  }
+  return 'bg-blue-50 border-blue-100 text-blue-700';
+}
+
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : '—';
+  }
+
+  if (typeof value === 'number') {
+    return String(value);
+  }
+
+  return String(value);
+}
+
+function normalizeDesempenos(syllabus: SyllabusData): string[] {
+  if (Array.isArray(syllabus.desempenos) && syllabus.desempenos.length > 0) {
+    return syllabus.desempenos.map((item, index) => {
+      if (typeof item === 'string') {
+        return item.trim() || `D${index + 1}`;
+      }
+
+      return displayValue(item.descripcion || item.logro || item.statement || item.codigo || `D${index + 1}`);
+    });
+  }
+
+  if (Array.isArray(syllabus.unidades_tematicas) && syllabus.unidades_tematicas.length > 0) {
+    return syllabus.unidades_tematicas.map((unidad, index) => `D${index + 1}. ${displayValue(unidad.logro)}`);
+  }
+
+  return ['D1. —'];
+}
+
+function parseWeekNumbers(rawWeeks?: string): number[] {
+  const weeks = (rawWeeks || '').trim();
+  if (!weeks) {
+    return [];
+  }
+
+  const numbers = weeks.match(/\d+/g)?.map(Number) || [];
+  if (numbers.length >= 2 && /-|a|al/i.test(weeks)) {
+    const start = numbers[0];
+    const end = numbers[1];
+    if (start <= end) {
+      return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+    }
+  }
+
+  return numbers;
+}
+
+function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSection[] {
+  const units = syllabus.unidades_tematicas || [];
+  const schedule = syllabus.cronograma_semanal || [];
+
+  if (units.length === 0) {
+    return [
+      {
+        id: 'unidad-unica',
+        title: 'UNIDAD I: —',
+        habilidades: '—',
+        rows: [
+          {
+            desempeno: desempenos[0] || '—',
+            habilidades: '—',
+            semana: '—',
+            conocimientos: '—',
+            actividades: '—',
+            evidencias: '—',
+          },
+        ],
+      },
+    ];
+  }
+
+  return units.map((unidad, index) => {
+    const parsedWeeks = parseWeekNumbers(unidad.semanas);
+    const matchingRows = schedule.filter((item) => parsedWeeks.includes(item.semana));
+    const habilidades = displayValue(unidad.habilidades_requeridas || unidad.logro || '—');
+
+    const rows: ContentRow[] = matchingRows.length
+      ? matchingRows.map((item) => ({
+          desempeno: desempenos[index] || `D${index + 1}. —`,
+          habilidades,
+          semana: `Semana ${displayValue(item.semana)}`,
+          conocimientos: displayValue(item.tema),
+          actividades: displayValue(item.actividad),
+          evidencias: displayValue(item.producto),
+        }))
+      : [
+          {
+            desempeno: desempenos[index] || `D${index + 1}. —`,
+            habilidades,
+            semana: displayValue(unidad.semanas),
+            conocimientos: unidad.temas?.length ? unidad.temas.join(', ') : '—',
+            actividades: '—',
+            evidencias: '—',
+          },
+        ];
+
+    return {
+      id: `unidad-${index + 1}`,
+      title: `UNIDAD ${unidad.numero || index + 1}: ${displayValue(unidad.titulo)}`,
+      habilidades,
+      rows,
+    };
+  });
+}
+
+function buildEvaluationRows(unitSections: UnitSection[]): EvaluationRow[] {
+  return unitSections.map((section) => ({
+    desempeno: section.rows[0]?.desempeno || '—',
+    habilidades: section.habilidades,
+    evidencias: section.rows
+      .map((row) => row.evidencias)
+      .filter((evidencia) => evidencia !== '—')
+      .join('; ') || '—',
+    instrumentos: '—',
+  }));
+}
+
+function buildGradingRows(criteria?: CriterioEvaluacion[]) {
+  const defaults = [
+    {
+      evidencia: 'Tareas',
+      nombre: 'Tareas (Reportes de lectura, informes de clase, trabajo práctico)',
+      sigla: 'TA',
+      porcentaje: 40,
+      cronograma: 'Permanente',
+    },
+    {
+      evidencia: 'Producto Acreditable 1',
+      nombre: 'Producto Acreditable 1 (Planificación del trabajo integrador)',
+      sigla: 'PA1',
+      porcentaje: 10,
+      cronograma: '5ª Semana',
+    },
+    {
+      evidencia: 'Producto Acreditable 2',
+      nombre: 'Producto Acreditable 2 (Avance del Trabajo Integrador)',
+      sigla: 'PA2',
+      porcentaje: 20,
+      cronograma: '12ª Semana',
+    },
+    {
+      evidencia: 'Producto Acreditable 3',
+      nombre: 'Producto Acreditable 3 (Versión Final del Trabajo Integrador)',
+      sigla: 'PA3',
+      porcentaje: 30,
+      cronograma: '15ª Semana',
+    },
+  ];
+
+  const criteriaBySigla = new Map(
+    (criteria || [])
+      .filter((item) => item.sigla)
+      .map((item) => [item.sigla, item]),
+  );
+
+  return defaults.map((item) => {
+    const matched = criteriaBySigla.get(item.sigla);
+    return {
+      ...item,
+      nombre: displayValue(matched?.nombre || item.nombre),
+      porcentaje: matched?.porcentaje ?? item.porcentaje,
+      cronograma: displayValue(matched?.cronograma || item.cronograma),
+    };
+  });
+}
+
+const defaultMetodologia = `La investigación formativa es una estrategia pedagógica que se contextualiza en un entorno real: el aprendizaje de aula, con la indagación y estudio de necesidades científicos-tecnológicos en el ámbito del programa académico.
+
+- Empleo de la lógica de la investigación científica en el proceso de enseñanza, considerando el aprendizaje basado en problemas y el aprendizaje basado en proyectos como estrategias docentes que permiten al estudiante aprender a pensar de manera crítica y analítica, y a buscar, encontrar y utilizar los recursos apropiados para aprender.
+
+- Fomento de la investigación documental para desarrollar habilidades investigativas de análisis, interpretación, y síntesis de la información, y de búsqueda de problemas no resueltos, que favorecen el desarrollo del pensamiento crítico y otras habilidades como la observación, descripción y comparación, a partir de los contenidos programáticos de la asignatura.`;
+
+const defaultTutoria = `Durante el desarrollo de la asignatura se brinda al estudiante la tutoría académica correspondiente, respecto a los contenidos tratados en el curso como a los productos exigidos como evidencias de aprendizaje. Las tutorías se consideran como parte de las actividades de aprendizaje, y se pueden realizar de manera virtual, con la herramienta Google Meet, o de manera presencial.`;
+
+const sidebarSections = [
+  { id: 'info-general', label: 'I. Información General', icon: Info },
+  { id: 'sumilla', label: 'II. Sumilla', icon: FileText },
+  { id: 'competencia', label: 'III. Competencia Profesional', icon: GraduationCap },
+  { id: 'capacidad', label: 'IV. Capacidad del Curso', icon: ClipboardList },
+  { id: 'desempenos', label: 'V. Desempeños', icon: GitBranch },
+  { id: 'programa-contenidos', label: 'VI. Programa de Contenidos', icon: ScrollText },
+  { id: 'sistema-evaluacion', label: 'VII. Sistema de Evaluación', icon: BarChart },
+  { id: 'sistema-calificacion', label: 'VIII. Sistema de Calificación', icon: Sigma },
+  { id: 'metodologia', label: 'IX. Metodología', icon: FlaskConical },
+  { id: 'tutoria', label: 'X. Tutoría', icon: Users },
+  { id: 'referencias', label: 'XI. Referencias', icon: Library },
+];
+
+export default function SyllabusEditor() {
+  const navigate = useNavigate();
+  const [syllabus, setSyllabus] = useState<SyllabusData | null>(null);
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const validationToastShown = useRef(false);
+  const { showToast, toasts, removeToast } = useToast();
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem('currentSyllabus');
+
+    if (!raw) {
+      navigate('/creator', { replace: true });
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as SyllabusData;
+      setSyllabus(parsed);
+    } catch {
+      navigate('/creator', { replace: true });
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const validate = async () => {
+      if (!syllabus) return;
+
+      const currentSyllabusId = String(syllabus._id || syllabus.id || '');
+      if (!currentSyllabusId) return;
+
+      setValidationLoading(true);
+      setValidationError(null);
+
+      try {
+        const response = await api.validateSyllabus(currentSyllabusId);
+        setValidation(response.data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'No se pudo validar el sílabo';
+        setValidationError(message);
+      } finally {
+        setValidationLoading(false);
+      }
+    };
+
+    validate();
+  }, [syllabus]);
+
+  useEffect(() => {
+    if (validationError && !validationToastShown.current) {
+      validationToastShown.current = true;
+      console.warn('Validación silenciosa:', validationError);
+    }
+  }, [validationError]);
+
+  const dg = syllabus?.datos_generales || {};
+  const syllabusId = String(syllabus?._id || syllabus?.id || '');
+  const syllabusStatus = (syllabus?.status || 'draft') as SyllabusStatus;
+  const [editableFields, setEditableFields] = useState({
+    prerrequisito: displayValue(dg.prerrequisito),
+    codigo: displayValue(dg.codigo),
+    fecha_inicio: displayValue(dg.fecha_inicio),
+    fecha_fin: displayValue(dg.fecha_fin),
+    periodo_academico: displayValue(dg.periodo_academico || dg.semestre),
+  });
+
+  useEffect(() => {
+    setEditableFields({
+      prerrequisito: displayValue(dg.prerrequisito),
+      codigo: displayValue(dg.codigo),
+      fecha_inicio: displayValue(dg.fecha_inicio),
+      fecha_fin: displayValue(dg.fecha_fin),
+      periodo_academico: displayValue(dg.periodo_academico || dg.semestre),
+    });
+  }, [dg.codigo, dg.fecha_fin, dg.fecha_inicio, dg.periodo_academico, dg.prerrequisito, dg.semestre]);
+
+  const observaciones: ValidationObservation[] = useMemo(() => {
+    return validation?.observaciones || [];
+  }, [validation]);
+
+  const desempenos = useMemo(() => (syllabus ? normalizeDesempenos(syllabus) : ['D1. —']), [syllabus]);
+  const unitSections = useMemo(() => (syllabus ? buildUnitSections(syllabus, desempenos) : []), [desempenos, syllabus]);
+  const evaluationRows = useMemo(() => buildEvaluationRows(unitSections), [unitSections]);
+  const gradingRows = useMemo(
+    () => buildGradingRows(syllabus?.sistema_evaluacion?.criterios),
+    [syllabus?.sistema_evaluacion?.criterios],
+  );
+
+  const competenciaProfesional = displayValue(syllabus?.competencia_profesional || syllabus?.competencias?.[0]);
+  const capacidadDelCurso = displayValue(syllabus?.capacidad_del_curso || syllabus?.resultados_aprendizaje?.[0]);
+  const metodologia = displayValue(syllabus?.metodologia || defaultMetodologia);
+  const tutoria = displayValue(syllabus?.tutoria || defaultTutoria);
+  const schoolName = displayValue(dg.escuela_profesional || dg.programa_estudios || dg.carrera);
+  const programName = displayValue(dg.programa_estudios || dg.carrera);
+
+  const updateStoredSyllabusStatus = (status: SyllabusStatus) => {
+    const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || '{}');
+    sessionStorage.setItem(
+      'currentSyllabus',
+      JSON.stringify({ ...current, status }),
+    );
+    setSyllabus((prev) => (prev ? { ...prev, status } : prev));
+  };
+
+  const persistStoredSyllabus = (nextSyllabus: SyllabusData) => {
+    sessionStorage.setItem('currentSyllabus', JSON.stringify(nextSyllabus));
+    setSyllabus(nextSyllabus);
+  };
+
+  const updateEditableField = (
+    field: keyof typeof editableFields,
+    value: string,
+  ) => {
+    setEditableFields((prev) => ({ ...prev, [field]: value }));
+
+    const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || '{}');
+    const updated = {
+      ...current,
+      datos_generales: {
+        ...(current.datos_generales || {}),
+        [field]: value,
+      },
+    };
+
+    sessionStorage.setItem('currentSyllabus', JSON.stringify(updated));
+  };
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      showToast('URL copiada', 'success');
+    } catch {
+      showToast('No se pudo copiar la URL', 'error');
+    }
+  };
+
+  const handleExport = async (format: 'docx' | 'pdf') => {
+    if (!syllabusId) {
+      showToast('Primero genera o carga un sílabo con ID válido', 'warning');
+      return;
+    }
+
+    try {
+      const response = await api.downloadSyllabusExport(syllabusId, format);
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new ApiError(body || `No se pudo exportar el archivo ${format.toUpperCase()}`, response.status, body);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = format === 'docx' ? 'silabo.docx' : 'silabo.pdf';
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast(`Archivo ${format.toUpperCase()} descargado`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo exportar el sílabo', 'error');
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!syllabusId) {
+      showToast('Primero guarda el sílabo como borrador', 'warning');
+      return;
+    }
+
+    setSavingDraft(true);
+    try {
+      const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || 'null') as SyllabusData | null;
+      const payloadToSave = current || syllabus;
+      const rawUser = sessionStorage.getItem('silabos_user');
+      const currentUser = rawUser ? (JSON.parse(rawUser) as { full_name?: string }) : null;
+      const response = await api.updateSyllabus(syllabusId, payloadToSave as Record<string, unknown>, {
+        status: 'draft',
+        changed_by: currentUser?.full_name || dg.docente || 'sistema',
+        change_note: 'Borrador actualizado desde el editor',
+      });
+
+      const persisted = response.data;
+      const persistedId = String(persisted?._id || persisted?.id || '');
+      if (!persistedId) {
+        throw new Error('El backend no devolvió un ID válido al guardar el borrador');
+      }
+
+      persistStoredSyllabus(persisted);
+      showToast('Borrador guardado ✓', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo guardar el borrador', 'error');
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handleSubmitReview = async () => {
+    if (!syllabusId) {
+      showToast('Guarda el sílabo primero', 'warning');
+      return;
+    }
+
+    try {
+      await api.submitForReview(syllabusId);
+      showToast('Sílabo enviado a revisión ✓', 'success');
+      updateStoredSyllabusStatus('review');
+    } catch {
+      showToast('No se pudo enviar a revisión', 'error');
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!syllabusId) {
+      showToast('Guarda el sílabo primero', 'warning');
+      return;
+    }
+
+    try {
+      await api.publishSyllabus(syllabusId);
+      showToast('Sílabo publicado ✓', 'success');
+      updateStoredSyllabusStatus('published');
+    } catch {
+      showToast('No se pudo publicar el sílabo', 'error');
+    }
+  };
+
+  if (!syllabus) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-screen bg-slate-100 text-slate-900 font-sans">
+      <aside className="w-72 border-r border-slate-200 bg-white flex flex-col shrink-0">
+        <div className="p-6 border-b border-slate-200 flex items-center gap-3">
+          <div className="bg-orange-600 p-1.5 rounded-lg text-white">
+            <span className="block text-2xl">*</span>
+          </div>
+          <h1 className="font-bold text-lg">Syllabus AI</h1>
+        </div>
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">Secciones</div>
+          {sidebarSections.map((section) => {
+            const Icon = section.icon;
+            return (
+              <button
+                key={section.id}
+                onClick={() => scrollToSection(section.id)}
+                className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50"
+              >
+                <Icon size={18} /> {section.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="p-4 border-t border-slate-200">
+          <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl">
+            <div className="h-8 w-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">
+              <User size={20} />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold">{displayValue(syllabus?.datos_generales?.docente || 'Docente')}</span>
+              <span className="text-[10px] text-slate-500">Docente Principal</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex-1 overflow-y-auto p-8">
+        <header className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => navigate('/syllabi')}
+                className="text-slate-500 hover:text-orange-600 text-sm flex items-center gap-1"
+              >
+                <ArrowLeft size={14} />
+                Mis sílabos
+              </button>
+              <StatusBadge status={syllabusStatus} />
+            </div>
+            <h2 className="mt-3 text-2xl font-bold">{displayValue(dg.nombre_curso || 'Curso sin nombre')}</h2>
+            <p className="text-slate-500 text-sm italic">Vista previa del Anexo C</p>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button disabled className="bg-white border border-slate-200 p-2 rounded-lg opacity-50 cursor-not-allowed">
+              <History size={20} className="text-slate-600" />
+            </button>
+            <button onClick={() => handleExport('docx')} className="bg-white border border-slate-200 px-3 rounded-lg text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <Download size={16} /> ? DOCX
+            </button>
+            <button onClick={() => handleExport('pdf')} className="bg-white border border-slate-200 px-3 rounded-lg text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <Download size={16} /> ? PDF
+            </button>
+            <button
+              onClick={handleSaveDraft}
+              disabled={savingDraft || !syllabusId}
+              className="bg-white border border-slate-200 px-3 rounded-lg text-sm font-semibold text-slate-700 flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save size={16} />
+              {savingDraft ? 'Guardando...' : 'Guardar borrador'}
+            </button>
+            {syllabusId && syllabusStatus === 'draft' && (
+              <button
+                onClick={handleSubmitReview}
+                className="bg-orange-600 text-white px-3 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-orange-700"
+              >
+                <Send size={16} />
+                Enviar a revisión
+              </button>
+            )}
+            {syllabusId && syllabusStatus === 'review' && (
+              <button
+                disabled
+                className="bg-amber-50 text-amber-700 px-3 rounded-lg text-sm font-semibold flex items-center gap-2 border border-amber-200 cursor-not-allowed"
+              >
+                <Send size={16} />
+                En revisión...
+              </button>
+            )}
+            {syllabusId && syllabusStatus === 'approved' && (
+              <button
+                onClick={handlePublish}
+                className="bg-green-600 text-white px-3 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-green-700"
+              >
+                <Rocket size={16} />
+                Publicar
+              </button>
+            )}
+            <button onClick={handleShare} className="bg-white border border-slate-200 p-2 rounded-lg">
+              <Share size={20} className="text-slate-600" />
+            </button>
+          </div>
+        </header>
+
+        <div className="max-w-[210mm] mx-auto bg-white p-10 shadow-lg mb-8 font-serif text-[15px] leading-7">
+          <header className="mb-10">
+            <div className="flex items-start justify-between gap-6">
+              <img src="/unprg-logo.png" className="h-16 w-auto" alt="UNPRG" />
+              <div className="flex-1 text-center">
+                <p className="text-lg font-bold uppercase tracking-wide">UNIVERSIDAD NACIONAL "PEDRO RUIZ GALLO"</p>
+                <p className="text-base font-semibold uppercase">{displayValue(dg.facultad)}</p>
+                <p className="text-base font-semibold uppercase">ESCUELA PROFESIONAL {schoolName}</p>
+                <p className="text-sm">Departamento Académico de {programName}</p>
+                <div className="mt-5">
+                  <p className="text-lg font-bold uppercase">{displayValue(dg.nombre_curso)}</p>
+                  <p className="text-base">(Sílabo)</p>
+                </div>
+              </div>
+              <img src="/logo_fachse.png" className="h-16 w-auto" alt="Facultad" />
+            </div>
+          </header>
+
+          <section id="info-general" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">I. Información General</h3>
+            <div className="grid grid-cols-[220px_1fr] gap-y-2 text-sm">
+              <div>1.1 Programa de Estudios</div>
+              <div>{programName}</div>
+              <div>1.2 Escuela Profesional</div>
+              <div>{schoolName}</div>
+              <div>1.3 Modalidad</div>
+              <div>Presencial</div>
+              <div>1.4 Curso</div>
+              <div>{displayValue(dg.nombre_curso)}</div>
+              <div>1.5 Prerrequisito</div>
+              <div>
+                <EditableField
+                  value={editableFields.prerrequisito}
+                  onChange={(v) => updateEditableField('prerrequisito', v)}
+                  placeholder="Ej: Estadística aplicada..."
+                />
+              </div>
+              <div>1.6 Código del curso</div>
+              <div>
+                <EditableField
+                  value={editableFields.codigo}
+                  onChange={(v) => updateEditableField('codigo', v)}
+                  placeholder="Ej: CEDE1167"
+                />
+              </div>
+              <div>1.7 Semestre Académico</div>
+              <div>{displayValue(dg.semestre)}</div>
+              <div>1.8 Periodo Académico</div>
+              <div>
+                <EditableField
+                  value={editableFields.periodo_academico}
+                  onChange={(v) => updateEditableField('periodo_academico', v)}
+                  placeholder="Ej: X Ciclo"
+                />
+              </div>
+              <div>1.9 Créditos</div>
+              <div>{displayValue(dg.creditos)}</div>
+              <div>1.10 Horas Semanales (Teoría / Práctica)</div>
+              <div>
+                {displayValue(dg.horas_teoria)} / {displayValue(dg.horas_practica)}
+              </div>
+              <div>1.11 Duración (Fecha inicio / Fecha término)</div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <EditableField
+                    value={editableFields.fecha_inicio}
+                    onChange={(v) => updateEditableField('fecha_inicio', v)}
+                    placeholder="DD/MM/AAAA"
+                  />
+                  <span>/</span>
+                  <EditableField
+                    value={editableFields.fecha_fin}
+                    onChange={(v) => updateEditableField('fecha_fin', v)}
+                    placeholder="DD/MM/AAAA"
+                  />
+                </div>
+              </div>
+              <div>1.12 Docente (Nombre completo / Correo institucional)</div>
+              <div>
+                {displayValue(dg.docente)} / {displayValue(dg.docente_email)}
+              </div>
+            </div>
+            <p className="mt-3 text-xs italic text-slate-500">
+              ?? Los campos con línea punteada pueden completarse directamente aquí.
+            </p>
+          </section>
+
+          <section id="sumilla" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">II. Sumilla</h3>
+            <p className="text-sm leading-7">{displayValue(syllabus.sumilla)}</p>
+            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
+          </section>
+
+          <section id="competencia" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">III. Competencia Profesional</h3>
+            <p className="text-sm leading-7">{competenciaProfesional}</p>
+            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
+          </section>
+
+          <section id="capacidad" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">IV. Capacidad del Curso</h3>
+            <p className="text-sm leading-7">{capacidadDelCurso}</p>
+            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
+          </section>
+
+          <section id="desempenos" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">V. Desempeños de las Unidades Didácticas</h3>
+            <div className="space-y-2 text-sm">
+              {desempenos.map((item, index) => (
+                <p key={`${item}-${index}`}>{item.startsWith('D') ? item : `D${index + 1}. ${item}`}</p>
+              ))}
+            </div>
+          </section>
+
+          <section id="programa-contenidos" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VI. Programa de Contenidos</h3>
+            <div className="space-y-6">
+              {unitSections.map((section) => (
+                <div key={section.id}>
+                  <h4 className="font-bold text-sm mb-2">{section.title}</h4>
+                  <table className="w-full border border-slate-300 border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        <th className="border border-slate-300 p-2 text-left">Desempeños</th>
+                        <th className="border border-slate-300 p-2 text-left">Habilidades requeridas</th>
+                        <th className="border border-slate-300 p-2 text-left">Semana (Fecha)</th>
+                        <th className="border border-slate-300 p-2 text-left">Conocimientos</th>
+                        <th className="border border-slate-300 p-2 text-left">Actividades</th>
+                        <th className="border border-slate-300 p-2 text-left">Evidencias de Aprendizaje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.rows.map((row, rowIndex) => (
+                        <tr key={`${section.id}-${rowIndex}`}>
+                          {rowIndex === 0 && (
+                            <td rowSpan={section.rows.length} className="border border-slate-300 p-2 align-top">
+                              {row.desempeno}
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td
+                              rowSpan={section.rows.length}
+                              className="border border-slate-300 p-2 align-top whitespace-pre-line"
+                            >
+                              {section.habilidades}
+                            </td>
+                          )}
+                          <td className="border border-slate-300 p-2">{row.semana}</td>
+                          <td className="border border-slate-300 p-2">{row.conocimientos}</td>
+                          <td className="border border-slate-300 p-2">{row.actividades}</td>
+                          <td className="border border-slate-300 p-2">{row.evidencias}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section id="sistema-evaluacion" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VII. Sistema de Evaluación</h3>
+            <table className="w-full border border-slate-300 border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="border border-slate-300 p-2 text-left">Desempeños</th>
+                  <th className="border border-slate-300 p-2 text-left">Habilidades requeridas</th>
+                  <th className="border border-slate-300 p-2 text-left">Evidencias de Aprendizaje</th>
+                  <th className="border border-slate-300 p-2 text-left">Instrumentos de Evaluación</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evaluationRows.map((row, index) => (
+                  <tr key={`evaluation-${index}`}>
+                    <td className="border border-slate-300 p-2">{row.desempeno}</td>
+                    <td className="border border-slate-300 p-2 whitespace-pre-line">{row.habilidades}</td>
+                    <td className="border border-slate-300 p-2">{row.evidencias}</td>
+                    <td className="border border-slate-300 p-2">{row.instrumentos}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          <section id="sistema-calificacion" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VIII. Sistema de Calificación</h3>
+            <table className="w-full border border-slate-300 border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className="border border-slate-300 p-2 text-left">Evidencias de aprendizaje</th>
+                  <th className="border border-slate-300 p-2 text-left">Sigla</th>
+                  <th className="border border-slate-300 p-2 text-left">Peso</th>
+                  <th className="border border-slate-300 p-2 text-left">Cronograma</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gradingRows.map((row) => (
+                  <tr key={row.sigla}>
+                    <td className="border border-slate-300 p-2">{row.evidencia}</td>
+                    <td className="border border-slate-300 p-2">{row.sigla}</td>
+                    <td className="border border-slate-300 p-2">{row.porcentaje}%</td>
+                    <td className="border border-slate-300 p-2">{row.cronograma}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-3 text-sm font-semibold">PF = 40% TA + 10% PA1 + 20% PA2 + 30% PA3</p>
+          </section>
+
+          <section id="metodologia" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">IX. Metodología de Enseñanza-Aprendizaje y Actividades de Investigación Formativa</h3>
+            <p className="text-sm leading-7">{metodologia}</p>
+          </section>
+
+          <section id="tutoria" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">X. Actividades de Tutoría: Área Académica</h3>
+            <p className="text-sm leading-7">{tutoria}</p>
+          </section>
+
+          <section id="referencias" className="mb-10 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">XI. Referencias</h3>
+            {(syllabus.bibliografia || []).length === 0 ? (
+              <p className="text-sm">Pendiente de completar</p>
+            ) : (
+              <ol className="list-decimal pl-5 space-y-2 text-sm">
+                {syllabus.bibliografia?.map((item, index) => (
+                  <li key={`${item.referencia}-${index}`}>{displayValue(item.referencia)}</li>
+                ))}
+              </ol>
+            )}
+          </section>
+
+          <footer className="mt-16 text-sm">
+            <p className="mb-10">Lambayeque, ____ de __________ de 20____</p>
+            <div className="grid grid-cols-2 gap-12 text-center">
+              <div>
+                <p className="mb-12">FIRMA</p>
+                <div className="border-t border-slate-500 pt-2">
+                  <p>Nombre y apellidos</p>
+                  <p>Director del</p>
+                  <p>Departamento Académico</p>
+                </div>
+              </div>
+              <div>
+                <p className="mb-12">FIRMA</p>
+                <div className="border-t border-slate-500 pt-2">
+                  <p>Nombre y apellidos</p>
+                  <p>Docente</p>
+                </div>
+              </div>
+            </div>
+          </footer>
+        </div>
+
+        <div className="max-w-[210mm] mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-20">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">BibliographyGuide</h3>
+          <BibliographyGuide
+            courseName={syllabus?.datos_generales?.nombre_curso}
+            careerName={syllabus?.datos_generales?.carrera}
+          />
+        </div>
+
+        <div className="max-w-[210mm] mx-auto mb-20 rounded-3xl bg-gradient-to-r from-orange-500 to-orange-600 p-8 text-white shadow-xl">
+          <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr] lg:items-center">
+            <div>
+              <p className="text-2xl font-black">? ¡Tu sílabo está listo!</p>
+              <p className="mt-3 text-orange-50">
+                Descarga el documento oficial en formato Word o PDF para revisión del Departamento Académico, o copia la URL para compartir con tus estudiantes.
+              </p>
+              <div className="mt-5 space-y-2 text-sm text-orange-100">
+                <p>?? Descarga DOCX para entregar al Dpto. Académico</p>
+                <p>?? Comparte la URL con tus estudiantes</p>
+                <p>?? Sube el PDF al Aula Virtual UNPRG</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => handleExport('docx')}
+                className="flex items-center justify-center gap-2 bg-white text-orange-600 font-bold px-6 py-3 rounded-xl hover:bg-orange-50 transition-all shadow-md w-full"
+              >
+                <Download size={18} />
+                Descargar DOCX oficial
+              </button>
+              <button
+                onClick={() => handleExport('pdf')}
+                className="flex items-center justify-center gap-2 bg-orange-700 text-white font-bold px-6 py-3 rounded-xl hover:bg-orange-800 transition-all w-full"
+              >
+                <Download size={18} />
+                Descargar PDF
+              </button>
+              <button
+                onClick={handleShare}
+                className="flex items-center justify-center gap-2 bg-white/15 text-white font-bold px-6 py-3 rounded-xl hover:bg-white/20 transition-all w-full border border-white/20"
+              >
+                <Share size={18} />
+                Copiar enlace para compartir
+              </button>
+              <button
+                onClick={() => navigate('/syllabi')}
+                className="text-center text-orange-200 text-sm hover:text-white underline w-full"
+              >
+                ← Volver a Mis sílabos
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside className="w-80 border-l border-slate-200 bg-white p-5">
+        <h3 className="font-bold text-sm uppercase mb-4 flex items-center gap-2">
+          <CheckCircle size={18} className="text-orange-600" /> Auditoria de Coherencia
+        </h3>
+
+        {validationLoading ? <p className="text-sm text-slate-500">Validando silabo...</p> : null}
+
+        <div className="space-y-4">
+          {!syllabusId && !validationLoading ? (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <p className="text-sm font-bold text-slate-700">Vista previa</p>
+              <p className="text-xs text-slate-500 mt-1">
+                La auditoría automática estará disponible cuando el sílabo se guarde en el sistema.
+              </p>
+            </div>
+          ) : null}
+
+          {syllabusId && !validationLoading && !validationError && observaciones.length === 0 ? (
+            <div className="p-4 rounded-xl bg-green-50 border border-green-100">
+              <CheckCircle className="text-green-600 mb-2" />
+              <p className="text-sm font-bold text-green-700">Sin observaciones</p>
+              <p className="text-xs text-green-600 mt-1">La auditoria no reporto alertas.</p>
+            </div>
+          ) : null}
+
+          {observaciones.map((obs, idx) => (
+            <div key={idx} className={`p-4 rounded-xl border ${getObservationStyles(obs.nivel)}`}>
+              <AlertTriangle className="mb-2" />
+              <p className="text-sm font-bold">{obs.criterio}</p>
+              <p className="text-xs mt-1">{obs.mensaje}</p>
+            </div>
+          ))}
+        </div>
+      </aside>
+      <Toast toasts={toasts} removeToast={removeToast} />
+    </div>
+  );
+}
+
+
+
+
+

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(\"c:\\\\TEST_CODE\\\\SILABOSAIAUTOMATIZACION\\\\silabos_app\\\\silabos-backend\\\\venv\\\\Scripts\\\\python.exe\" --version)",
+      "Bash(\"c:\\\\TEST_CODE\\\\SILABOSAIAUTOMATIZACION\\\\silabos_app\\\\silabos-backend\\\\venv\\\\Scripts\\\\pip.exe\" index:*)",
+      "Bash(venvScriptspip.exe install:*)",
+      "Bash(\"c:/TEST_CODE/SILABOSAIAUTOMATIZACION/silabos_app/silabos-backend/venv/Scripts/pip.exe\" install:*)"
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-dotenv==1.0.1
+google-genai==1.66.0
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.11
+pydantic==2.12.5
+httpx==0.28.1
+python-multipart==0.0.12
+pypdf2==3.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# IA y RAG — Fase 2
+# llama-index deshabilitado: conflicto de dependencias entre vector-stores-postgres y embeddings-gemini
+# (vector-stores-postgres requiere core<0.11, embeddings-gemini requiere core>=0.13)
+# Además llama-index-core no tiene wheel para Python 3.14 (cp314)
+# RAG implementado con psycopg2 + pgvector directo — llama-index no se usa en ningún archivo .py
+# Reactivar cuando haya soporte cp314 o al migrar a Python 3.12
+# llama-index-core==0.10.65
+# llama-index-vector-stores-postgres==0.1.14
+# llama-index-embeddings-gemini==0.4.2
+
+# Docling para parseo de tablas en PDFs (Fase 3)
+# docling==2.5.0  # TODO Fase 3: instalar cuando haya wheel para Python 3.14
+
+# Export documentos (Fase 3)
+docxtpl==0.16.8
+# WeasyPrint requiere GTK en Windows.
+# Instalar GTK desde: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer
+# Luego: pip install weasyprint
+weasyprint==62.3
