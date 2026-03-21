@@ -82,9 +82,17 @@ app = FastAPI(
 # ──────────────────────────────────────────────
 # CORS — Solo para el frontend en desarrollo
 # ──────────────────────────────────────────────
+_frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+_allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    _frontend_url,
+]
+_allowed_origins = list(set(o for o in _allowed_origins if o))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
