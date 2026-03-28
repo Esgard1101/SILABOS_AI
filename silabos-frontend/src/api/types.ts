@@ -150,6 +150,7 @@ export interface SyllabusData {
   teacher_name?: string;
   payload_json?: SyllabusData;
   datos_generales?: {
+    course_id?: string;
     nombre_curso?: string;
     carrera?: string;
     facultad?: string;
@@ -345,3 +346,55 @@ export type ValidationResponse = ApiResponse<ValidationResult>;
 export type SourcesResponse = ApiResponse<SourcesData>;
 export type HealthResponse = ApiResponse<HealthData>;
 export type BibliographySearchApiResponse = ApiResponse<BibliographySearchResponse>;
+
+// ── Wizard v2 — Programas, Cursos, Métodos ─────────────────────────────────
+
+export interface ProgramItem {
+  id: string;
+  name: string;
+  coordinator?: string | null;
+  career_id?: string | null;
+}
+
+export interface CourseListItem {
+  id: string;
+  name: string;
+  code?: string | null;
+  credits?: number | null;
+  cycle?: number | null;
+  is_common?: boolean;
+  scope?: string | null;
+}
+
+export interface CourseDetail extends CourseListItem {
+  sumilla?: string | null;
+  competencia_egreso?: string | null;
+  resultado_aprendizaje?: string | null;
+  capacidad?: string | null;
+}
+
+export interface MethodItem {
+  id: number;
+  name: string;
+  description?: string | null;
+  secuencia_didactica?: string | null;
+}
+
+export interface MethodSuggest {
+  method_id: number;
+  method_name: string;
+  reason: string;
+}
+
+export interface SyllabusGenerateV2Input {
+  course_id: string;
+  teaching_method_id: number | null;
+  semester: string;
+  grading_scheme?: Array<{
+    evidencia: string;
+    sigla: string;
+    porcentaje: number;
+    cronograma: string;
+  }>;
+  grading_requires_midterm_final?: boolean;
+}

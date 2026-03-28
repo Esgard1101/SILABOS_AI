@@ -4,6 +4,8 @@ import {
   AuthUser,
   BibliographySearchApiResponse,
   BibliographySearchRequest,
+  CourseDetail,
+  CourseListItem,
   DocumentListResponse,
   DocumentResponse,
   EvaluationInstrumentsResponse,
@@ -13,7 +15,11 @@ import {
   InstitutionalSkillsResponse,
   LoginRequest,
   LoginResponse,
+  MethodItem,
+  MethodSuggest,
+  ProgramItem,
   SourcesResponse,
+  SyllabusGenerateV2Input,
   SyllabusListResponse,
   SyllabusResponse,
   TeachingMethodsResponse,
@@ -206,7 +212,12 @@ export const api = {
       60000,
     ),
 
-  listSyllabi: () => request<SyllabusListResponse>('/api/syllabus/'),
+  listSyllabi: (programId?: string) => {
+    const url = programId
+      ? `/api/syllabus/?program_id=${encodeURIComponent(programId)}`
+      : '/api/syllabus/';
+    return request<SyllabusListResponse>(url);
+  },
 
   listSyllabiAll: () => request<SyllabusListResponse>('/api/syllabus/'),
 
@@ -340,4 +351,63 @@ export const api = {
     }),
 
   checkHealth: () => request<HealthResponse>('/health'),
+
+  // ── Programas y cursos (wizard v2) ───────────────────────────────────────
+  getPrograms: (careerId: string) =>
+    request<{ success: boolean; data: ProgramItem[]; error: string | null }>(
+      `/api/programs?career_id=${encodeURIComponent(careerId)}`,
+    ),
+
+  getCourses: (programId: string) =>
+    request<{ success: boolean; data: CourseListItem[]; error: string | null }>(
+      `/api/courses?program_id=${encodeURIComponent(programId)}`,
+    ),
+
+  getCourse: (courseId: string) =>
+    request<{ success: boolean; data: CourseDetail; error: string | null }>(
+      `/api/courses/${encodeURIComponent(courseId)}`,
+    ),
+
+  getPedagogicMethods: () =>
+    request<{ success: boolean; data: MethodItem[]; error: string | null }>('/api/methods'),
+
+  suggestMethod: (courseId: string) =>
+    request<{ success: boolean; data: MethodSuggest; error: string | null }>(
+      `/api/methods/suggest?course_id=${encodeURIComponent(courseId)}`,
+    ),
+
+  generateSyllabusV2: (data: SyllabusGenerateV2Input) =>
+    request<SyllabusResponse>(
+      '/api/syllabus/generate-v2',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      90000,
+    ),
+
+  getInstitutionalCareers: (facultyId: string) =>
+    request<{ success: boolean; data: { id: string; name: string; code?: string }[]; error: string | null }>(
+      `/api/institutional/careers?faculty_id=${encodeURIComponent(facultyId)}`,
+    ),
+
+  uploadBibliography: (
+    file: File,
+    courseId: string,
+    programId: string,
+    scope: string,
+  ) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('course_id', courseId);
+    formData.append('program_id', programId);
+    formData.append('scope', scope);
+    formData.append('doc_type', 'bibliografia');
+    formData.append('name', file.name);
+    return request<DocumentResponse>('/api/documents/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };

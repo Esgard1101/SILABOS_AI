@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Info,
@@ -23,12 +23,14 @@ import {
   Save,
   Send,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import { CriterioEvaluacion, SyllabusData, SyllabusStatus, ValidationObservation, ValidationResult } from '../api/types';
+import { CourseDetail, CriterioEvaluacion, SyllabusData, SyllabusStatus, ValidationObservation, ValidationResult } from '../api/types';
 import BibliographyGuide from '../components/BibliographyGuide';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
+import { useAppContext } from '../hooks/useAppContext';
+import { useAuth } from '../hooks/useAuth';
 
 interface ContentRow {
   desempeno: string;
@@ -110,6 +112,48 @@ function displayValue(value: unknown): string {
   }
 
   return String(value);
+}
+
+function pickDisplayValue(...values: unknown[]): string {
+  for (const value of values) {
+    const formatted = displayValue(value);
+    if (formatted !== '—') {
+      return formatted;
+    }
+  }
+
+  return '—';
+}
+
+function sanitizeTeacherName(value: unknown): string {
+  const formatted = displayValue(value);
+  if (formatted === '—' || /por designar/i.test(formatted)) {
+    return '—';
+  }
+
+  return formatted;
+}
+
+function normalizeSyllabusRecord(record: SyllabusData | null): SyllabusData | null {
+  if (!record || typeof record !== 'object') {
+    return null;
+  }
+
+  const payload =
+    record.payload_json && typeof record.payload_json === 'object'
+      ? (record.payload_json as SyllabusData)
+      : record;
+
+  return {
+    ...payload,
+    _id: record._id || record.id || payload._id || payload.id,
+    id: record.id || record._id || payload.id || payload._id,
+    status: record.status || payload.status,
+    created_at: record.created_at || payload.created_at,
+    updated_at: record.updated_at || payload.updated_at,
+    semester: record.semester || payload.semester || payload.datos_generales?.semestre,
+    teacher_name: record.teacher_name || payload.teacher_name,
+  };
 }
 
 function normalizeDesempenos(syllabus: SyllabusData): string[] {
@@ -219,7 +263,20 @@ function buildEvaluationRows(unitSections: UnitSection[]): EvaluationRow[] {
 }
 
 function buildGradingRows(criteria?: CriterioEvaluacion[]) {
-  const defaults = [
+  const rows = (criteria || [])
+    .filter((item) => item && (item.nombre || item.sigla || item.porcentaje != null))
+    .map((item, index) => ({
+      evidencia: pickDisplayValue(item.nombre, `Evaluacion ${index + 1}`),
+      sigla: pickDisplayValue(item.sigla, `EV${index + 1}`),
+      porcentaje: item.porcentaje ?? 0,
+      cronograma: displayValue(item.cronograma || item.descripcion),
+    }));
+
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  return [
     {
       evidencia: 'Tareas',
       nombre: 'Tareas (Reportes de lectura, informes de clase, trabajo práctico)',
@@ -249,22 +306,14 @@ function buildGradingRows(criteria?: CriterioEvaluacion[]) {
       cronograma: '15ª Semana',
     },
   ];
+}
 
-  const criteriaBySigla = new Map(
-    (criteria || [])
-      .filter((item) => item.sigla)
-      .map((item) => [item.sigla, item]),
-  );
+function buildGradingFormula(rows: Array<{ sigla: string; porcentaje: number }>) {
+  const parts = rows
+    .filter((row) => row.sigla && Number.isFinite(row.porcentaje))
+    .map((row) => `${row.porcentaje}% ${row.sigla}`);
 
-  return defaults.map((item) => {
-    const matched = criteriaBySigla.get(item.sigla);
-    return {
-      ...item,
-      nombre: displayValue(matched?.nombre || item.nombre),
-      porcentaje: matched?.porcentaje ?? item.porcentaje,
-      cronograma: displayValue(matched?.cronograma || item.cronograma),
-    };
-  });
+  return parts.length > 0 ? `PF = ${parts.join(' + ')}` : 'PF = -';
 }
 
 const defaultMetodologia = `La investigación formativa es una estrategia pedagógica que se contextualiza en un entorno real: el aprendizaje de aula, con la indagación y estudio de necesidades científicos-tecnológicos en el ámbito del programa académico.
@@ -291,29 +340,90 @@ const sidebarSections = [
 
 export default function SyllabusEditor() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { context } = useAppContext();
+  const { user } = useAuth();
   const [syllabus, setSyllabus] = useState<SyllabusData | null>(null);
+  const [courseDetail, setCourseDetail] = useState<CourseDetail | null>(null);
+  const [loadingSyllabus, setLoadingSyllabus] = useState(true);
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validationLoading, setValidationLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const validationToastShown = useRef(false);
   const { showToast, toasts, removeToast } = useToast();
   const [savingDraft, setSavingDraft] = useState(false);
+  const syllabusQueryId = searchParams.get('id')?.trim() || '';
 
   useEffect(() => {
-    const raw = sessionStorage.getItem('currentSyllabus');
+    let active = true;
 
-    if (!raw) {
-      navigate('/creator', { replace: true });
-      return;
-    }
+    const readStoredSyllabus = (): SyllabusData | null => {
+      try {
+        const raw = sessionStorage.getItem('currentSyllabus');
+        return raw ? normalizeSyllabusRecord(JSON.parse(raw) as SyllabusData) : null;
+      } catch {
+        return null;
+      }
+    };
 
-    try {
-      const parsed = JSON.parse(raw) as SyllabusData;
-      setSyllabus(parsed);
-    } catch {
-      navigate('/creator', { replace: true });
-    }
-  }, [navigate]);
+    const loadSyllabus = async () => {
+      setLoadingSyllabus(true);
+      const stored = readStoredSyllabus();
+
+      if (!syllabusQueryId) {
+        if (stored) {
+          if (active) {
+            setSyllabus(stored);
+            setLoadingSyllabus(false);
+          }
+          return;
+        }
+
+        navigate('/creator', { replace: true });
+        if (active) {
+          setLoadingSyllabus(false);
+        }
+        return;
+      }
+
+      try {
+        const response = await api.getSyllabus(syllabusQueryId);
+        const normalized = normalizeSyllabusRecord(response.data);
+
+        if (!normalized) {
+          throw new Error('No se pudo cargar el sílabo');
+        }
+
+        if (!active) {
+          return;
+        }
+
+        sessionStorage.setItem('currentSyllabus', JSON.stringify(normalized));
+        setSyllabus(normalized);
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        const storedId = String(stored?._id || stored?.id || '');
+        if (stored && storedId === syllabusQueryId) {
+          setSyllabus(stored);
+        } else {
+          navigate('/syllabi', { replace: true });
+        }
+      } finally {
+        if (active) {
+          setLoadingSyllabus(false);
+        }
+      }
+    };
+
+    loadSyllabus();
+
+    return () => {
+      active = false;
+    };
+  }, [navigate, syllabusQueryId]);
 
   useEffect(() => {
     const validate = async () => {
@@ -347,25 +457,56 @@ export default function SyllabusEditor() {
   }, [validationError]);
 
   const dg = syllabus?.datos_generales || {};
+  const courseId = typeof dg.course_id === 'string' ? dg.course_id : '';
   const syllabusId = String(syllabus?._id || syllabus?.id || '');
   const syllabusStatus = (syllabus?.status || 'draft') as SyllabusStatus;
   const [editableFields, setEditableFields] = useState({
     prerrequisito: displayValue(dg.prerrequisito),
-    codigo: displayValue(dg.codigo),
     fecha_inicio: displayValue(dg.fecha_inicio),
     fecha_fin: displayValue(dg.fecha_fin),
     periodo_academico: displayValue(dg.periodo_academico || dg.semestre),
+    docente: sanitizeTeacherName(dg.docente),
+    docente_email: displayValue(dg.docente_email || user?.email),
   });
 
   useEffect(() => {
     setEditableFields({
       prerrequisito: displayValue(dg.prerrequisito),
-      codigo: displayValue(dg.codigo),
       fecha_inicio: displayValue(dg.fecha_inicio),
       fecha_fin: displayValue(dg.fecha_fin),
       periodo_academico: displayValue(dg.periodo_academico || dg.semestre),
+      docente: sanitizeTeacherName(dg.docente),
+      docente_email: displayValue(dg.docente_email || user?.email),
     });
-  }, [dg.codigo, dg.fecha_fin, dg.fecha_inicio, dg.periodo_academico, dg.prerrequisito, dg.semestre]);
+  }, [dg.docente, dg.docente_email, dg.fecha_fin, dg.fecha_inicio, dg.periodo_academico, dg.prerrequisito, dg.semestre, user?.email]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCourse = async () => {
+      if (!courseId) {
+        setCourseDetail(null);
+        return;
+      }
+
+      try {
+        const response = await api.getCourse(courseId);
+        if (active) {
+          setCourseDetail(response.data || null);
+        }
+      } catch {
+        if (active) {
+          setCourseDetail(null);
+        }
+      }
+    };
+
+    loadCourse();
+
+    return () => {
+      active = false;
+    };
+  }, [courseId]);
 
   const observaciones: ValidationObservation[] = useMemo(() => {
     return validation?.observaciones || [];
@@ -378,13 +519,22 @@ export default function SyllabusEditor() {
     () => buildGradingRows(syllabus?.sistema_evaluacion?.criterios),
     [syllabus?.sistema_evaluacion?.criterios],
   );
+  const gradingFormula = useMemo(() => buildGradingFormula(gradingRows), [gradingRows]);
 
   const competenciaProfesional = displayValue(syllabus?.competencia_profesional || syllabus?.competencias?.[0]);
-  const capacidadDelCurso = displayValue(syllabus?.capacidad_del_curso || syllabus?.resultados_aprendizaje?.[0]);
+  const capacidadDelCurso = displayValue(
+    syllabus?.capacidad_del_curso || courseDetail?.capacidad || syllabus?.resultados_aprendizaje?.[0],
+  );
   const metodologia = displayValue(syllabus?.metodologia || defaultMetodologia);
   const tutoria = displayValue(syllabus?.tutoria || defaultTutoria);
-  const schoolName = displayValue(dg.escuela_profesional || dg.programa_estudios || dg.carrera);
-  const programName = displayValue(dg.programa_estudios || dg.carrera);
+  const courseName = pickDisplayValue(courseDetail?.name, dg.nombre_curso, 'Curso sin nombre');
+  const facultyName = pickDisplayValue(context?.faculty_name, dg.facultad);
+  const schoolName = pickDisplayValue(context?.school_name, dg.escuela_profesional, dg.programa_estudios, dg.carrera);
+  const programName = pickDisplayValue(context?.program_name, dg.programa_estudios, dg.carrera, dg.escuela_profesional);
+  const semesterName = pickDisplayValue(context?.semester, syllabus?.semester, dg.semestre);
+  const courseCode = pickDisplayValue(courseDetail?.code, dg.codigo);
+  const creditsValue = pickDisplayValue(dg.creditos, courseDetail?.credits);
+  const teacherPreviewName = editableFields.docente === '—' ? 'Docente' : editableFields.docente;
 
   const updateStoredSyllabusStatus = (status: SyllabusStatus) => {
     const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || '{}');
@@ -416,6 +566,17 @@ export default function SyllabusEditor() {
     };
 
     sessionStorage.setItem('currentSyllabus', JSON.stringify(updated));
+    setSyllabus((prev) =>
+      prev
+        ? {
+            ...prev,
+            datos_generales: {
+              ...(prev.datos_generales || {}),
+              [field]: value,
+            },
+          }
+        : prev,
+    );
   };
 
   const handleShare = async () => {
@@ -517,6 +678,14 @@ export default function SyllabusEditor() {
     }
   };
 
+  if (loadingSyllabus) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-100 text-slate-500">
+        Cargando sílabo...
+      </div>
+    );
+  }
+
   if (!syllabus) {
     return null;
   }
@@ -551,7 +720,7 @@ export default function SyllabusEditor() {
               <User size={20} />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-bold">{displayValue(syllabus?.datos_generales?.docente || 'Docente')}</span>
+              <span className="text-xs font-bold">{teacherPreviewName}</span>
               <span className="text-[10px] text-slate-500">Docente Principal</span>
             </div>
           </div>
@@ -571,7 +740,7 @@ export default function SyllabusEditor() {
               </button>
               <StatusBadge status={syllabusStatus} />
             </div>
-            <h2 className="mt-3 text-2xl font-bold">{displayValue(dg.nombre_curso || 'Curso sin nombre')}</h2>
+            <h2 className="mt-3 text-2xl font-bold">{courseName}</h2>
             <p className="text-slate-500 text-sm italic">Vista previa del Anexo C</p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
@@ -631,11 +800,11 @@ export default function SyllabusEditor() {
               <img src="/unprg-logo.png" className="h-16 w-auto" alt="UNPRG" />
               <div className="flex-1 text-center">
                 <p className="text-lg font-bold uppercase tracking-wide">UNIVERSIDAD NACIONAL "PEDRO RUIZ GALLO"</p>
-                <p className="text-base font-semibold uppercase">{displayValue(dg.facultad)}</p>
+                <p className="text-base font-semibold uppercase">{facultyName}</p>
                 <p className="text-base font-semibold uppercase">ESCUELA PROFESIONAL {schoolName}</p>
                 <p className="text-sm">Departamento Académico de {programName}</p>
                 <div className="mt-5">
-                  <p className="text-lg font-bold uppercase">{displayValue(dg.nombre_curso)}</p>
+                  <p className="text-lg font-bold uppercase">{courseName}</p>
                   <p className="text-base">(Sílabo)</p>
                 </div>
               </div>
@@ -651,9 +820,9 @@ export default function SyllabusEditor() {
               <div>1.2 Escuela Profesional</div>
               <div>{schoolName}</div>
               <div>1.3 Modalidad</div>
-              <div>Presencial</div>
+              <div>{displayValue(dg.modalidad || 'Presencial')}</div>
               <div>1.4 Curso</div>
-              <div>{displayValue(dg.nombre_curso)}</div>
+              <div>{courseName}</div>
               <div>1.5 Prerrequisito</div>
               <div>
                 <EditableField
@@ -663,15 +832,9 @@ export default function SyllabusEditor() {
                 />
               </div>
               <div>1.6 Código del curso</div>
-              <div>
-                <EditableField
-                  value={editableFields.codigo}
-                  onChange={(v) => updateEditableField('codigo', v)}
-                  placeholder="Ej: CEDE1167"
-                />
-              </div>
+              <div>{courseCode}</div>
               <div>1.7 Semestre Académico</div>
-              <div>{displayValue(dg.semestre)}</div>
+              <div>{semesterName}</div>
               <div>1.8 Periodo Académico</div>
               <div>
                 <EditableField
@@ -681,7 +844,7 @@ export default function SyllabusEditor() {
                 />
               </div>
               <div>1.9 Créditos</div>
-              <div>{displayValue(dg.creditos)}</div>
+              <div>{creditsValue}</div>
               <div>1.10 Horas Semanales (Teoría / Práctica)</div>
               <div>
                 {displayValue(dg.horas_teoria)} / {displayValue(dg.horas_practica)}
@@ -704,7 +867,19 @@ export default function SyllabusEditor() {
               </div>
               <div>1.12 Docente (Nombre completo / Correo institucional)</div>
               <div>
-                {displayValue(dg.docente)} / {displayValue(dg.docente_email)}
+                <div className="flex items-center gap-2">
+                  <EditableField
+                    value={editableFields.docente}
+                    onChange={(v) => updateEditableField('docente', v)}
+                    placeholder="Nombre completo"
+                  />
+                  <span>/</span>
+                  <EditableField
+                    value={editableFields.docente_email}
+                    onChange={(v) => updateEditableField('docente_email', v)}
+                    placeholder="correo@institucion.edu.pe"
+                  />
+                </div>
               </div>
             </div>
             <p className="mt-3 text-xs italic text-slate-500">
@@ -831,7 +1006,7 @@ export default function SyllabusEditor() {
                 ))}
               </tbody>
             </table>
-            <p className="mt-3 text-sm font-semibold">PF = 40% TA + 10% PA1 + 20% PA2 + 30% PA3</p>
+            <p className="mt-3 text-sm font-semibold">{gradingFormula}</p>
           </section>
 
           <section id="metodologia" className="mb-8 scroll-mt-24">
@@ -882,8 +1057,8 @@ export default function SyllabusEditor() {
         <div className="max-w-[210mm] mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-20">
           <h3 className="text-lg font-bold text-slate-900 mb-4">BibliographyGuide</h3>
           <BibliographyGuide
-            courseName={syllabus?.datos_generales?.nombre_curso}
-            careerName={syllabus?.datos_generales?.carrera}
+            courseName={courseName}
+            careerName={programName}
           />
         </div>
 
@@ -972,8 +1147,3 @@ export default function SyllabusEditor() {
     </div>
   );
 }
-
-
-
-
-

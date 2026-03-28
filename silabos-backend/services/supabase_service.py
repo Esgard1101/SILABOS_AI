@@ -1068,3 +1068,148 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error al verificar conexión con la BD: {e}")
             return False
+
+    # ──────────────────────────────────────────────
+    # PROGRAMAS ACADÉMICOS
+    # ──────────────────────────────────────────────
+
+    def _listar_programas_sync(self, career_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT id, name, coordinator, career_id
+                    FROM programs
+                    WHERE career_id = :career_id
+                    ORDER BY name ASC
+                """),
+                {"career_id": career_id},
+            ).mappings().all()
+        return [dict(f) for f in filas]
+
+    async def listar_programas(self, career_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_programas_sync, career_id)
+        except Exception as e:
+            logger.error(f"Error al listar programas de carrera {career_id}: {e}")
+            return []
+
+    # ──────────────────────────────────────────────
+    # CURSOS
+    # ──────────────────────────────────────────────
+
+    def _listar_cursos_programa_sync(self, program_id: str) -> list:
+        """
+        Lista cursos de un programa + cursos comunes (is_common=true).
+        Ordenados por ciclo y nombre.
+        """
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT id, name, code, credits, cycle, is_common, scope, program_id
+                    FROM courses
+                    WHERE program_id = :program_id OR is_common = true
+                    ORDER BY cycle ASC NULLS LAST, name ASC
+                """),
+                {"program_id": program_id},
+            ).mappings().all()
+        return [dict(f) for f in filas]
+
+    async def listar_cursos_programa(self, program_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_cursos_programa_sync, program_id)
+        except Exception as e:
+            logger.error(f"Error al listar cursos del programa {program_id}: {e}")
+            return []
+
+    def _obtener_curso_sync(self, course_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    SELECT id, name, code, credits, cycle, is_common, scope,
+                           program_id, sumilla, competencia_egreso, resultado_aprendizaje, capacidad
+                    FROM courses
+                    WHERE id = :course_id
+                """),
+                {"course_id": course_id},
+            ).mappings().first()
+        return dict(fila) if fila else None
+
+    async def obtener_curso(self, course_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_curso_sync, course_id)
+        except Exception as e:
+            logger.error(f"Error al obtener curso {course_id}: {e}")
+            return None
+
+    # ──────────────────────────────────────────────
+    # CAREERS (para endpoint institucional)
+    # ──────────────────────────────────────────────
+
+    def _listar_careers_sync(self, faculty_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT id, name, code, faculty_id
+                    FROM careers
+                    WHERE faculty_id = :faculty_id
+                    ORDER BY name ASC
+                """),
+                {"faculty_id": faculty_id},
+            ).mappings().all()
+        return [dict(f) for f in filas]
+
+    async def listar_careers(self, faculty_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_careers_sync, faculty_id)
+        except Exception as e:
+            logger.error(f"Error al listar careers de facultad {faculty_id}: {e}")
+            return []
+
+    # ──────────────────────────────────────────────
+    # SÍLABOS FILTRADOS POR PROGRAMA
+    # ──────────────────────────────────────────────
+
+    def _listar_silabos_programa_sync(
+        self, user_id: str, program_id: str, skip: int, limit: int
+    ) -> list:
+        """Lista sílabos del usuario filtrados por programa (incluye cursos comunes)."""
+        query = """
+            SELECT
+                s.id, s.course_id, s.user_id, s.semester,
+                s.teacher_name, s.status, s.payload_json,
+                s.created_at, s.updated_at
+            FROM syllabi s
+            WHERE s.user_id = :user_id
+              AND s.course_id IN (
+                  SELECT id FROM courses
+                  WHERE program_id = :program_id OR is_common = true
+              )
+            ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC
+            LIMIT :limit OFFSET :skip
+        """
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(query),
+                {
+                    "user_id": user_id,
+                    "program_id": program_id,
+                    "limit": limit,
+                    "skip": skip,
+                },
+            ).mappings().all()
+        return [self._mapear_silabo_fila(f) for f in filas]
+
+    async def listar_silabos_programa(
+        self, user_id: str, program_id: str, skip: int = 0, limit: int = 20
+    ) -> list:
+        try:
+            return await self._ejecutar(
+                self._listar_silabos_programa_sync,
+                user_id,
+                program_id,
+                skip,
+                limit,
+            )
+        except Exception as e:
+            logger.error(f"Error al listar sílabos por programa: {e}")
+            return []

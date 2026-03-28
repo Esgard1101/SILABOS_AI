@@ -1,6 +1,6 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api/client';
-import { GenerateSyllabusInput, SyllabusData, ValidationResult } from '../api/types';
+import { GenerateSyllabusInput, SyllabusData, SyllabusListData, ValidationResult } from '../api/types';
 
 export function useSyllabus() {
   const [loading, setLoading] = useState(false);
@@ -42,5 +42,20 @@ export function useSyllabus() {
     }
   };
 
-  return { loading, error, syllabus, validation, generate, validate };
+  const listByProgram = async (programId?: string): Promise<SyllabusListData | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.listSyllabi(programId);
+      return response.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'No se pudo listar los sílabos';
+      setError(message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { loading, error, syllabus, validation, generate, validate, listByProgram };
 }

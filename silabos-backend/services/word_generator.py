@@ -141,49 +141,49 @@ def _build_context(silabo: dict) -> dict:
             )
 
     criterios = (silabo.get("sistema_evaluacion") or {}).get("criterios") or []
-    sigla_map = {
-        criterio.get("sigla", ""): criterio
-        for criterio in criterios
-        if isinstance(criterio, dict)
-    }
-    grading_defaults = [
-        {
-            "evidencia": "Tareas (Reportes de lectura, informes, trabajo practico)",
-            "sigla": "TA",
-            "peso": 40,
-            "cronograma": "Permanente",
-        },
-        {
-            "evidencia": "Producto Acreditable 1 (Planificacion del trabajo integrador)",
-            "sigla": "PA1",
-            "peso": 10,
-            "cronograma": "Semana 5",
-        },
-        {
-            "evidencia": "Producto Acreditable 2 (Avance del Trabajo Integrador)",
-            "sigla": "PA2",
-            "peso": 20,
-            "cronograma": "Semana 12",
-        },
-        {
-            "evidencia": "Producto Acreditable 3 (Version Final del Trabajo Integrador)",
-            "sigla": "PA3",
-            "peso": 30,
-            "cronograma": "Semana 15",
-        },
-    ]
     grading = []
-    for row in grading_defaults:
-        matched = sigla_map.get(row["sigla"]) or {}
-        peso = matched.get("porcentaje") or row["peso"]
+    for index, criterio in enumerate(criterios):
+        if not isinstance(criterio, dict):
+            continue
         grading.append(
             {
-                "evidencia": _val(matched.get("nombre"), row["evidencia"]),
-                "sigla": row["sigla"],
-                "peso": f"{peso}%",
-                "cronograma": _val(matched.get("cronograma"), row["cronograma"]),
+                "evidencia": _val(criterio.get("nombre"), f"Evaluacion {index + 1}"),
+                "sigla": _val(criterio.get("sigla"), f"EV{index + 1}"),
+                "peso": f"{criterio.get('porcentaje', 0)}%",
+                "cronograma": _val(
+                    criterio.get("cronograma"),
+                    criterio.get("descripcion"),
+                ),
             }
         )
+
+    if not grading:
+        grading = [
+            {
+                "evidencia": "Tareas",
+                "sigla": "TA",
+                "peso": "40%",
+                "cronograma": "Permanente",
+            },
+            {
+                "evidencia": "Producto Acreditable 1",
+                "sigla": "PA1",
+                "peso": "10%",
+                "cronograma": "Semana 5",
+            },
+            {
+                "evidencia": "Producto Acreditable 2",
+                "sigla": "PA2",
+                "peso": "20%",
+                "cronograma": "Semana 12",
+            },
+            {
+                "evidencia": "Producto Acreditable 3",
+                "sigla": "PA3",
+                "peso": "30%",
+                "cronograma": "Semana 15",
+            },
+        ]
 
     referencias = [
         _val(b.get("referencia"))
@@ -236,7 +236,7 @@ def _build_context(silabo: dict) -> dict:
         "unidades": unidades_ctx,
         "eval_filas": eval_filas,
         "grading": grading,
-        "formula_pf": "PF = 40%*TA + 10%*PA1 + 20%*PA2 + 30%*PA3",
+        "formula_pf": "PF = " + " + ".join(f"{row['peso']}*{row['sigla']}" for row in grading),
         "metodologia": _val(
             silabo.get("metodologia"),
             "El curso emplea metodologias activas: ABP, Aprendizaje Basado "

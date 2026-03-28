@@ -84,7 +84,7 @@ async def generate_content(prompt: str) -> str:
     # provider == "gemini" (default)
     try:
         client = _get_client()
-        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+        model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
         response = client.models.generate_content(
             model=model,
             contents=prompt,
@@ -169,7 +169,7 @@ class GeminiService:
 
     def __init__(self):
         self.client = _get_client()
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+        self.model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
         logger.info(f"GeminiService inicializado | modelo: {self.model}")
 
     async def generar_silabo(self, datos_curso: dict, contexto_curricular: str = "") -> dict:

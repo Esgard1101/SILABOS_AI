@@ -1,899 +1,651 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+// SyllabusCreator.tsx — Wizard de 4 pasos para generar un sílabo
+// Paso 1: Seleccionar curso del programa
+// Paso 2: Cargar bibliografía (opcional, NotebookLM)
+// Paso 3: Seleccionar método pedagógico
+// Paso 4: Confirmar y generar
+
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  BookOpen,
-  MessageCircle,
-  User,
-  Edit,
-  Sparkles,
-  Trash2,
   ArrowLeft,
   ArrowRight,
+  BookOpen,
+  CheckCircle,
+  Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
-import {
-  GenerateSyllabusInput,
-  InstitutionalCareer,
-  InstitutionalFaculty,
-  SyllabusData,
-} from '../api/types';
+import { api, ApiError } from '../api/client';
+import { CourseDetail, CourseListItem } from '../api/types';
+import CourseCard from '../components/CourseCard';
+import MethodSelector from '../components/MethodSelector';
+import NavSidebar from '../components/NavSidebar';
+import NotebookLMGuide from '../components/NotebookLMGuide';
 import Toast, { useToast } from '../components/Toast';
-import { useSyllabus } from '../hooks/useSyllabus';
+import { useAppContext } from '../hooks/useAppContext';
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4 | 5;
 
-type EvaluationItem = {
-  nombre: string;
+interface GradingRow {
+  evidencia: string;
   sigla: string;
   porcentaje: number;
   cronograma: string;
-  editable: boolean;
-};
-
-const FALLBACK_FACULTIES: InstitutionalFaculty[] = [
-  {
-    id: 'fachse',
-    name: 'Facultad de Ciencias Histórico Sociales y Educación (FACHSE)',
-    code: 'FACHSE',
-    careers: [
-      { id: 'edu-ini', name: 'Educación Inicial', code: 'EDU-INI' },
-      { id: 'edu-pri', name: 'Educación Primaria', code: 'EDU-PRI' },
-      { id: 'edu-cn', name: 'Ciencias Naturales', code: 'EDU-CN' },
-      { id: 'edu-chhss', name: 'CC.HH.SS. y Filosofía', code: 'EDU-CHHSS' },
-      { id: 'edu-ll', name: 'Lengua y Literatura', code: 'EDU-LL' },
-      { id: 'edu-ie', name: 'Idiomas Extranjeros', code: 'EDU-IE' },
-      { id: 'edu-mc', name: 'Matemática y Computación', code: 'EDU-MC' },
-      { id: 'edu-ef', name: 'Educación Física', code: 'EDU-EF' },
-    ],
-  },
-];
-
-const DEFAULT_EVALUATION_ITEMS: EvaluationItem[] = [
-  {
-    nombre: 'Tareas (Reportes de lectura, informes de clase, trabajo práctico)',
-    sigla: 'TA',
-    porcentaje: 40,
-    cronograma: 'Permanente',
-    editable: false,
-  },
-  {
-    nombre: 'Producto Acreditable 1 (Planificación del trabajo integrador)',
-    sigla: 'PA1',
-    porcentaje: 10,
-    cronograma: 'Semana 5',
-    editable: true,
-  },
-  {
-    nombre: 'Producto Acreditable 2 (Avance del Trabajo Integrador)',
-    sigla: 'PA2',
-    porcentaje: 20,
-    cronograma: 'Semana 12',
-    editable: true,
-  },
-  {
-    nombre: 'Producto Acreditable 3 (Versión Final del Trabajo Integrador)',
-    sigla: 'PA3',
-    porcentaje: 30,
-    cronograma: 'Semana 15',
-    editable: true,
-  },
-];
-
-const stepLabels: Record<Step, string> = {
-  1: 'Datos Generales',
-  2: 'Estructura Academica',
-  3: 'Didactica',
-};
-
-const progressByStep: Record<Step, number> = {
-  1: 33,
-  2: 66,
-  3: 100,
-};
-
-function sanitizeFaculties(faculties: InstitutionalFaculty[]): InstitutionalFaculty[] {
-  return faculties.map((faculty) => ({
-    ...faculty,
-    careers: (faculty.careers || []).filter((career) => career.code !== 'EDU'),
-  }));
 }
 
-function readSessionUser() {
-  try {
-    const raw = sessionStorage.getItem('silabos_user');
-    return raw ? (JSON.parse(raw) as { full_name?: string; email?: string; career_id?: string | null }) : null;
-  } catch {
-    return null;
-  }
-}
+const STEP_LABELS: Record<Step, string> = {
+  1: 'Curso',
+  2: 'Bibliografía',
+  3: 'Método',
+  4: 'Calificación',
+  5: 'Confirmar',
+};
 
-function getSyllabusId(syllabus: Partial<SyllabusData> | null | undefined): string {
-  return String(syllabus?._id || syllabus?.id || '');
+const DEFAULT_GRADING_ROWS: GradingRow[] = [
+  { evidencia: 'Tareas', sigla: 'TA', porcentaje: 40, cronograma: 'Permanente' },
+  { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 10, cronograma: '5ª Semana' },
+  { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: '12ª Semana' },
+  { evidencia: 'Producto Acreditable 3', sigla: 'PA3', porcentaje: 30, cronograma: '15ª Semana' },
+];
+
+function StepIndicator({ current }: { current: Step }) {
+  const steps: Step[] = [1, 2, 3, 4, 5];
+  return (
+    <div className="flex items-center gap-2 mb-8">
+      {steps.map((s, idx) => (
+        <React.Fragment key={s}>
+          <div className="flex items-center gap-1.5">
+            <div
+              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                s < current
+                  ? 'bg-green-500 text-white'
+                  : s === current
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-100 text-gray-400'
+              }`}
+            >
+              {s < current ? <CheckCircle className="w-4 h-4" /> : s}
+            </div>
+            <span
+              className={`text-xs font-medium hidden sm:inline ${
+                s === current ? 'text-orange-600' : 'text-gray-400'
+              }`}
+            >
+              {STEP_LABELS[s]}
+            </span>
+          </div>
+          {idx < steps.length - 1 && (
+            <div
+              className={`flex-1 h-px max-w-12 ${s < current ? 'bg-green-300' : 'bg-gray-200'}`}
+            />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
+  );
 }
 
 export default function SyllabusCreator() {
   const navigate = useNavigate();
-  const { generate, loading, error } = useSyllabus();
-  const [step, setStep] = useState<Step>(1);
+  const { context } = useAppContext();
   const { showToast, toasts, removeToast } = useToast();
-  const [resultadosAprendizaje, setResultadosAprendizaje] = useState<string[]>(['', '', '']);
-  const [isSuggesting, setIsSuggesting] = useState(false);
-  const [faculties, setFaculties] = useState<InstitutionalFaculty[]>(FALLBACK_FACULTIES);
-  const [selectedFacultyId, setSelectedFacultyId] = useState(FALLBACK_FACULTIES[0]?.id || '');
-  const [selectedProgramId, setSelectedProgramId] = useState('');
-  const [teacherName, setTeacherName] = useState('');
-  const [teacherEmail, setTeacherEmail] = useState('');
-  const [evaluationItems, setEvaluationItems] = useState<EvaluationItem[]>(DEFAULT_EVALUATION_ITEMS);
-  const [savingDraft, setSavingDraft] = useState(false);
-  const [savedDraftId, setSavedDraftId] = useState<string>('');
 
-  const [formData, setFormData] = useState<GenerateSyllabusInput>({
-    nombre_curso: '',
-    carrera: '',
-    facultad: FALLBACK_FACULTIES[0]?.name || '',
-    creditos: 3,
-    horas_teoria: 2,
-    horas_practica: 2,
-    semestre: '2025-I',
-    docente: '',
-    modalidad: 'presencial',
-    enfoque_didactico: 'competencias',
-  });
+  const [step, setStep] = useState<Step>(1);
 
-  const [sumilla, setSumilla] = useState('');
+  // Estado del wizard
+  const [courses, setCourses] = useState<CourseListItem[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [courseDetail, setCourseDetail] = useState<CourseDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
+  const [uploadingBiblio, setUploadingBiblio] = useState(false);
+
+  const [selectedMethodId, setSelectedMethodId] = useState<number | null>(null);
+  const [selectedMethodName, setSelectedMethodName] = useState<string>('');
+  const [useAiGrading, setUseAiGrading] = useState(true);
+  const [requireMidtermFinal, setRequireMidtermFinal] = useState(false);
+  const [gradingRows, setGradingRows] = useState<GradingRow[]>(DEFAULT_GRADING_ROWS);
+
+  const [generating, setGenerating] = useState(false);
+
+  const gradingTotal = useMemo(
+    () => gradingRows.reduce((total, item) => total + (Number(item.porcentaje) || 0), 0),
+    [gradingRows],
+  );
+  const gradingRowsValid = gradingRows.every(
+    (item) =>
+      item.evidencia.trim().length > 0 &&
+      item.sigla.trim().length > 0 &&
+      item.cronograma.trim().length > 0,
+  );
+  const canContinueFromGrading = useAiGrading || (gradingTotal === 100 && gradingRowsValid);
+
+  // Cargar cursos del programa al montar
   useEffect(() => {
-    if (error) {
-      showToast(error, 'error');
-    }
-  }, [error, showToast]);
+    if (!context?.program_id) return;
+    setLoadingCourses(true);
+    api
+      .getCourses(context.program_id)
+      .then((res) => setCourses(res.data || []))
+      .catch(() => showToast('No se pudieron cargar los cursos', 'error'))
+      .finally(() => setLoadingCourses(false));
+  }, [context?.program_id]);
 
+  // Cargar detalle del curso al seleccionar
   useEffect(() => {
-    const sessionUser = readSessionUser();
-    if (sessionUser?.full_name) {
-      setTeacherName(sessionUser.full_name);
-      setFormData((prev) => ({ ...prev, docente: sessionUser.full_name || prev.docente }));
+    if (!selectedCourseId) {
+      setCourseDetail(null);
+      return;
     }
-    if (sessionUser?.email) {
-      setTeacherEmail(sessionUser.email);
-    }
+    setLoadingDetail(true);
+    api
+      .getCourse(selectedCourseId)
+      .then((res) => setCourseDetail(res.data || null))
+      .catch(() => showToast('No se pudo cargar el detalle del curso', 'error'))
+      .finally(() => setLoadingDetail(false));
+  }, [selectedCourseId]);
 
+  const handleBibliographyFile = async (file: File) => {
+    if (!context || !courseDetail) return;
+    setUploadingBiblio(true);
     try {
-      const rawDraft = sessionStorage.getItem('syllabusDraft');
-      if (rawDraft) {
-        const parsedDraft = JSON.parse(rawDraft) as { draftId?: string };
-        if (parsedDraft.draftId) {
-          setSavedDraftId(parsedDraft.draftId);
-        }
-      }
+      await api.uploadBibliography(
+        file,
+        courseDetail.id,
+        context.program_id,
+        courseDetail.scope || 'program',
+      );
+      showToast('Bibliografía cargada correctamente', 'success');
     } catch {
-      // Ignoramos borradores locales corruptos.
-    }
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadFaculties = async () => {
-      try {
-        const response = await api.getInstitutionalFaculties();
-        if (!active) {
-          return;
-        }
-
-        const sanitized = sanitizeFaculties(response.faculties || []);
-        if (sanitized.length > 0) {
-          setFaculties(sanitized);
-          setSelectedFacultyId((current) => current || sanitized[0].id);
-        }
-      } catch {
-        if (!active) {
-          return;
-        }
-        setFaculties(FALLBACK_FACULTIES);
-        setSelectedFacultyId(FALLBACK_FACULTIES[0]?.id || '');
-        showToast('Usando datos institucionales locales de respaldo', 'warning');
-      }
-    };
-
-    loadFaculties();
-
-    return () => {
-      active = false;
-    };
-  }, [showToast]);
-
-  const selectedFaculty = useMemo(() => {
-    return faculties.find((faculty) => faculty.id === selectedFacultyId) || faculties[0] || FALLBACK_FACULTIES[0];
-  }, [faculties, selectedFacultyId]);
-
-  const availablePrograms = useMemo(() => {
-    return selectedFaculty?.careers || [];
-  }, [selectedFaculty]);
-
-  const selectedProgram = useMemo(() => {
-    return availablePrograms.find((career) => career.id === selectedProgramId) || null;
-  }, [availablePrograms, selectedProgramId]);
-
-  useEffect(() => {
-    if (!selectedFaculty) {
-      return;
-    }
-
-    setFormData((prev) => ({
-      ...prev,
-      facultad: selectedFaculty.name,
-    }));
-
-    if (!availablePrograms.length) {
-      setSelectedProgramId('');
-      setFormData((prev) => ({ ...prev, carrera: '', carrera_id: null }));
-      return;
-    }
-
-    setSelectedProgramId((current) => {
-      if (current && availablePrograms.some((program) => program.id === current)) {
-        return current;
-      }
-      return availablePrograms[0].id;
-    });
-  }, [availablePrograms, selectedFaculty]);
-
-  useEffect(() => {
-    if (!selectedProgram) {
-      return;
-    }
-
-    setFormData((prev) => ({
-      ...prev,
-      carrera: selectedProgram.name,
-      carrera_id: selectedProgram.id,
-    }));
-  }, [selectedProgram]);
-
-  const totalPercentage = useMemo(() => {
-    return evaluationItems.reduce((total, item) => total + (Number(item.porcentaje) || 0), 0);
-  }, [evaluationItems]);
-
-  const weightFeedback = useMemo(() => {
-    if (totalPercentage < 100) {
-      return {
-        text: `Faltan ${100 - totalPercentage}% por asignar`,
-        className: 'text-red-600',
-      };
-    }
-
-    if (totalPercentage > 100) {
-      return {
-        text: `Excede en ${totalPercentage - 100}%`,
-        className: 'text-red-600',
-      };
-    }
-
-    return {
-      text: '✓ Total: 100%',
-      className: 'text-green-600',
-    };
-  }, [totalPercentage]);
-
-  const evaluationFormula = useMemo(() => {
-    return evaluationItems
-      .map((item) => `${(item.porcentaje / 100).toFixed(2)}×${item.sigla}`)
-      .join(' + ');
-  }, [evaluationItems]);
-
-  const updateField = <K extends keyof GenerateSyllabusInput>(key: K, value: GenerateSyllabusInput[K]) => {
-    setFormData((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const buildBasePayload = (): SyllabusData => {
-    const resultadosLocales = resultadosAprendizaje
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-
-    return {
-      id: savedDraftId || undefined,
-      _id: savedDraftId || undefined,
-      status: 'draft',
-      datos_generales: {
-        nombre_curso: formData.nombre_curso,
-        facultad: selectedFaculty?.name || formData.facultad,
-        carrera: selectedProgram?.name || formData.carrera,
-        escuela_profesional: selectedProgram?.name || formData.carrera,
-        programa_estudios: selectedProgram?.name || formData.carrera,
-        creditos: formData.creditos,
-        horas_teoria: formData.horas_teoria,
-        horas_practica: formData.horas_practica,
-        semestre: formData.semestre,
-        periodo_academico: formData.semestre,
-        docente: teacherName.trim() || formData.docente || 'Por designar',
-        docente_email: teacherEmail.trim() || '—',
-        modalidad: 'Presencial',
-        codigo: '—',
-        prerrequisito: '—',
-        fecha_inicio: '—',
-        fecha_fin: '—',
-      },
-      sumilla: sumilla.trim() || '—',
-      competencias: resultadosLocales,
-      competencia_profesional: resultadosLocales[0] || '—',
-      resultados_aprendizaje: resultadosLocales,
-      capacidad_del_curso: resultadosLocales[0] || '—',
-      unidades_tematicas: [],
-      cronograma_semanal: [],
-      sistema_evaluacion: {
-        criterios: evaluationItems.map((item) => ({
-          nombre: item.nombre,
-          sigla: item.sigla,
-          porcentaje: item.porcentaje,
-          cronograma: item.cronograma,
-          editable: item.editable,
-          descripcion: '',
-        })),
-      },
-      bibliografia: [],
-      metodologia: '—',
-      tutoria: '—',
-    };
-  };
-
-  const mergePersistedPayload = (data: SyllabusData): SyllabusData => {
-    const base = buildBasePayload();
-    return {
-      ...base,
-      ...data,
-      id: getSyllabusId(data) || getSyllabusId(base) || undefined,
-      _id: getSyllabusId(data) || getSyllabusId(base) || undefined,
-      status: (data.status || 'draft'),
-      datos_generales: {
-        ...base.datos_generales,
-        ...(data.datos_generales || {}),
-      },
-      sistema_evaluacion: {
-        ...base.sistema_evaluacion,
-        ...(data.sistema_evaluacion || {}),
-        criterios:
-          base.sistema_evaluacion?.criterios?.length
-            ? base.sistema_evaluacion.criterios
-            : (data.sistema_evaluacion?.criterios || []),
-      },
-    };
-  };
-
-  const goToStep = (target: Step) => {
-    setStep(target);
-  };
-
-  const handleNext = () => {
-    if (step < 3) {
-      setStep((prev) => (prev + 1) as Step);
-    }
-  };
-
-  const handlePrevious = () => {
-    if (step > 1) {
-      setStep((prev) => (prev - 1) as Step);
-    }
-  };
-
-  const handleSaveDraft = async () => {
-    const localDraft = {
-      formData,
-      teacherName,
-      teacherEmail,
-      selectedFacultyId,
-      selectedProgramId,
-      sumilla,
-      resultados_aprendizaje: resultadosAprendizaje,
-      sistema_evaluacion: evaluationItems,
-      savedAt: new Date().toISOString(),
-    };
-    sessionStorage.setItem('syllabusDraft', JSON.stringify(localDraft));
-
-    setSavingDraft(true);
-    try {
-      const payload = buildBasePayload();
-      const response = savedDraftId
-        ? await api.updateSyllabus(savedDraftId, payload as Record<string, unknown>, {
-            status: 'draft',
-            changed_by: teacherName.trim() || 'sistema',
-            change_note: 'Borrador guardado desde el creador',
-          })
-        : await api.createSyllabusDraft(payload as Record<string, unknown>, 'draft');
-
-      const persisted = mergePersistedPayload(response.data);
-      const persistedId = getSyllabusId(persisted);
-      if (!persistedId) {
-        throw new Error('El backend no devolvió un ID válido para el borrador');
-      }
-
-      setSavedDraftId(persistedId);
-      sessionStorage.setItem('currentSyllabus', JSON.stringify(persisted));
-      sessionStorage.setItem('syllabusDraft', JSON.stringify({ ...localDraft, draftId: persistedId }));
-      showToast('Borrador guardado correctamente', 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No se pudo guardar el borrador', 'error');
+      showToast('Error al subir el archivo', 'error');
     } finally {
-      setSavingDraft(false);
+      setUploadingBiblio(false);
     }
   };
 
-  const handleResultadoChange = (index: number, value: string) => {
-    setResultadosAprendizaje((prev) => prev.map((item, idx) => (idx === index ? value : item)));
-  };
-
-  const handleRemoveResultado = (index: number) => {
-    setResultadosAprendizaje((prev) => prev.map((item, idx) => (idx === index ? '' : item)));
-  };
-
-  const updateEvaluationPercentage = (index: number, value: string) => {
-    const nextValue = Number(value);
-    setEvaluationItems((prev) =>
-      prev.map((item, itemIndex) => {
-        if (itemIndex !== index || !item.editable) {
-          return item;
-        }
-
-        return {
-          ...item,
-          porcentaje: Number.isNaN(nextValue) ? 0 : nextValue,
-        };
-      }),
+  const updateGradingRow = (
+    index: number,
+    field: keyof GradingRow,
+    value: string,
+  ) => {
+    setUseAiGrading(false);
+    setGradingRows((current) =>
+      current.map((row, rowIndex) =>
+        rowIndex === index
+          ? {
+              ...row,
+              [field]: field === 'porcentaje' ? Number(value) || 0 : value,
+            }
+          : row,
+      ),
     );
   };
 
-  const handleSuggestWithAI = async () => {
-    if (!formData.nombre_curso.trim() || !formData.carrera.trim()) {
-      showToast('Completa nombre del curso y programa antes de pedir una sugerencia', 'warning');
-      return;
-    }
-
-    setIsSuggesting(true);
-    try {
-      const response = await api.generateSyllabus({
-        ...formData,
-        facultad: selectedFaculty?.name || formData.facultad,
-        carrera: selectedProgram?.name || formData.carrera,
-        carrera_id: selectedProgram?.id || formData.carrera_id || null,
-        creditos: formData.creditos || 3,
-        horas_teoria: formData.horas_teoria || 2,
-        horas_practica: formData.horas_practica || 2,
-        semestre: formData.semestre || '2025-I',
-        docente: teacherName.trim() || 'Por designar',
-        persist_result: false,
-      });
-
-      const suggestedData = response.data;
-      if (suggestedData?.sumilla) {
-        setSumilla(suggestedData.sumilla);
-      }
-
-      const suggestedResults =
-        suggestedData?.resultados_aprendizaje?.filter((item) => item?.trim().length) ||
-        suggestedData?.competencias?.filter((item) => item?.trim().length) ||
-        [];
-
-      if (suggestedResults.length > 0) {
-        setResultadosAprendizaje(Array.from({ length: Math.max(3, suggestedResults.length) }, (_, index) => suggestedResults[index] || ''));
-      }
-
-      showToast('Sugerencia aplicada ✓', 'success');
-    } catch {
-      showToast('No se pudo obtener sugerencia', 'error');
-    } finally {
-      setIsSuggesting(false);
-    }
-  };
-
   const handleGenerate = async () => {
-    if (totalPercentage !== 100) {
-      showToast('La suma de porcentajes debe ser exactamente 100%', 'warning');
-      return;
-    }
-
+    if (!courseDetail || !context) return;
+    setGenerating(true);
     try {
-      const data = await generate({
-        ...formData,
-        facultad: selectedFaculty?.name || formData.facultad,
-        carrera: selectedProgram?.name || formData.carrera,
-        carrera_id: selectedProgram?.id || formData.carrera_id || null,
-        docente: teacherName.trim() || formData.docente,
+      const res = await api.generateSyllabusV2({
+        course_id: courseDetail.id,
+        teaching_method_id: selectedMethodId,
+        semester: context.semester,
+        grading_scheme: useAiGrading ? undefined : gradingRows,
+        grading_requires_midterm_final: requireMidtermFinal,
       });
-
-      const payload = mergePersistedPayload(data);
-      const persistedId = getSyllabusId(payload);
-      if (!persistedId) {
-        showToast('La IA generó el sílabo, pero no se pudo persistir en la base de datos', 'error');
-        return;
+      const syllabusId = res.data?._id || res.data?.id || (res as unknown as { _id?: string })._id;
+      if (syllabusId) {
+        navigate(`/editor?id=${syllabusId}`);
+      } else {
+        showToast('Sílabo generado pero no se pudo navegar al editor', 'warning');
       }
-
-      setSavedDraftId(persistedId);
-      sessionStorage.setItem('currentSyllabus', JSON.stringify(payload));
-      navigate('/editor');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No se pudo generar el silabo', 'error');
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? (typeof err.details === 'object' &&
+              err.details &&
+              'detail' in err.details &&
+              typeof err.details.detail === 'string' &&
+              err.details.detail) ||
+            err.message
+          : err instanceof Error
+          ? err.message
+          : 'Error al generar el sílabo';
+      showToast(msg, 'error');
+    } finally {
+      setGenerating(false);
     }
   };
+
+  if (!context) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500">No hay contexto activo. Redirigiendo…</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-white sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600"
-          >
-            <ArrowLeft size={16} />
-            Volver al inicio
-          </button>
-          <div className="flex items-center gap-3 text-orange-600">
-            <div className="size-8 bg-orange-100 rounded-lg flex items-center justify-center">
-              <BookOpen size={20} />
-            </div>
-            <h2 className="text-slate-900 text-lg font-bold">Creador de Silabo</h2>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button className="flex items-center justify-center rounded-xl h-10 w-10 bg-slate-100 text-slate-600">
-            <MessageCircle size={20} />
-          </button>
-          <button className="flex items-center justify-center rounded-xl h-10 w-10 bg-slate-100 text-slate-600">
-            <User size={20} />
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 md:flex">
+      <NavSidebar currentPath="/creator" />
 
-      <main className="max-w-5xl mx-auto w-full px-6 py-8">
-        <nav className="mb-10">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-orange-600 font-bold">Paso {step} de 3</span>
-              <span className="text-slate-400">|</span>
-              <span className="text-slate-500 font-medium">{stepLabels[step]}</span>
-            </div>
-            <span className="text-slate-900 font-bold">{progressByStep[step]}% completado</span>
-          </div>
-          <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-            <div className="h-full bg-orange-600" style={{ width: `${progressByStep[step]}%` }}></div>
-          </div>
-          <div className="grid grid-cols-3 mt-6 border-b border-slate-200">
+      <div className="flex-1">
+        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-orange-100">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
             <button
-              onClick={() => goToStep(1)}
-              className={`pb-4 text-center flex items-center justify-center gap-2 ${
-                step === 1 ? 'border-b-2 border-orange-600 text-orange-600' : 'text-slate-400'
-              }`}
+              onClick={() => navigate('/dashboard')}
+              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
             >
-              <span className="text-sm">1. Datos Generales</span>
+              <ArrowLeft className="w-4 h-4 text-gray-600" />
             </button>
-            <button
-              onClick={() => goToStep(2)}
-              className={`pb-4 text-center flex items-center justify-center gap-2 ${
-                step === 2 ? 'border-b-2 border-orange-600 text-orange-600' : 'text-slate-400'
-              }`}
-            >
-              <Edit size={18} />
-              <span className="text-sm font-bold uppercase tracking-wider">2. ESTRUCTURA</span>
-            </button>
-            <button
-              onClick={() => goToStep(3)}
-              className={`pb-4 text-center flex items-center justify-center gap-2 ${
-                step === 3 ? 'border-b-2 border-orange-600 text-orange-600' : 'text-slate-400'
-              }`}
-            >
-              <span className="text-sm">3. Didactica</span>
-            </button>
-          </div>
-        </nav>
-
-        {step === 1 ? (
-          <>
-            <div className="mb-8">
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Datos Generales del Curso</h1>
-              <p className="text-slate-500 mt-2 text-lg">Completa la informacion base para generar el silabo.</p>
+            <div className="bg-orange-500 rounded-lg p-1.5">
+              <BookOpen className="w-4 h-4 text-white" />
             </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-12">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Nombre del curso *</label>
-                  <input
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    placeholder="Ej: Taller de Investigación Educativa I"
-                    value={formData.nombre_curso}
-                    onChange={(e) => updateField('nombre_curso', e.target.value)}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Programa *</label>
-                  <select
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    value={selectedProgramId}
-                    onChange={(e) => setSelectedProgramId(e.target.value)}
-                  >
-                    <option value="">Selecciona un programa</option>
-                    {availablePrograms.map((program) => (
-                      <option key={program.id} value={program.id}>
-                        {program.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Facultad *</label>
-                  <select
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    value={selectedFacultyId}
-                    onChange={(e) => setSelectedFacultyId(e.target.value)}
-                  >
-                    <option value="">Selecciona una facultad</option>
-                    {faculties.map((faculty) => (
-                      <option key={faculty.id} value={faculty.id}>
-                        {faculty.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Semestre</label>
-                  <input
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    placeholder="Ej: 2025-I"
-                    value={formData.semestre}
-                    onChange={(e) => updateField('semestre', e.target.value)}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Docente</label>
-                  <input
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    placeholder="Nombre del docente"
-                    value={teacherName}
-                    onChange={(e) => {
-                      setTeacherName(e.target.value);
-                      updateField('docente', e.target.value);
-                    }}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Correo institucional</label>
-                  <input
-                    type="email"
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    placeholder="docente@unprg.edu.pe"
-                    value={teacherEmail}
-                    onChange={(e) => setTeacherEmail(e.target.value)}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Creditos</label>
-                  <input
-                    type="number"
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    value={formData.creditos}
-                    onChange={(e) => updateField('creditos', Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Horas Teoria</label>
-                  <input
-                    type="number"
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    value={formData.horas_teoria}
-                    onChange={(e) => updateField('horas_teoria', Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm font-semibold text-slate-700">Horas Practica</label>
-                  <input
-                    type="number"
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    value={formData.horas_practica}
-                    onChange={(e) => updateField('horas_practica', Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1 md:col-span-2">
-                  <label className="text-sm font-semibold text-slate-700">Modalidad</label>
-                  <select
-                    className="rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    value={formData.modalidad}
-                    onChange={(e) => updateField('modalidad', e.target.value as GenerateSyllabusInput['modalidad'])}
-                  >
-                    <option value="presencial">Presencial</option>
-                    <option value="virtual">Virtual</option>
-                    <option value="hibrido">Hibrido</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </>
-        ) : null}
-
-        {step === 2 ? (
-          <>
-            <div className="mb-8">
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Estructura Academica y Competencias</h1>
-              <p className="text-slate-500 mt-2 text-lg">
-                Define la sumilla, las competencias clave y los resultados de aprendizaje esperados.
+            <div>
+              <h1 className="text-base font-bold text-gray-900">Nuevo Sílabo</h1>
+              <p className="text-xs text-gray-500">
+                {context.program_name} — {context.semester}
               </p>
             </div>
+          </div>
+        </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-              <div className="flex flex-col gap-8">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <div className="flex justify-between items-start mb-4">
-                    <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider">Sumilla del Curso</label>
-                    <button
-                      type="button"
-                      onClick={handleSuggestWithAI}
-                      disabled={isSuggesting}
-                      className="flex items-center gap-1.5 text-xs font-bold text-orange-600 bg-orange-100 px-3 py-1.5 rounded-full disabled:opacity-70"
-                    >
-                      <Sparkles size={14} /> {isSuggesting ? 'Sugiriendo...' : 'Sugerir con IA'}
-                    </button>
-                  </div>
-                  <textarea
-                    className="w-full rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                    placeholder="Escriba una descripcion general del proposito y contenido del curso..."
-                    rows={6}
-                    value={sumilla}
-                    onChange={(e) => setSumilla(e.target.value)}
-                  ></textarea>
-                </div>
+        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+          <StepIndicator current={step} />
+
+          {/* ──── PASO 1: Selección de curso ──── */}
+          {step === 1 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Selecciona el curso</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Cursos del programa {context.program_name} (incluye cursos comunes)
+                </p>
               </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider">Resultados de Aprendizaje</label>
-                    <p className="text-xs text-slate-500 mt-1">Que sera capaz de hacer el estudiante al finalizar?</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSuggestWithAI}
-                    disabled={isSuggesting}
-                    className="flex items-center gap-1.5 text-xs font-bold text-white bg-orange-600 px-4 py-2 rounded-full shadow-md disabled:opacity-70"
-                  >
-                    <Sparkles size={14} /> {isSuggesting ? 'Sugiriendo...' : 'Sugerir con IA'}
-                  </button>
+
+              {loadingCourses ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500 p-4">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Cargando cursos…
                 </div>
-                <div className="space-y-4">
-                  {resultadosAprendizaje.map((resultado, i) => (
-                    <div key={i} className="flex gap-4 p-4 rounded-lg bg-slate-50 border border-slate-100">
-                      <div className="flex-shrink-0 size-6 bg-orange-600 text-white text-xs font-bold rounded flex items-center justify-center">{i + 1}</div>
-                      <textarea
-                        className="w-full bg-transparent border-none focus:ring-0 text-sm p-0 resize-none"
-                        rows={2}
-                        value={resultado}
-                        onChange={(e) => handleResultadoChange(i, e.target.value)}
-                      ></textarea>
-                      <button onClick={() => handleRemoveResultado(i)} className="text-slate-400 hover:text-red-500 h-fit">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+              ) : courses.length === 0 ? (
+                <p className="text-sm text-gray-500 p-4 bg-gray-50 rounded-lg">
+                  No se encontraron cursos para este programa.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {courses.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedCourseId(c.id)}
+                      className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
+                        selectedCourseId === c.id
+                          ? 'border-orange-400 bg-orange-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                        <div className="flex gap-1.5 shrink-0 ml-2">
+                          {c.cycle != null && (
+                            <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                              Ciclo {c.cycle}
+                            </span>
+                          )}
+                          {c.is_common && (
+                            <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
+                              Común
+                            </span>
+                          )}
+                          {c.credits != null && (
+                            <span className="text-xs text-gray-500">{c.credits} cr.</span>
+                          )}
+                        </div>
+                      </div>
+                      {c.code && (
+                        <span className="text-xs text-gray-400">{c.code}</span>
+                      )}
+                    </button>
                   ))}
                 </div>
-              </div>
-            </div>
-          </>
-        ) : null}
+              )}
 
-        {step === 3 ? (
-          <>
-            <div className="mb-8">
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Didactica y Generacion</h1>
-              <p className="text-slate-500 mt-2 text-lg">Selecciona el enfoque didactico y revisa el sistema de calificacion del Anexo C.</p>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-12">
-              <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Enfoque Didactico</label>
-              <select
-                className="w-full rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                value={formData.enfoque_didactico}
-                onChange={(e) =>
-                  updateField('enfoque_didactico', e.target.value as GenerateSyllabusInput['enfoque_didactico'])
-                }
-              >
-                <option value="competencias">Competencias</option>
-                <option value="constructivista">Constructivista</option>
-                <option value="tradicional">Tradicional</option>
-              </select>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-12">
-              <div className="flex items-center justify-between gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 uppercase tracking-wider">Sistema de Calificacion Anexo C</label>
-                  <p className="text-sm text-slate-500 mt-1">Las siglas, nombres y cronograma son fijos; solo los pesos acreditables son ajustables.</p>
+              {/* Vista previa del curso seleccionado */}
+              {loadingDetail && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Cargando datos del curso…
                 </div>
-                <span className={`text-sm font-semibold ${weightFeedback.className}`}>{weightFeedback.text}</span>
-              </div>
+              )}
+              {courseDetail && !loadingDetail && (
+                <CourseCard course={courseDetail} />
+              )}
 
-              <div className="space-y-4">
-                {evaluationItems.map((item, index) => (
-                  <div key={item.sigla} className="grid grid-cols-1 md:grid-cols-[120px_1fr_140px_130px] gap-4 items-center rounded-xl border border-slate-200 p-4">
-                    <div>
-                      <span className="inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">{item.sigla}</span>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800">{item.nombre}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">{item.cronograma}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {item.editable ? (
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={item.porcentaje}
-                          onChange={(e) => updateEvaluationPercentage(index, e.target.value)}
-                          className="w-full rounded-lg border-slate-300 focus:ring-orange-500 focus:border-orange-500 text-sm p-3"
-                        />
-                      ) : (
-                        <span className="inline-flex min-w-[72px] justify-center rounded-lg bg-slate-100 px-3 py-3 text-sm font-semibold text-slate-700">
-                          {item.porcentaje}%
-                        </span>
-                      )}
-                      <span className="text-sm font-semibold text-slate-500">%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-                PF = {evaluationFormula}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setStep(2)}
+                  disabled={!selectedCourseId || loadingDetail}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold rounded-lg text-sm transition-colors"
+                >
+                  Continuar
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
-          </>
-        ) : null}
+          )}
 
-        <div className="flex items-center justify-between pt-8 border-t border-slate-200 mb-12">
-          <button
-            onClick={handlePrevious}
-            disabled={step === 1}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl border border-slate-300 text-slate-600 font-bold hover:bg-slate-100 disabled:opacity-40"
-          >
-            <ArrowLeft size={20} /> Anterior
-          </button>
+          {/* ──── PASO 2: Bibliografía (opcional) ──── */}
+          {step === 2 && courseDetail && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Carga de bibliografía</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Opcional — enriquece el sílabo con fuentes específicas del curso.
+                </p>
+              </div>
 
-          <div className="flex gap-4 items-center">
-            <button
-              onClick={handleSaveDraft}
-              disabled={savingDraft}
-              className="px-6 py-3 rounded-xl text-slate-500 font-bold hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {savingDraft ? 'Guardando borrador...' : 'Guardar borrador'}
-            </button>
+              <NotebookLMGuide
+                courseName={courseDetail.name}
+                sumilla={courseDetail.sumilla || ''}
+                onFileSelected={handleBibliographyFile}
+                uploading={uploadingBiblio}
+              />
 
-            {step < 3 ? (
-              <button
-                onClick={handleNext}
-                className="flex items-center gap-2 px-8 py-3 rounded-xl bg-orange-600 text-white font-bold hover:bg-orange-700 shadow-lg shadow-orange-200"
-              >
-                {step === 2 ? 'Continuar a Didactica' : 'Continuar'} <ArrowRight size={20} />
-              </button>
-            ) : (
-              <button
-                onClick={handleGenerate}
-                disabled={loading || totalPercentage !== 100}
-                className="flex items-center gap-2 px-8 py-3 rounded-xl bg-orange-600 text-white font-bold hover:bg-orange-700 shadow-lg shadow-orange-200 disabled:opacity-70"
-              >
-                {loading ? 'Generando con IA...' : 'Generar Silabo'}
-              </button>
-            )}
-          </div>
-        </div>
-        <Toast toasts={toasts} removeToast={removeToast} />
-      </main>
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => setStep(1)}
+                  className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Atrás
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setStep(3)}
+                    className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    Omitir este paso
+                  </button>
+                  <button
+                    onClick={() => setStep(3)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg text-sm transition-colors"
+                  >
+                    Continuar
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──── PASO 3: Método pedagógico ──── */}
+          {step === 3 && courseDetail && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Método pedagógico</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  La IA sugiere el método más adecuado. Puedes cambiarlo libremente.
+                </p>
+              </div>
+
+              <MethodSelector
+                courseId={courseDetail.id}
+                value={selectedMethodId}
+                onChange={(id, name) => {
+                  setSelectedMethodId(id);
+                  setSelectedMethodName(name);
+                }}
+              />
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => setStep(2)}
+                  className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Atrás
+                </button>
+                <button
+                  onClick={() => setStep(4)}
+                  disabled={selectedMethodId === null}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold rounded-lg text-sm transition-colors"
+                >
+                  Continuar
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ──── PASO 4: Confirmar y generar ──── */}
+          {step === 4 && courseDetail && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Sistema de calificación</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Puedes dejar la propuesta de la IA o personalizar la ponderación antes de generar.
+                </p>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAiGrading}
+                    onChange={(e) => setUseAiGrading(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Usar sistema sugerido por IA</p>
+                    <p className="text-xs text-gray-500">
+                      Si no quieres tocar esta parte, mantenemos la propuesta que genere el sistema.
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={requireMidtermFinal}
+                    onChange={(e) => setRequireMidtermFinal(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Debe incluir parcial y final</p>
+                    <p className="text-xs text-gray-500">
+                      Se agrega como restricción simple durante la generación.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              <div className={`bg-white border rounded-xl overflow-hidden ${useAiGrading ? 'border-gray-100 opacity-70' : 'border-gray-200'}`}>
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Tabla editable</h3>
+                    <p className="text-xs text-gray-500">Evidencia, sigla, peso y cronograma.</p>
+                  </div>
+                  <div className={`text-sm font-bold ${gradingTotal === 100 ? 'text-green-600' : 'text-red-600'}`}>
+                    Total: {gradingTotal}%
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-semibold">Evidencia</th>
+                        <th className="text-left px-4 py-3 font-semibold">Sigla</th>
+                        <th className="text-left px-4 py-3 font-semibold">Peso</th>
+                        <th className="text-left px-4 py-3 font-semibold">Cronograma</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gradingRows.map((row, index) => (
+                        <tr key={`${row.sigla}-${index}`} className="border-t border-gray-100">
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={row.evidencia}
+                              onChange={(e) => updateGradingRow(index, 'evidencia', e.target.value)}
+                              disabled={useAiGrading}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 disabled:bg-gray-50 disabled:text-gray-400"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={row.sigla}
+                              onChange={(e) => updateGradingRow(index, 'sigla', e.target.value.toUpperCase())}
+                              disabled={useAiGrading}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 disabled:bg-gray-50 disabled:text-gray-400"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={row.porcentaje}
+                                onChange={(e) => updateGradingRow(index, 'porcentaje', e.target.value)}
+                                disabled={useAiGrading}
+                                className="w-full rounded-lg border border-gray-200 px-3 py-2 pr-8 disabled:bg-gray-50 disabled:text-gray-400"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="text"
+                              value={row.cronograma}
+                              onChange={(e) => updateGradingRow(index, 'cronograma', e.target.value)}
+                              disabled={useAiGrading}
+                              className="w-full rounded-lg border border-gray-200 px-3 py-2 disabled:bg-gray-50 disabled:text-gray-400"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {!useAiGrading && gradingTotal !== 100 && (
+                <p className="text-sm text-red-600">
+                  La suma de los pesos debe ser exactamente 100%.
+                </p>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => setStep(3)}
+                  className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Atrás
+                </button>
+                <button
+                  onClick={() => setStep(5)}
+                  disabled={!canContinueFromGrading}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold rounded-lg text-sm transition-colors"
+                >
+                  Continuar
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && courseDetail && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Confirmar y generar</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Revisa el resumen antes de generar. La IA tardará entre 10 y 20 segundos.
+                </p>
+              </div>
+
+              {/* Resumen */}
+              <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+                <div className="px-5 py-4 flex items-start gap-3">
+                  <BookOpen className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                      Curso
+                    </p>
+                    <p className="text-sm font-medium text-gray-800">{courseDetail.name}</p>
+                    {courseDetail.code && (
+                      <p className="text-xs text-gray-400">{courseDetail.code}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="px-5 py-4 flex items-start gap-3">
+                  <Sparkles className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                      Método pedagógico
+                    </p>
+                    <p className="text-sm font-medium text-gray-800">{selectedMethodName}</p>
+                  </div>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                    Semestre
+                  </p>
+                  <p className="text-sm font-medium text-gray-800">{context.semester}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                    Calificación
+                  </p>
+                  <p className="text-sm font-medium text-gray-800">
+                    {useAiGrading ? 'Usar sugerencia de la IA' : `Personalizada (${gradingTotal}%)`}
+                  </p>
+                  {requireMidtermFinal && (
+                    <p className="text-xs text-gray-500 mt-1">Debe incluir parcial y final.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => setStep(4)}
+                  className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Atrás
+                </button>
+                <button
+                  onClick={handleGenerate}
+                  disabled={generating}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white font-bold rounded-xl text-sm transition-colors"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generando sílabo…
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Generar sílabo
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {generating && (
+                <p className="text-xs text-gray-400 text-center">
+                  La IA está construyendo el sílabo completo. Esto puede tomar hasta 20 segundos…
+                </p>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+
+      <Toast toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }

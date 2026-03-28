@@ -24,6 +24,7 @@ import NavSidebar from '../components/NavSidebar';
 import Toast, { useToast } from '../components/Toast';
 import { useAuth } from '../hooks/useAuth';
 import { useDocuments } from '../hooks/useDocuments';
+import { useAppContext } from '../hooks/useAppContext';
 
 type FilterKey = 'todos' | 'reglamento' | 'libro' | 'silabo';
 
@@ -102,6 +103,7 @@ export default function Dashboard() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const { logout } = useAuth();
+  const { context, clearContext } = useAppContext();
   const { documents, uploading, loading, error, upload, remove, fetchDocuments } = useDocuments();
   const { showToast, toasts, removeToast } = useToast();
 
@@ -264,6 +266,32 @@ export default function Dashboard() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+          {/* Banner de contexto activo */}
+          {context && (
+            <div className="mb-6 flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-xs text-orange-500 font-semibold uppercase tracking-wide">
+                  Programa activo
+                </p>
+                <p className="text-sm font-semibold text-gray-800 mt-0.5">
+                  {context.program_name}{' '}
+                  <span className="text-gray-500 font-normal">— {context.semester}</span>
+                </p>
+                <p className="text-xs text-gray-500">{context.school_name}</p>
+              </div>
+              <button
+                onClick={() => {
+                  clearContext();
+                  navigate('/select-context');
+                }}
+                className="text-xs text-orange-600 hover:text-orange-700 font-medium border border-orange-200 rounded-lg px-3 py-1.5 hover:bg-orange-100 transition-colors whitespace-nowrap"
+              >
+                Cambiar programa
+              </button>
+            </div>
+          )}
+
           <section className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div>

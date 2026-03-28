@@ -27,6 +27,7 @@ class GenerarSilaboInput(BaseModel):
     docente: str = Field(default="Por designar")
     modalidad: str = Field(default="presencial")        # presencial|virtual|híbrido
     enfoque_didactico: str = Field(default="competencias")  # competencias|constructivista|tradicional
+    capacidad: Optional[str] = None
     carrera_id: Optional[str] = None                    # UUID de la carrera en Supabase
     persist_result: bool = True
 
@@ -185,3 +186,80 @@ class DocumentoInfo(BaseModel):
     storage_path: str
     texto_extraido: Optional[str] = None
     creado_en: Optional[str] = None
+
+
+# ─────────────────────────────────────────────
+# Generación v2 — Wizard 4 pasos
+# Recibe IDs; el backend obtiene los datos de BD
+# ─────────────────────────────────────────────
+class SyllabusGenerateRequest(BaseModel):
+    course_id: str = Field(..., description="UUID del curso seleccionado")
+    teaching_method_id: Optional[int] = Field(
+        default=None,
+        description="ID del método pedagógico (catálogo). None → IA sugiere"
+    )
+    semester: str = Field(
+        default="2025-I",
+        description="Semestre académico, ej: 2025-I"
+    )
+
+
+# ─────────────────────────────────────────────
+# Schemas de respuesta para cursos y métodos
+# ─────────────────────────────────────────────
+class GradingSchemeItem(BaseModel):
+    evidencia: str
+    sigla: str
+    porcentaje: int = Field(ge=0, le=100)
+    cronograma: str
+
+
+class SyllabusGenerateRequest(BaseModel):
+    course_id: str = Field(..., description="UUID del curso seleccionado")
+    teaching_method_id: Optional[int] = Field(
+        default=None,
+        description="ID del método pedagógico (catálogo). None -> IA sugiere"
+    )
+    semester: str = Field(
+        default="2025-I",
+        description="Semestre académico, ej: 2025-I"
+    )
+    grading_scheme: Optional[List[GradingSchemeItem]] = None
+    grading_requires_midterm_final: bool = False
+
+
+class CourseListItem(BaseModel):
+    id: str
+    name: str
+    code: Optional[str] = None
+    credits: Optional[int] = None
+    cycle: Optional[int] = None
+    is_common: bool = False
+    scope: Optional[str] = None
+
+
+class CourseDetail(BaseModel):
+    id: str
+    name: str
+    code: Optional[str] = None
+    credits: Optional[int] = None
+    cycle: Optional[int] = None
+    is_common: bool = False
+    scope: Optional[str] = None
+    sumilla: Optional[str] = None
+    competencia_egreso: Optional[str] = None
+    resultado_aprendizaje: Optional[str] = None
+    capacidad: Optional[str] = None
+
+
+class MethodItem(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    secuencia_didactica: Optional[str] = None
+
+
+class MethodSuggestResponse(BaseModel):
+    method_id: int
+    method_name: str
+    reason: str

@@ -54,7 +54,7 @@ Eres un auditor curricular que verifica coherencia del sílabo universitario per
 ## Unidades temáticas
 {resumen_unidades}
 ## Sistema de calificación
-{criterios_eval}**Total declarado:** {total_pct}% | **Nota aprobatoria:** {evaluacion.get("nota_aprobatoria", 11)}
+{criterios_eval}**Total declarado:** {total_pct}% | **Nota aprobatoria:** {evaluacion.get("nota_aprobatoria", 14)}
 
 # CRITERIOS DE EVALUACIÓN (20 pts cada uno = 100 total)
 1. **Coherencia interna** — unidades, cronograma y evaluación se alinean entre sí
