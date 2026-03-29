@@ -2,12 +2,18 @@
 # Habilidades, Métodos e Instrumentos del Anexo C UNPRG
 # Son constantes; no requieren DB.
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(
     prefix="/catalog",
     tags=["Catálogos Institucionales"]
 )
+
+
+def _obtener_servicios(request: Request):
+    from main import servicios
+    return servicios
+
 
 METODOS_TRONALES = [
     {
@@ -135,21 +141,19 @@ async def listar_metodos():
 
 
 @router.get("/skills")
-async def listar_habilidades(categoria: str = ""):
-    """Biblioteca institucional de habilidades."""
-    habilidades = HABILIDADES_INSTITUCIONALES
-    if categoria:
-        habilidades = [
-            h for h in habilidades
-            if h["categoria"] == categoria
-        ]
+async def listar_habilidades(request: Request, categoria: str = ""):
+    """Biblioteca institucional de habilidades desde skills_catalog."""
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+    habilidades = await supabase.listar_catalogo_skills(categoria or None)
+    categorias = await supabase.listar_skill_categories()
     return {
         "skills": habilidades,
         "total": len(habilidades),
-        "categorias": list({
-            h["categoria"]
-            for h in HABILIDADES_INSTITUCIONALES
-        }),
+        "categorias": categorias,
     }
 
 

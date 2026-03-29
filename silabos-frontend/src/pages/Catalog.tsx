@@ -11,7 +11,7 @@ import NavSidebar from '../components/NavSidebar';
 import Toast, { useToast } from '../components/Toast';
 
 type CatalogTab = 'methods' | 'skills' | 'instruments';
-type SkillCategory = '' | 'cognitiva' | 'investigativa' | 'pedagogica' | 'comunicativa' | 'tecnologica' | 'socioemocional';
+type SkillCategory = string;
 
 const CATEGORY_STYLES: Record<string, string> = {
   cognitiva: 'bg-blue-50 text-blue-700',
@@ -20,13 +20,36 @@ const CATEGORY_STYLES: Record<string, string> = {
   comunicativa: 'bg-purple-50 text-purple-700',
   tecnologica: 'bg-cyan-50 text-cyan-700',
   socioemocional: 'bg-pink-50 text-pink-700',
+  gestion: 'bg-amber-50 text-amber-700',
 };
+
+function normalizeCategoryKey(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function getCategoryStyle(category: string) {
+  const normalized = normalizeCategoryKey(category);
+
+  if (normalized.includes('cognit')) return CATEGORY_STYLES.cognitiva;
+  if (normalized.includes('investig')) return CATEGORY_STYLES.investigativa;
+  if (normalized.includes('pedagog')) return CATEGORY_STYLES.pedagogica;
+  if (normalized.includes('comunic')) return CATEGORY_STYLES.comunicativa;
+  if (normalized.includes('tecnolog')) return CATEGORY_STYLES.tecnologica;
+  if (normalized.includes('socioemocional')) return CATEGORY_STYLES.socioemocional;
+  if (normalized.includes('gestion')) return CATEGORY_STYLES.gestion;
+
+  return 'bg-slate-100 text-slate-600';
+}
 
 export default function Catalog() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<CatalogTab>('methods');
   const [methods, setMethods] = useState<TeachingMethod[]>([]);
   const [skills, setSkills] = useState<InstitutionalSkill[]>([]);
+  const [skillCategories, setSkillCategories] = useState<string[]>([]);
   const [instruments, setInstruments] = useState<EvaluationInstrument[]>([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
   const [loadingSkills, setLoadingSkills] = useState(true);
@@ -75,8 +98,10 @@ export default function Catalog() {
       try {
         const response = await api.getSkills(skillCategory || undefined);
         setSkills(response.skills || []);
+        setSkillCategories(response.categorias || []);
       } catch {
         setSkills([]);
+        setSkillCategories([]);
         showToast('No se pudieron cargar las habilidades institucionales', 'error');
       } finally {
         setLoadingSkills(false);
@@ -86,7 +111,7 @@ export default function Catalog() {
     loadSkills();
   }, [showToast, skillCategory]);
 
-  const skillFilters = useMemo(
+  const legacySkillFilters = useMemo(
     () => [
       { value: '', label: 'Todas' },
       { value: 'cognitiva', label: 'Cognitiva' },
@@ -97,6 +122,18 @@ export default function Catalog() {
       { value: 'socioemocional', label: 'Socioemocional' },
     ],
     [],
+  );
+  void legacySkillFilters;
+
+  const skillFilters = useMemo(
+    () => [
+      { value: '', label: 'Todas' },
+      ...skillCategories.map((category) => ({
+        value: category,
+        label: category,
+      })),
+    ],
+    [skillCategories],
   );
 
   return (
@@ -233,6 +270,10 @@ export default function Catalog() {
                 ))}
               </div>
 
+              <p className="mt-4 text-sm text-slate-500">
+                Mostrando {skills.length} habilidades institucionales activas.
+              </p>
+
               {loadingSkills ? (
                 <div className="mt-6 grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
                   {Array.from({ length: 6 }).map((_, index) => (
@@ -246,7 +287,7 @@ export default function Catalog() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            CATEGORY_STYLES[skill.categoria] || 'bg-slate-100 text-slate-600'
+                            getCategoryStyle(skill.categoria)
                           }`}
                         >
                           {skill.categoria}
@@ -256,6 +297,11 @@ export default function Catalog() {
                         </span>
                       </div>
                       <h2 className="mt-4 text-xl font-bold text-slate-900">{skill.nombre}</h2>
+                      {skill.subcategoria ? (
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          {skill.subcategoria}
+                        </p>
+                      ) : null}
                       <p className="mt-2 text-sm font-semibold text-orange-600">{skill.nivel}</p>
                       <p className="mt-3 text-sm leading-6 text-slate-600">{skill.descripcion}</p>
                     </article>

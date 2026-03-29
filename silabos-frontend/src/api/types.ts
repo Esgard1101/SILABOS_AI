@@ -281,9 +281,11 @@ export interface TeachingMethod {
 }
 
 export interface InstitutionalSkill {
-  id: number;
+  id: number | string;
+  id_habilidad?: string;
   nombre: string;
   categoria: string;
+  subcategoria?: string;
   nivel: string;
   verbo: string;
   descripcion: string;

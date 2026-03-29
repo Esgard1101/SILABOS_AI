@@ -164,21 +164,41 @@ NO inventes una secuencia diferente al metodo indicado.
 
     # Habilidades del catálogo institucional (skills_catalog)
     bloque_skills = ""
-    if skills_context and (skills_context.get("verbos") or skills_context.get("instrumentos")):
+    if skills_context and (skills_context.get("verbos") or skills_context.get("habilidades")):
         verbos = skills_context.get("verbos", [])
         instrumentos = skills_context.get("instrumentos", [])
+        habilidades = skills_context.get("habilidades", [])
         partes = ["## Enfoques de habilidades seleccionados por el docente"]
+        if habilidades:
+            partes.append(
+                "### Habilidades de referencia por nivel cognitivo\n"
+                "Usalas como modelo para redactar los logros y habilidades_requeridas de cada unidad.\n"
+                "Cada fila muestra: verbo | nivel Bloom | subcategoria | que significa | evidencia sugerida\n"
+            )
+            for h in habilidades:
+                partes.append(
+                    f"- **{h['verbo']}** | {h['nivel']} | {h['subcat']} "
+                    f"-> {h['descripcion']} | evidencia: {h['evidencia']}"
+                )
+            partes.append("")
         if verbos:
             partes.append(
-                f"Usa EXCLUSIVAMENTE estos verbos para redactar logros y habilidades_requeridas:\n"
+                f"### Verbos permitidos para logros y habilidades_requeridas\n"
+                f"Usa EXCLUSIVAMENTE verbos de esta lista (elige los mas pertinentes por unidad):\n"
                 f"  {', '.join(verbos)}"
             )
         if instrumentos:
             partes.append(
+                f"### Instrumentos de evaluacion sugeridos\n"
                 f"Para sistema_evaluacion usa estos instrumentos (elige los mas pertinentes):\n"
                 f"  {', '.join(instrumentos)}"
             )
-        partes.append("NO uses verbos genericos como 'comprender', 'saber' o 'conocer' si hay verbos de la lista.")
+        partes.append(
+            "### Regla de profundidad cognitiva\n"
+            "Distribuye los verbos progresivamente: unidades 1-2 -> verbos de Comprender/Aplicar, "
+            "unidades 3-4 -> verbos de Analizar/Evaluar/Crear.\n"
+            "NO uses verbos genericos como 'comprender', 'saber' o 'conocer' si hay verbos en la lista."
+        )
         bloque_skills = "\n".join(partes) + "\n"
 
     # Bloque de contexto del curso desde BD
@@ -218,16 +238,22 @@ Generas silabos alineados al sistema educativo superior del Peru (Anexo C UNPRG)
 
 # PROCESO DE GENERACION (seguir en orden)
 PASO PREVIO - Analisis interno (no incluir en JSON):
-1. Analiza la sumilla y resultado_aprendizaje para identificar contenidos y habilidades clave
-2. Por cada unidad tematica, deriva UN desempeno principal con verbos taxonomicos (Bloom)
-   Formato del desempeno: "Verbo accion + objeto + condicion"
-   Ejemplo: "Analiza documentos curriculares identificando competencias del perfil de egreso"
+1. Lee la sumilla y resultado_aprendizaje para identificar los 4 bloques de contenido principales
+2. Para cada unidad tematica (1 a 4) deriva UN desempeno principal:
+   - Unidades 1-2: usa verbos de nivel Comprender o Aplicar del catalogo de habilidades
+   - Unidades 3-4: usa verbos de nivel Analizar, Evaluar o Crear del catalogo de habilidades
+   - Formato del desempeno: "Verbo accion + objeto disciplinar + condicion o contexto"
+   - Ejemplo correcto: "Analiza documentos curriculares identificando competencias del perfil de egreso"
+   - Ejemplo incorrecto: "Conoce los documentos curriculares"
+3. Por cada desempeno, elige la evidencia_sugerida mas pertinente del catalogo de habilidades
+   para usarla en habilidades_requeridas y en sistema_evaluacion
 
 PASO PRINCIPAL - Generacion del JSON:
-3. Usa los desempenos del paso 2 para completar "logro" y "habilidades_requeridas" por unidad
-4. Si se proporciono una capacidad oficial, copia ese texto EXACTAMENTE en "capacidad_del_curso" sin reescribirlo ni resumirlo
-5. Genera el cronograma semanal SIGUIENDO la secuencia del metodo pedagogico indicado
-6. Alinea los instrumentos de evaluacion a los desempenos generados
+4. Usa los desempenos del paso 2 para completar "logro" y "habilidades_requeridas" por unidad
+5. Si se proporciono una capacidad oficial, copia ese texto EXACTAMENTE en "capacidad_del_curso" sin reescribirlo ni resumirlo
+6. Genera el cronograma semanal SIGUIENDO la secuencia del metodo pedagogico indicado
+7. En sistema_evaluacion, usa los instrumentos del catalogo de habilidades alineados
+   a los desempenos generados en el paso 2 (no inventes instrumentos si hay lista)
 
 # TAREA
 Genera el silabo completo en JSON con esta estructura exacta:

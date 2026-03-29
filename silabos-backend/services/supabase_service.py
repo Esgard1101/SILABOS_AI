@@ -1092,13 +1092,78 @@ class SupabaseService:
             logger.error(f"Error al listar categorías de skills: {e}")
             return []
 
+    @staticmethod
+    def _texto_skill_catalogo(valor, fallback: str = "") -> str:
+        if valor is None:
+            return fallback
+        texto = str(valor).strip()
+        return texto or fallback
+
+    def _map_skill_catalogo_item(self, fila: dict, fallback_id: int) -> dict:
+        return {
+            "id": fila.get("id") or fallback_id,
+            "id_habilidad": self._texto_skill_catalogo(fila.get("id_habilidad")),
+            "nombre": self._texto_skill_catalogo(
+                fila.get("nombre"),
+                "Sin nombre registrado",
+            ),
+            "descripcion": self._texto_skill_catalogo(
+                fila.get("descripcion"),
+                "Sin descripcion registrada",
+            ),
+            "categoria": self._texto_skill_catalogo(
+                fila.get("categoria"),
+                "Sin categoria",
+            ),
+            "subcategoria": self._texto_skill_catalogo(fila.get("subcategoria")),
+            "nivel": self._texto_skill_catalogo(
+                fila.get("nivel_cognitivo"),
+                "Sin nivel cognitivo registrado",
+            ),
+            "verbo": self._texto_skill_catalogo(
+                fila.get("verbo_principal"),
+                "Sin verbo registrado",
+            ),
+        }
+
+    def _listar_catalogo_skills_sync(self, categoria: Optional[str] = None) -> list:
+        params = {}
+        where_categoria = ""
+        if categoria:
+            where_categoria = " AND categoria = :categoria"
+            params["categoria"] = categoria
+
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT *
+                    FROM skills_catalog
+                    WHERE estado = 'activa'
+                    {where_categoria}
+                    ORDER BY categoria ASC, subcategoria ASC, nombre ASC
+                """),
+                params,
+            ).mappings().all()
+
+        return [
+            self._map_skill_catalogo_item(fila, index + 1)
+            for index, fila in enumerate(filas)
+        ]
+
+    async def listar_catalogo_skills(self, categoria: Optional[str] = None) -> list:
+        try:
+            return await self._ejecutar(self._listar_catalogo_skills_sync, categoria)
+        except Exception as e:
+            logger.error(f"Error al listar catalogo completo de skills: {e}")
+            return []
+
     def _listar_skills_por_categorias_sync(self, categories: list) -> dict:
         """
         Devuelve verbos e instrumentos para inyectar en el prompt.
         No devuelve registros completos al frontend — solo lo que necesita la IA.
         """
         if not categories:
-            return {"verbos": [], "instrumentos": []}
+            return {"verbos": [], "instrumentos": [], "habilidades": []}
 
         # Construir placeholders de forma segura
         placeholders = ", ".join([f":cat{i}" for i in range(len(categories))])
@@ -1107,29 +1172,87 @@ class SupabaseService:
         with self._Session() as sesion:
             filas = sesion.execute(
                 text(f"""
-                    SELECT verbo_principal, evidencias_sugeridas, instrumentos_sugeridos
+                    SELECT
+                        categoria,
+                        subcategoria,
+                        nivel_cognitivo,
+                        verbo_principal,
+                        descripcion,
+                        evidencias_sugeridas,
+                        instrumentos_sugeridos
                     FROM skills_catalog
                     WHERE categoria IN ({placeholders})
                       AND estado = 'activa'
-                    ORDER BY categoria ASC, verbo_principal ASC
+                    ORDER BY categoria ASC, nivel_cognitivo ASC, verbo_principal ASC
                 """),
                 params,
             ).mappings().all()
 
         verbos = []
+        verbos_set = set()
+        instrumentos = []
         instrumentos_set = set()
+        habilidades = []
+        habilidades_set = set()
         for fila in filas:
             if fila.get("verbo_principal"):
-                verbos.append(fila["verbo_principal"])
+                verbo = fila["verbo_principal"].strip()
+                verbo_key = verbo.lower()
+                if verbo and verbo_key not in verbos_set:
+                    verbos_set.add(verbo_key)
+                    verbos.append(verbo)
             if fila.get("instrumentos_sugeridos"):
-                for inst in fila["instrumentos_sugeridos"].split(","):
+                instrumentos_texto = (
+                    fila["instrumentos_sugeridos"]
+                    .replace("\r", "\n")
+                    .replace(";", ",")
+                )
+                for inst in instrumentos_texto.replace("\n", ",").split(","):
                     limpio = inst.strip()
-                    if limpio:
-                        instrumentos_set.add(limpio)
+                    limpio_key = limpio.lower()
+                    if limpio and limpio_key not in instrumentos_set:
+                        instrumentos_set.add(limpio_key)
+                        instrumentos.append(limpio)
+
+            evidencia = self._texto_skill_catalogo(
+                fila.get("evidencias_sugeridas"),
+                "Producto o evidencia alineada al desempeno",
+            )
+            if len(evidencia) > 140:
+                evidencia = evidencia[:137].rstrip() + "..."
+
+            habilidad = {
+                "verbo": self._texto_skill_catalogo(
+                    fila.get("verbo_principal"),
+                    "Sin verbo registrado",
+                ),
+                "nivel": self._texto_skill_catalogo(
+                    fila.get("nivel_cognitivo"),
+                    "Sin nivel cognitivo",
+                ),
+                "subcat": self._texto_skill_catalogo(
+                    fila.get("subcategoria"),
+                    self._texto_skill_catalogo(fila.get("categoria"), "Sin subcategoria"),
+                ),
+                "descripcion": self._texto_skill_catalogo(
+                    fila.get("descripcion"),
+                    "Sin descripcion registrada",
+                ),
+                "evidencia": evidencia,
+            }
+            habilidad_key = (
+                habilidad["verbo"].lower(),
+                habilidad["nivel"].lower(),
+                habilidad["subcat"].lower(),
+            )
+            if habilidad_key not in habilidades_set:
+                habilidades_set.add(habilidad_key)
+                habilidades.append(habilidad)
 
         return {
             "verbos": verbos[:30],           # Máximo 30 verbos para no inflar el prompt
-            "instrumentos": list(instrumentos_set)[:15],
+            "instrumentos": instrumentos[:15],
+            "habilidades": habilidades[:12],
         }
 
     async def listar_skills_por_categorias(self, categories: list) -> dict:
@@ -1137,7 +1260,7 @@ class SupabaseService:
             return await self._ejecutar(self._listar_skills_por_categorias_sync, categories)
         except Exception as e:
             logger.error(f"Error al listar skills por categorías: {e}")
-            return {"verbos": [], "instrumentos": []}
+            return {"verbos": [], "instrumentos": [], "habilidades": []}
 
     # ──────────────────────────────────────────────
     # PROGRAMAS ACADÉMICOS
