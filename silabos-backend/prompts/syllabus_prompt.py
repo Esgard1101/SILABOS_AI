@@ -85,6 +85,9 @@ def construir_prompt_silabo(
     datos_curso: dict,
     contexto_curricular: str,
     metodo: dict = None,
+    skills_context: dict = None,
+    grading_scheme: list = None,
+    grading_requires_midterm_final: bool = False,
 ) -> str:
     """
     Construye el prompt en Markdown para generar un silabo universitario peruano.
@@ -132,18 +135,19 @@ Distribuye las fases de forma progresiva a lo largo de las 16 semanas.
 NO inventes una secuencia diferente al metodo indicado.
 """
 
-    grading_scheme = datos_curso.get("grading_scheme") or []
-    grading_requires_midterm_final = bool(
+    # Calificación: prioridad → parámetro directo → fallback desde datos_curso
+    _grading = grading_scheme or datos_curso.get("grading_scheme") or []
+    _midterm = grading_requires_midterm_final or bool(
         datos_curso.get("grading_requires_midterm_final")
     )
     bloque_calificacion = ""
-    if grading_scheme or grading_requires_midterm_final:
+    if _grading or _midterm:
         lineas_calificacion = ["## Sistema de calificacion solicitado"]
-        if grading_scheme:
+        if _grading:
             lineas_calificacion.append(
-                "Respeta este esquema si el docente decidio personalizarlo:"
+                "USA EXACTAMENTE esta tabla en sistema_evaluacion.criterios:"
             )
-            for item in grading_scheme:
+            for item in (_grading if isinstance(_grading[0], dict) else [i.__dict__ if hasattr(i, '__dict__') else i for i in _grading]):
                 evidencia = item.get("evidencia", "")
                 sigla = item.get("sigla", "")
                 porcentaje = item.get("porcentaje", 0)
@@ -151,11 +155,31 @@ NO inventes una secuencia diferente al metodo indicado.
                 lineas_calificacion.append(
                     f'- {evidencia} | sigla: {sigla} | peso: {porcentaje}% | cronograma: {cronograma}'
                 )
-        if grading_requires_midterm_final:
+            lineas_calificacion.append("Verifica que los porcentajes sumen 100% exactamente.")
+        if _midterm:
             lineas_calificacion.append(
-                "- Debe incluir explicitamente examen parcial y examen final."
+                "- Debe incluir explicitamente examen parcial (semana 8) y examen final (semana 16)."
             )
         bloque_calificacion = "\n".join(lineas_calificacion) + "\n"
+
+    # Habilidades del catálogo institucional (skills_catalog)
+    bloque_skills = ""
+    if skills_context and (skills_context.get("verbos") or skills_context.get("instrumentos")):
+        verbos = skills_context.get("verbos", [])
+        instrumentos = skills_context.get("instrumentos", [])
+        partes = ["## Enfoques de habilidades seleccionados por el docente"]
+        if verbos:
+            partes.append(
+                f"Usa EXCLUSIVAMENTE estos verbos para redactar logros y habilidades_requeridas:\n"
+                f"  {', '.join(verbos)}"
+            )
+        if instrumentos:
+            partes.append(
+                f"Para sistema_evaluacion usa estos instrumentos (elige los mas pertinentes):\n"
+                f"  {', '.join(instrumentos)}"
+            )
+        partes.append("NO uses verbos genericos como 'comprender', 'saber' o 'conocer' si hay verbos de la lista.")
+        bloque_skills = "\n".join(partes) + "\n"
 
     # Bloque de contexto del curso desde BD
     bloque_sumilla = ""
@@ -188,7 +212,7 @@ Generas silabos alineados al sistema educativo superior del Peru (Anexo C UNPRG)
 **Creditos:** {datos_curso.get("creditos")} | **Horas teoria:** {datos_curso.get("horas_teoria")} | **Horas practica:** {datos_curso.get("horas_practica")}
 **Semestre:** {datos_curso.get("semestre")} | **Docente:** {datos_curso.get("docente")}
 **Modalidad:** {datos_curso.get("modalidad")} | **Enfoque:** {enfoque}
-{bloque_sumilla}{bloque_metodo}{bloque_calificacion}{bloque_curricular}
+{bloque_sumilla}{bloque_metodo}{bloque_skills}{bloque_calificacion}{bloque_curricular}
 # ENFOQUE DIDACTICO
 {descripcion_enfoque}
 

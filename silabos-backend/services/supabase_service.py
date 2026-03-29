@@ -1070,6 +1070,76 @@ class SupabaseService:
             return False
 
     # ──────────────────────────────────────────────
+    # CATÁLOGO DE HABILIDADES
+    # ──────────────────────────────────────────────
+
+    def _listar_skill_categories_sync(self) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT DISTINCT categoria
+                    FROM skills_catalog
+                    WHERE estado = 'activa'
+                    ORDER BY categoria ASC
+                """)
+            ).mappings().all()
+        return [fila["categoria"] for fila in filas]
+
+    async def listar_skill_categories(self) -> list:
+        try:
+            return await self._ejecutar(self._listar_skill_categories_sync)
+        except Exception as e:
+            logger.error(f"Error al listar categorías de skills: {e}")
+            return []
+
+    def _listar_skills_por_categorias_sync(self, categories: list) -> dict:
+        """
+        Devuelve verbos e instrumentos para inyectar en el prompt.
+        No devuelve registros completos al frontend — solo lo que necesita la IA.
+        """
+        if not categories:
+            return {"verbos": [], "instrumentos": []}
+
+        # Construir placeholders de forma segura
+        placeholders = ", ".join([f":cat{i}" for i in range(len(categories))])
+        params = {f"cat{i}": cat for i, cat in enumerate(categories)}
+
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT verbo_principal, evidencias_sugeridas, instrumentos_sugeridos
+                    FROM skills_catalog
+                    WHERE categoria IN ({placeholders})
+                      AND estado = 'activa'
+                    ORDER BY categoria ASC, verbo_principal ASC
+                """),
+                params,
+            ).mappings().all()
+
+        verbos = []
+        instrumentos_set = set()
+        for fila in filas:
+            if fila.get("verbo_principal"):
+                verbos.append(fila["verbo_principal"])
+            if fila.get("instrumentos_sugeridos"):
+                for inst in fila["instrumentos_sugeridos"].split(","):
+                    limpio = inst.strip()
+                    if limpio:
+                        instrumentos_set.add(limpio)
+
+        return {
+            "verbos": verbos[:30],           # Máximo 30 verbos para no inflar el prompt
+            "instrumentos": list(instrumentos_set)[:15],
+        }
+
+    async def listar_skills_por_categorias(self, categories: list) -> dict:
+        try:
+            return await self._ejecutar(self._listar_skills_por_categorias_sync, categories)
+        except Exception as e:
+            logger.error(f"Error al listar skills por categorías: {e}")
+            return {"verbos": [], "instrumentos": []}
+
+    # ──────────────────────────────────────────────
     # PROGRAMAS ACADÉMICOS
     # ──────────────────────────────────────────────
 

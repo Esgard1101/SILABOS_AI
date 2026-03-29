@@ -96,6 +96,40 @@ async def listar_metodos():
     return {"success": True, "data": metodos, "error": None}
 
 
+@router.get("/skills/categories")
+async def listar_skill_categories(request: Request):
+    """
+    Lista las categorías de habilidades disponibles en skills_catalog.
+    Usado por el wizard paso 4 (Enfoques de habilidades).
+    """
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+    categories = await supabase.listar_skill_categories()
+    return {"success": True, "data": categories, "error": None}
+
+
+@router.get("/skills")
+async def listar_skills(
+    request: Request,
+    categories: str = Query(default="", description="Categorías separadas por coma"),
+):
+    """
+    Devuelve verbos e instrumentos para las categorías seleccionadas.
+    Usado internamente por generate-v2 — también disponible si el frontend necesita preview.
+    """
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+    cats = [c.strip() for c in categories.split(",") if c.strip()] if categories else []
+    skills_context = await supabase.listar_skills_por_categorias(cats)
+    return {"success": True, "data": skills_context, "error": None}
+
+
 @router.get("/methods/suggest")
 async def sugerir_metodo(request: Request, course_id: str = Query(...)):
     """

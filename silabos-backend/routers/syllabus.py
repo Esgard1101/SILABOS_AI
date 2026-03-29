@@ -467,6 +467,17 @@ async def generar_silabo_v2(
         # Contexto curricular vacío por defecto
         contexto_curricular = ""
 
+        # Obtener skills del catálogo si el docente eligió categorías
+        skills_context = {"verbos": [], "instrumentos": []}
+        if datos.selected_skill_categories:
+            skills_context = await supabase.listar_skills_por_categorias(
+                datos.selected_skill_categories
+            )
+            logger.info(
+                f"Skills inyectados: {len(skills_context.get('verbos', []))} verbos, "
+                f"{len(skills_context.get('instrumentos', []))} instrumentos"
+            )
+
         # Llamar al generador con el método pedagógico
         from prompts.syllabus_prompt import construir_prompt_silabo
         from google import genai
@@ -475,7 +486,16 @@ async def generar_silabo_v2(
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
         model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 
-        prompt = construir_prompt_silabo(datos_prompt, contexto_curricular, metodo=metodo_dict)
+        grading_list = [item.model_dump() for item in (datos.grading_scheme or [])]
+
+        prompt = construir_prompt_silabo(
+            datos_prompt,
+            contexto_curricular,
+            metodo=metodo_dict,
+            skills_context=skills_context,
+            grading_scheme=grading_list,
+            grading_requires_midterm_final=datos.grading_requires_midterm_final,
+        )
 
         client = genai.Client(api_key=api_key)
         try:

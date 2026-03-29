@@ -5,6 +5,7 @@
 // Paso 4: Confirmar y generar
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { BASE_URL, getToken } from '../api/client';
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,7 +24,7 @@ import NotebookLMGuide from '../components/NotebookLMGuide';
 import Toast, { useToast } from '../components/Toast';
 import { useAppContext } from '../hooks/useAppContext';
 
-type Step = 1 | 2 | 3 | 4 | 5;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface GradingRow {
   evidencia: string;
@@ -36,8 +37,9 @@ const STEP_LABELS: Record<Step, string> = {
   1: 'Curso',
   2: 'Bibliografía',
   3: 'Método',
-  4: 'Calificación',
-  5: 'Confirmar',
+  4: 'Habilidades',
+  5: 'Calificación',
+  6: 'Confirmar',
 };
 
 const DEFAULT_GRADING_ROWS: GradingRow[] = [
@@ -102,6 +104,12 @@ export default function SyllabusCreator() {
 
   const [selectedMethodId, setSelectedMethodId] = useState<number | null>(null);
   const [selectedMethodName, setSelectedMethodName] = useState<string>('');
+
+  // Paso 4 — Enfoques de habilidades
+  const [skillCategories, setSkillCategories] = useState<string[]>([]);
+  const [loadingSkillCategories, setLoadingSkillCategories] = useState(false);
+  const [selectedSkillCategories, setSelectedSkillCategories] = useState<string[]>([]);
+
   const [useAiGrading, setUseAiGrading] = useState(true);
   const [requireMidtermFinal, setRequireMidtermFinal] = useState(false);
   const [gradingRows, setGradingRows] = useState<GradingRow[]>(DEFAULT_GRADING_ROWS);
@@ -119,6 +127,19 @@ export default function SyllabusCreator() {
       item.cronograma.trim().length > 0,
   );
   const canContinueFromGrading = useAiGrading || (gradingTotal === 100 && gradingRowsValid);
+
+  // Cargar categorías de habilidades cuando llega al paso 4
+  useEffect(() => {
+    if (step !== 4 || skillCategories.length > 0) return;
+    setLoadingSkillCategories(true);
+    fetch(`${BASE_URL}/api/skills/categories`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((r) => r.json())
+      .then((json) => setSkillCategories(Array.isArray(json.data) ? json.data : []))
+      .catch(() => showToast('No se pudieron cargar las categorías de habilidades', 'error'))
+      .finally(() => setLoadingSkillCategories(false));
+  }, [step]);
 
   // Cargar cursos del programa al montar
   useEffect(() => {
@@ -189,6 +210,7 @@ export default function SyllabusCreator() {
         course_id: courseDetail.id,
         teaching_method_id: selectedMethodId,
         semester: context.semester,
+        selected_skill_categories: selectedSkillCategories,
         grading_scheme: useAiGrading ? undefined : gradingRows,
         grading_requires_midterm_final: requireMidtermFinal,
       });
@@ -417,8 +439,102 @@ export default function SyllabusCreator() {
             </div>
           )}
 
-          {/* ──── PASO 4: Confirmar y generar ──── */}
+          {/* ──── PASO 4: Enfoques de habilidades ──── */}
           {step === 4 && courseDetail && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Enfoques de habilidades</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Elige hasta 3 categorías. La IA usará sus verbos e instrumentos al redactar logros y
+                  criterios de evaluación del sílabo.
+                </p>
+              </div>
+
+              <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-sm text-orange-800 leading-relaxed">
+                <strong>¿Para qué sirve esto?</strong> Cada categoría aporta un enfoque distinto:
+                verbos taxonomicos específicos (Bloom) y tipos de instrumentos de evaluación. Al
+                seleccionarlas, el sílabo generado usará exactamente esos verbos en los logros de cada
+                unidad y en los criterios de calificación — alineando el curso al perfil de egreso de tu
+                programa.
+              </div>
+
+              {loadingSkillCategories ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500 p-4">
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  Cargando categorías…
+                </div>
+              ) : skillCategories.length === 0 ? (
+                <p className="text-sm text-gray-500 bg-gray-50 rounded-xl p-4">
+                  No hay categorías disponibles en este momento.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {skillCategories.map((cat) => {
+                    const selected = selectedSkillCategories.includes(cat);
+                    const atLimit = !selected && selectedSkillCategories.length >= 3;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        disabled={atLimit}
+                        onClick={() =>
+                          setSelectedSkillCategories((prev) =>
+                            selected ? prev.filter((c) => c !== cat) : [...prev, cat],
+                          )
+                        }
+                        className={`px-3 py-1.5 rounded-full border text-sm font-medium transition-colors ${
+                          selected
+                            ? 'bg-orange-500 border-orange-500 text-white'
+                            : atLimit
+                            ? 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                            : 'bg-white border-gray-200 text-gray-700 hover:border-orange-300 hover:bg-orange-50'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedSkillCategories.length > 0 && (
+                <p className="text-xs text-gray-500">
+                  {selectedSkillCategories.length}/3 categoría{selectedSkillCategories.length > 1 ? 's' : ''} seleccionada{selectedSkillCategories.length > 1 ? 's' : ''}: <strong>{selectedSkillCategories.join(', ')}</strong>
+                </p>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => setStep(3)}
+                  className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Atrás
+                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setSelectedSkillCategories([]); setStep(5); }}
+                    className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                  >
+                    Omitir
+                  </button>
+                  <button
+                    onClick={() => setStep(5)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg text-sm transition-colors"
+                  >
+                    Continuar
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──── PASO 5: Sistema de calificación ──── */}
+          {step === 5 && courseDetail && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Sistema de calificación</h2>
@@ -539,14 +655,14 @@ export default function SyllabusCreator() {
 
               <div className="flex items-center justify-between pt-2">
                 <button
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep(4)}
                   className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Atrás
                 </button>
                 <button
-                  onClick={() => setStep(5)}
+                  onClick={() => setStep(6)}
                   disabled={!canContinueFromGrading}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold rounded-lg text-sm transition-colors"
                 >
@@ -557,7 +673,8 @@ export default function SyllabusCreator() {
             </div>
           )}
 
-          {step === 5 && courseDetail && (
+          {/* ──── PASO 6: Confirmar y generar ──── */}
+          {step === 6 && courseDetail && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Confirmar y generar</h2>
@@ -597,6 +714,16 @@ export default function SyllabusCreator() {
                 </div>
                 <div className="px-5 py-4">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
+                    Enfoques de habilidades
+                  </p>
+                  <p className="text-sm font-medium text-gray-800">
+                    {selectedSkillCategories.length > 0
+                      ? selectedSkillCategories.join(', ')
+                      : 'Ninguno seleccionado (IA propone)'}
+                  </p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">
                     Calificación
                   </p>
                   <p className="text-sm font-medium text-gray-800">
@@ -610,7 +737,7 @@ export default function SyllabusCreator() {
 
               <div className="flex items-center justify-between pt-2">
                 <button
-                  onClick={() => setStep(4)}
+                  onClick={() => setStep(5)}
                   className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
                 >
                   <ArrowLeft className="w-4 h-4" />

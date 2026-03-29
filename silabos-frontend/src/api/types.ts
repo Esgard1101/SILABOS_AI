@@ -1,4 +1,4 @@
-﻿// Tipos base de respuesta de la API FastAPI
+// Tipos base de respuesta de la API FastAPI
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -390,6 +390,7 @@ export interface SyllabusGenerateV2Input {
   course_id: string;
   teaching_method_id: number | null;
   semester: string;
+  selected_skill_categories?: string[];
   grading_scheme?: Array<{
     evidencia: string;
     sigla: string;

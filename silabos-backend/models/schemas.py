@@ -192,6 +192,13 @@ class DocumentoInfo(BaseModel):
 # Generación v2 — Wizard 4 pasos
 # Recibe IDs; el backend obtiene los datos de BD
 # ─────────────────────────────────────────────
+class GradingRowInput(BaseModel):
+    evidencia: str
+    sigla: str
+    porcentaje: float
+    cronograma: str
+
+
 class SyllabusGenerateRequest(BaseModel):
     course_id: str = Field(..., description="UUID del curso seleccionado")
     teaching_method_id: Optional[int] = Field(
@@ -201,6 +208,18 @@ class SyllabusGenerateRequest(BaseModel):
     semester: str = Field(
         default="2025-I",
         description="Semestre académico, ej: 2025-I"
+    )
+    selected_skill_categories: List[str] = Field(
+        default=[],
+        description="Categorías de skills_catalog seleccionadas por el docente"
+    )
+    grading_scheme: Optional[List[GradingRowInput]] = Field(
+        default=None,
+        description="Tabla de calificación personalizada. None → IA propone"
+    )
+    grading_requires_midterm_final: bool = Field(
+        default=False,
+        description="Si True, el prompt exige incluir examen parcial y final"
     )
 
 
@@ -214,7 +233,7 @@ class GradingSchemeItem(BaseModel):
     cronograma: str
 
 
-class SyllabusGenerateRequest(BaseModel):
+class LegacySyllabusGenerateRequest(BaseModel):
     course_id: str = Field(..., description="UUID del curso seleccionado")
     teaching_method_id: Optional[int] = Field(
         default=None,
