@@ -25,6 +25,18 @@ UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _normalize_database_url(database_url: str) -> str:
+    """
+    Acepta URLs estilo postgres:// y las normaliza al formato que
+    SQLAlchemy espera para psycopg2.
+    """
+    if database_url.startswith("postgres://"):
+        return "postgresql+psycopg2://" + database_url[len("postgres://"):]
+    if database_url.startswith("postgresql://"):
+        return "postgresql+psycopg2://" + database_url[len("postgresql://"):]
+    return database_url
+
+
 class SupabaseService:
     """
     Servicio de base de datos con SQLAlchemy síncrono + psycopg2.
@@ -39,6 +51,7 @@ class SupabaseService:
                 "DATABASE_URL no está configurada en .env. "
                 "Formato esperado: postgresql+psycopg2://usuario:contraseña@host:puerto/basededatos"
             )
+        database_url = _normalize_database_url(database_url)
 
         # Motor síncrono con psycopg2
         self._engine = create_engine(

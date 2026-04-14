@@ -1,0 +1,205 @@
+# Informe de requerimientos para despliegue en producción – Sistema "Sílabos IA"
+
+## 1. Objetivo del documento
+
+Este documento define los requerimientos técnicos, operativos y de infraestructura necesarios para poner en producción la aplicación "Sílabos IA". También establece una estimación de costos mensuales de operación y deja constancia de los gastos ya realizados.
+
+## 2. Alcance del despliegue
+
+El despliegue a producción contempla:
+
+- Backend de la aplicación en un servidor VPS dedicado (proveedor actual: CubePath).
+- Frontend desplegado en un hosting con cPanel proporcionado por el cliente.
+- Base de datos propia en PostgreSQL instalada en el VPS de producción.
+- Integraciones con APIs de Google para funcionalidades de inteligencia artificial.
+
+## 3. Requerimientos técnicos
+
+### 3.1 Backend en VPS (API y servicios de negocio)
+
+- Servidor VPS con las siguientes características mínimas:
+  - 2 vCPU.
+  - 4 GB de RAM.
+  - 80 GB de almacenamiento SSD.
+- Sistema operativo Linux (por ejemplo, Ubuntu Server LTS).
+- Servicios a instalar y configurar:
+  - Runtime del backend (Node.js, Python u otro stack utilizado por el proyecto).
+  - Servidor de aplicaciones (por ejemplo, PM2, Gunicorn, etc., según el stack actual).
+  - Servidor web/proxy inverso (Nginx o similar) para exponer la API vía HTTPS.
+  - Certificado SSL (Let's Encrypt u otro proveedor) para cifrar el tráfico.
+- Configuración de seguridad básica:
+  - Acceso SSH seguro (usuario no root, llaves SSH, firewall con puertos mínimos expuestos).
+  - Actualizaciones de seguridad del sistema operativo.
+- Configuración de logs y monitoreo básico (logs de aplicación y sistema, verificación de uso de CPU, RAM y disco).
+
+### 3.2 Frontend en cPanel
+
+- Despliegue del frontend estático (build de React/Vue/Next ) en el hosting con cPanel del cliente.
+- Requerimientos:
+  - Acceso a cPanel y/o FTP para subir el build del proyecto.
+  - Configuración del dominio o subdominio para apuntar al frontend.
+  - En caso de SPA (Single Page Application), configuración de reglas de rewrite (por ejemplo, .htaccess) para manejo correcto de rutas.
+- El frontend se comunicará con la API alojada en el VPS mediante URL pública (HTTPS).
+
+### 3.3 Base de datos PostgreSQL en el VPS
+
+- Instalación de PostgreSQL en el VPS de CubePath (en el mismo servidor donde corre el backend o en una instancia separada si se decide más adelante).
+- Creación de base de datos de producción con:
+  - Usuario y contraseña dedicados.
+  - Políticas de acceso restringido (solo desde el backend y, si aplica, IPs específicas).
+- Migración desde Supabase:
+  - Exportar un "SQL dump" completo desde Supabase (esquema + datos), utilizando herramientas compatibles con PostgreSQL como `pg_dump` o exportadores equivalentes.
+  - Importar dicho dump en la nueva instancia de PostgreSQL en el VPS.
+  - Ajustar cadenas de conexión del backend para apuntar a la nueva base de datos.
+- Estrategia de respaldo:
+  - Configuración de backups periódicos (por ejemplo, diarios) de la base de datos.
+  - Almacenamiento de los respaldos en disco y, opcionalmente, en ubicación externa (otro servidor o almacenamiento en la nube).
+
+### 3.4 Integraciones con APIs de Google
+
+- Uso de APIs de Google para funcionalidades de IA (por ejemplo, modelos de lenguaje, visión u otras APIs específicas que se definan en el proyecto).
+- Requerimientos:
+  - Proyecto configurado en Google Cloud Platform (GCP).
+  - Creación y resguardo de claves de API/credenciales de servicio.
+  - Configuración de variables de entorno en el backend para no exponer credenciales en el código fuente.
+- Control de costos:
+  - Definir límites de uso y alertas de presupuesto en GCP para evitar consumos inesperados.
+
+## 4. Requerimientos operativos
+
+- Gestión y administración del servidor VPS (actualizaciones, seguridad básica, monitoreo de recursos).
+- Procedimiento de despliegue a producción:
+  - Pipeline de build y deploy (manual o automatizado) desde el repositorio de código hacia el VPS y el hosting de cPanel.
+  - Validación en entorno de prueba antes de publicar cambios en producción.
+- Gestión de incidencias:
+  - Canal de contacto para reportar caídas o errores.
+  - Ventanas de mantenimiento planificadas para actualizaciones mayores.
+
+## 5. Costos estimados mensuales para el cliente
+
+Los siguientes montos se plantean como referencia para el cliente, considerando un margen de ganancia por servicios de administración y soporte.
+
+### 5.1 VPS backend (CubePath)
+
+- Costo real del plan gp.micro: aproximadamente 8 USD/mes por la instancia de 2 vCPU, 4 GB RAM y 80 GB de almacenamiento, más 1.51 USD/mes por la IP flotante, lo que da un total aproximado de 9.51 USD/mes.
+- Precio propuesto al cliente: 15 USD/mes por el servicio de hosting administrado del backend.
+  - Este monto incluye: configuración inicial del servidor, despliegue de la API, configuración de seguridad básica, monitoreo y apoyo en caso de incidencias.
+
+### 5.2 APIs de Google (IA)
+
+- Se propone un presupuesto inicial de 12 USD/mes para consumo de APIs de Google.
+  - En la práctica, durante los primeros meses, el uso real puede ser menor si la aplicación no tiene un volumen masivo de usuarios, generando un mayor margen para el desarrollador mientras el sistema escala.
+  - Este presupuesto se revisará mensualmente y se ajustará en función del consumo real y de las necesidades del cliente.
+
+### 5.3 Hosting cPanel (frontend)
+
+- El costo del hosting con cPanel se asume cubierto por el cliente (plan ya contratado) o se cotizará aparte si se requiere un nuevo plan.
+- En caso de requerir un nuevo plan, el costo típico de un hosting compartido con cPanel para sitios pequeños suele estar en el rango de 3 a 10 USD/mes, según proveedor y características.[^1]
+
+### 5.4 Resumen de costos estimados al cliente
+
+| Concepto                      | Monto estimado mensual |
+|-------------------------------|------------------------|
+| Hosting backend (VPS)         | 15 USD                 |
+| Presupuesto APIs de Google    | 12 USD                 |
+| Hosting cPanel (si aplica)    | 0 (servicio ya del cliente)   |
+
+> Nota: Los montos anteriores pueden ajustarse en función del consumo real de las APIs y de eventuales cambios de proveedor de infraestructura.
+
+## 6. Gastos aplicados (ya realizados)
+
+- Pago de 15 USD por el primer mes de VPS (plan gp.micro en CubePath) para el backend.
+  - Este pago cubre el periodo inicial de pruebas en producción y la etapa de estabilización del sistema.
+//separar esto a otro md para el developer
+## 7. Viabilidad del proveedor actual y alternativas
+
+### 7.1 Viabilidad de CubePath como proveedor de VPS
+
+- El plan actual en CubePath (2 vCPU, 4 GB RAM, 80 GB SSD) por un costo real aproximado de 9.51 USD/mes es muy competitivo frente a otros proveedores globales.
+- Por ejemplo, en DigitalOcean un VPS básico con 2 vCPU y 4 GB de RAM (Basic Droplet 4 GB / 2 vCPU) tiene un precio de 24 USD/mes.[^2][^3]
+- Hetzner, uno de los proveedores más económicos de Europa, ofrece planes de 2 vCPU y 4 GB RAM en el rango aproximado de 3.79 a 7.99 euros al mes, dependiendo de la línea de producto (CX o CPX) y la generación de hardware.[^4][^5]
+- Considerando que el sistema ya está montado en CubePath y que el margen de ganancia con una tarifa de 15 USD/mes es sólido, mantener el proveedor actual es razonable y evita el costo en tiempo y riesgo de una migración temprana.
+
+### 7.2 Evaluación de búsqueda de alternativas más baratas
+
+- Existen alternativas ligeramente más baratas (como ciertos planes de Hetzner) que podrían reducir el costo real del servidor unos pocos dólares mensuales.[^5][^4]
+- Sin embargo, la migración a otro proveedor implica:
+  - Reinstalar y configurar todo el stack.
+  - Migrar base de datos y archivos.
+  - Realizar nuevas pruebas de carga y seguridad.
+- En esta etapa inicial de producción, es más eficiente priorizar estabilidad y tiempo de salida al mercado antes que optimizar al máximo el costo de infraestructura.
+
+## 8. Análisis interno para el equipo de desarrollo (no mostrar al cliente)
+
+### 8.1 Margen de ganancia del VPS
+
+- Costo real estimado del VPS + IP flotante: 9.51 USD/mes.
+- Precio cobrado al cliente por el servidor: 15 USD/mes.
+- Margen bruto mensual estimado: 15 − 9.51 = 5.49 USD.
+- El margen porcentual aproximado es de 57%, lo cual es sano para un servicio de hosting administrado (no solo alquiler de máquina, sino también tiempo de configuración, mantenimiento y soporte).
+
+### 8.2 Comparación rápida con otros proveedores
+
+| Proveedor    | Plan aproximado (2 vCPU, 4 GB RAM) | Precio aprox. mensual | Comentario breve                             |
+|-------------|-------------------------------------|------------------------|-----------------------------------------------|
+| CubePath    | gp.micro + IP flotante             | ~9.51 USD              | Muy competitivo; ya está configurado.         |
+| DigitalOcean| Basic Droplet 4 GB / 2 vCPU        | 24 USD                 | Más del doble del costo real de CubePath.[^2][^3] |
+| Hetzner     | CX/CPX 2 vCPU / 4 GB RAM           | ~3.79–7.99 EUR         | Más barato, pero requiere migración y está en Europa.[^4][^5] |
+
+- Con estos números, el precio actual al cliente (15 USD/mes) se ve razonable, y el margen de 5.49 USD/mes puede considerarse el "fee de gestión" por administrar la infraestructura.
+- Más adelante, si el consumo de recursos crece, se puede plantear al cliente un upgrade de plan con un aumento proporcional del fee.
+
+### 8.3 Costos que se deben tener en mente (para no olvidarlos)
+
+Además del VPS y las APIs de Google, hay otros costos que conviene considerar internamente para fijar tarifas adecuadas:
+
+- **Tiempo de configuración inicial y despliegue**:
+  - Horas de trabajo para instalar servidor, PostgreSQL, desplegar backend y frontend, configurar dominios, SSL, etc.
+  - Este esfuerzo suele cobrarse como un "setup fee" único o se prorratea en las mensualidades.
+
+- **Mantenimiento y soporte continuo**:
+  - Aplicar actualizaciones de seguridad, resolver incidencias, restaurar backups en caso de fallo.
+  - Conviene estimar cuántas horas al mes se está dispuesto a dedicar y reflejarlo en la tarifa.
+
+- **Backups y almacenamiento adicional**:
+  - Espacio en disco para dumps de PostgreSQL y posibles snapshots del VPS.
+  - Si se decide usar almacenamiento externo (por ejemplo, buckets en la nube), habrá un costo adicional.
+
+- **Dominio y certificados**:
+  - El dominio suele ser pagado por el cliente, pero si se gestiona desde la cuenta del desarrollador, hay que incorporarlo al análisis.
+  - Los certificados SSL con Let's Encrypt son gratuitos, pero si se opta por certificados comerciales, tendrán un costo anual.
+
+- **Servicios complementarios** (según necesidades futuras del proyecto):
+  - Envío de correos transaccionales (por ejemplo, proveedores tipo SendGrid, Mailgun, etc.).
+  - CDN para servir el frontend o archivos estáticos más rápido a nivel global.
+  - Herramientas de monitoreo avanzadas (APM, logs centralizados, alertas).
+
+### 8.4 Estrategia de precios sugerida
+
+- Mantener el VPS en CubePath y seguir cobrando 15 USD/mes al cliente como base para el hosting administrado.
+- Usar los 12 USD/mes de presupuesto para APIs de Google como colchón inicial: si el consumo real es bajo, ese excedente compensa parte del tiempo de soporte y mantenimiento en los primeros meses.
+- Si el uso de la aplicación crece y el consumo de APIs aumenta de forma sostenida, se puede:
+  - Ajustar el presupuesto mensual de APIs en coordinación con el cliente.
+  - Proponer planes de soporte diferenciados (básico, estándar, premium) con diferentes niveles de atención y tiempos de respuesta.
+- Evaluar un "setup fee" único por la puesta en producción y migración desde Supabase (por ejemplo, equivalente a 1–2 mensualidades del servicio), para cubrir el trabajo inicial.
+
+## 9. Conclusión
+
+El sistema "Sílabos IA" está listo para ser llevado a producción con un esquema de infraestructura basado en un VPS en CubePath para el backend, hosting cPanel para el frontend y una base de datos PostgreSQL propia instalada en el servidor. La combinación de un costo real bajo en el VPS y un precio al cliente de 15 USD/mes permite un margen razonable, mientras que el presupuesto de 12 USD/mes para APIs de Google ofrece un colchón inicial que se puede ajustar según el crecimiento del uso.
+
+En esta fase, resulta más rentable priorizar estabilidad y rapidez de salida a producción sobre optimizaciones mínimas de costo cambiando de proveedor. A futuro, si se incrementa de forma significativa la carga del sistema, se puede revaluar tanto el proveedor de infraestructura como la estructura de precios ofrecida al cliente.
+
+---
+
+## References
+
+1. [DigitalOcean Plans & Pricing: Cheap but What's the Catch? [2026]](https://www.websiteplanet.com/blog/digitalocean-pricing-plans/) - Starting at $4.00/month, DigitalOcean's Basic Droplets configuration is nothing short of affordable....
+
+2. [Hetzner introduces new shared vCPU cloud servers](https://www.hetzner.com/pressroom/new-cx-plans/)
+
+3. [DigitalOcean Droplets | Scalable Cloud Compute Starting at $4/mo](https://www.digitalocean.com/products/droplets) - Basic virtual machine costs ; DigitalOcean. $24.00Includes bandwidth ; GCP. $27.55With bandwidth: $3...
+
+4. [Hetzner released new cloud VPS plans from $4/month (2 vCPUs / 4 GB RAM)](https://www.reddit.com/r/HostingReport/comments/1oa2af2/hetzner_released_new_cloud_vps_plans_from_4month/) - Hetzner released new cloud VPS plans from $4/month (2 vCPUs / 4 GB RAM)
+
+5. [Droplet Pricing | DigitalOcean](https://www.digitalocean.com/pricing/droplets) - Helping millions of developers easily build, test, manage, and scale applications of any size - fast...
+
