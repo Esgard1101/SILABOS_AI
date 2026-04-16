@@ -118,7 +118,7 @@ async def buscar_bibliografia(datos: BuscarBibliografiaInput, request: Request):
         # Paso 2: Formatear en APA con Gemini
         area_contexto = datos.area or datos.course_name or datos.keywords
         prompt = construir_prompt_bibliografia_apa(referencias_raw, area_contexto)
-        respuesta_ia = await generate_content(prompt)
+        respuesta_ia = await generate_content(prompt, task="bibliography_format")
 
         # Extraer JSON de la respuesta
         respuesta_ia = re.sub(r"```(?:json)?\s*", "", respuesta_ia)

@@ -1,26 +1,120 @@
-# Servicio principal de IA — Gemini API con fallback silencioso a OpenRouter
-# SDK correcto: genai.Client()  —  NO usar genai.configure() (sintaxis vieja)
+# Servicio principal de IA con enrutamiento por criticidad.
+# Mantiene Gemini para generacion critica y embeddings.
+# Mueve tareas no criticas a OpenRouter para controlar costos.
 
 import json
 import logging
 import os
 import re
+from dataclasses import dataclass
+from typing import Any
 
 import httpx
+from fastapi import HTTPException
 from google import genai
 from google.genai import types
+from pydantic import ValidationError
 
+from models.schemas import ValidacionData
+from prompts.search_prompt import construir_prompt_filtrado, construir_prompt_queries
 from prompts.syllabus_prompt import construir_prompt_silabo
 from prompts.validator_prompt import construir_prompt_validacion
-from prompts.search_prompt import construir_prompt_queries, construir_prompt_filtrado
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────
-# Cliente Gemini singleton
-# ──────────────────────────────────────────────
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
+DEFAULT_OPENROUTER_AUDIT_MODEL = "google/gemma-4-26b-a4b-it:free"
+OPENROUTER_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 
 _gemini_client: genai.Client | None = None
+_router_service: "GeminiService | None" = None
+
+
+@dataclass(frozen=True)
+class TaskConfig:
+    provider: str
+    temperature: float
+    max_output_tokens: int
+    json_mode: bool = False
+    reasoning: bool = False
+
+
+@dataclass
+class AIResult:
+    text: str
+    provider: str
+    model: str
+    usage: Any = None
+    fallback_used: bool = False
+
+
+class AIProviderError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        status_code: int | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+    ):
+        super().__init__(message)
+        self.retryable = retryable
+        self.status_code = status_code
+        self.provider = provider
+        self.model = model
+
+
+TASK_CONFIGS: dict[str, TaskConfig] = {
+    "syllabus_generate": TaskConfig(
+        provider="gemini",
+        temperature=0.4,
+        max_output_tokens=8192,
+        json_mode=True,
+    ),
+    "syllabus_generate_v2": TaskConfig(
+        provider="gemini",
+        temperature=0.4,
+        max_output_tokens=8192,
+        json_mode=True,
+    ),
+    "syllabus_validate": TaskConfig(
+        provider="openrouter_audit",
+        temperature=0.1,
+        max_output_tokens=2048,
+        json_mode=True,
+        reasoning=True,
+    ),
+    "document_chat": TaskConfig(
+        provider="openrouter_audit",
+        temperature=0.3,
+        max_output_tokens=2048,
+    ),
+    "search_query_build": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.2,
+        max_output_tokens=512,
+        json_mode=True,
+    ),
+    "search_result_filter": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.1,
+        max_output_tokens=2048,
+        json_mode=True,
+    ),
+    "bibliography_format": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.1,
+        max_output_tokens=2048,
+        json_mode=True,
+    ),
+    "method_suggest": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.1,
+        max_output_tokens=512,
+        json_mode=True,
+    ),
+}
 
 
 def _get_client() -> genai.Client:
@@ -30,84 +124,147 @@ def _get_client() -> genai.Client:
     return _gemini_client
 
 
-# ──────────────────────────────────────────────
-# OpenRouter (fallback compatible con OpenAI API)
-# ──────────────────────────────────────────────
-
-async def _call_openrouter(prompt: str) -> str:
-    """Llama a OpenRouter con formato OpenAI-compatible."""
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY no configurada")
-
-    base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-    model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "http://localhost:3000",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+def _get_router_service() -> "GeminiService":
+    global _router_service
+    if _router_service is None:
+        _router_service = GeminiService()
+    return _router_service
 
 
-# ──────────────────────────────────────────────
-# Funciones standalone — usadas por bibliography_service y rag_service
-# ──────────────────────────────────────────────
+def _as_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
-async def generate_content(prompt: str) -> str:
-    """
-    Generación de texto con fallback automático a OpenRouter.
-    Silencioso — el frontend no sabe qué proveedor respondió.
-    """
-    from fastapi import HTTPException
 
-    provider = os.getenv("AI_PROVIDER", "gemini")
+def _normalize_text_from_message(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "\n".join(part for part in parts if part)
+    return str(content or "")
 
-    if provider == "openrouter":
-        try:
-            return await _call_openrouter(prompt)
-        except Exception as e:
-            logger.error(f"OpenRouter falló: {e}")
-            raise HTTPException(status_code=503, detail="Servicio IA no disponible")
 
-    # provider == "gemini" (default)
+def _extraer_json(texto: str) -> str:
+    texto = re.sub(r"```(?:json)?\s*", "", texto)
+    texto = re.sub(r"```", "", texto)
+    texto = texto.strip()
+    for inicio_char, fin_char in [("{", "}"), ("[", "]")]:
+        inicio = texto.find(inicio_char)
+        fin = texto.rfind(fin_char)
+        if inicio != -1 and fin != -1 and fin > inicio:
+            return texto[inicio : fin + 1]
+    return texto
+
+
+def _usage_to_loggable(usage: Any) -> Any:
+    if usage is None:
+        return None
+    if hasattr(usage, "model_dump"):
+        return usage.model_dump()
+    if hasattr(usage, "__dict__"):
+        return {
+            key: value
+            for key, value in usage.__dict__.items()
+            if not key.startswith("_")
+        }
+    return usage
+
+
+def _task_config(task_name: str) -> TaskConfig:
     try:
-        client = _get_client()
-        model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-        )
-        return response.text
+        return TASK_CONFIGS[task_name]
+    except KeyError as exc:
+        raise ValueError(f"Tarea IA no soportada: {task_name}") from exc
 
-    except Exception as e:
-        error_str = str(e).lower()
-        is_rate_or_network = any(
-            kw in error_str for kw in ("429", "quota", "rate", "connection", "timeout")
-        )
-        if is_rate_or_network:
-            logger.warning(f"Gemini no disponible ({e}), usando OpenRouter como fallback")
-            try:
-                return await _call_openrouter(prompt)
-            except Exception as e2:
-                logger.error(f"OpenRouter fallback también falló: {e2}")
-                raise HTTPException(status_code=503, detail="Servicio IA no disponible")
-        raise HTTPException(status_code=503, detail=f"Error en servicio IA: {e}")
+
+def _error_is_retryable(message: str) -> bool:
+    message = message.lower()
+    return any(
+        marker in message
+        for marker in ("429", "quota", "rate", "timeout", "connection", "unavailable", "overloaded")
+    )
+
+
+def _default_validation_error(message: str) -> dict:
+    return {
+        "score": 0,
+        "observaciones": [
+            {
+                "criterio": "Error",
+                "nivel": "error",
+                "mensaje": message,
+            }
+        ],
+        "sugerencias": [],
+        "aprobado": False,
+    }
+
+
+def _normalize_validation_payload(payload: dict) -> dict:
+    score = payload.get("score", 0)
+    if not isinstance(score, int):
+        try:
+            score = int(score)
+        except (TypeError, ValueError):
+            score = 0
+
+    observaciones = payload.get("observaciones", [])
+    if not isinstance(observaciones, list):
+        observaciones = []
+
+    sugerencias = payload.get("sugerencias", [])
+    if not isinstance(sugerencias, list):
+        sugerencias = []
+
+    aprobado = payload.get("aprobado")
+    if not isinstance(aprobado, bool):
+        aprobado = score >= 70
+
+    return {
+        "score": score,
+        "observaciones": observaciones,
+        "sugerencias": sugerencias,
+        "aprobado": aprobado,
+    }
+
+
+def _build_validation_repair_prompt(raw_response: str) -> str:
+    return f"""Convierte la siguiente salida a JSON valido estricto.
+Debes devolver SOLO un objeto JSON con esta forma:
+{{
+  "score": 0,
+  "observaciones": [
+    {{"criterio": "string", "nivel": "error|advertencia|sugerencia", "mensaje": "string"}}
+  ],
+  "sugerencias": ["string"],
+  "aprobado": false
+}}
+
+Si falta informacion, usa valores por defecto razonables.
+No agregues markdown, comentarios ni texto extra.
+
+SALIDA A REPARAR:
+{raw_response}
+"""
+
+
+async def generate_content(prompt: str, task: str = "document_chat") -> str:
+    try:
+        service = _get_router_service()
+        return await service.generate_text(task, prompt)
+    except AIProviderError as exc:
+        logger.error("Error IA en tarea %s: %s", task, exc)
+        raise HTTPException(status_code=503, detail="Servicio IA no disponible")
 
 
 def generate_embedding(text: str) -> list[float]:
-    """Genera embedding para indexación de documentos (RETRIEVAL_DOCUMENT)."""
     client = _get_client()
     model = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
     dimensions = int(os.getenv("GEMINI_EMBEDDING_DIMENSIONS", "768"))
@@ -124,10 +281,6 @@ def generate_embedding(text: str) -> list[float]:
 
 
 def generate_query_embedding(query: str) -> list[float]:
-    """
-    Genera embedding para búsqueda semántica (RETRIEVAL_QUERY).
-    Distinto a generate_embedding — importante para calidad RAG.
-    """
     client = _get_client()
     model = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
     dimensions = int(os.getenv("GEMINI_EMBEDDING_DIMENSIONS", "768"))
@@ -143,158 +296,331 @@ def generate_query_embedding(query: str) -> list[float]:
     return result.embeddings[0].values
 
 
-# ──────────────────────────────────────────────
-# Helper interno
-# ──────────────────────────────────────────────
-
-def _extraer_json(texto: str) -> str:
-    """Limpia la respuesta de Gemini y extrae solo el JSON."""
-    texto = re.sub(r"```(?:json)?\s*", "", texto)
-    texto = re.sub(r"```", "", texto)
-    texto = texto.strip()
-    for inicio_char, fin_char in [('{', '}'), ('[', ']')]:
-        inicio = texto.find(inicio_char)
-        fin = texto.rfind(fin_char)
-        if inicio != -1 and fin != -1 and fin > inicio:
-            return texto[inicio:fin + 1]
-    return texto
-
-
-# ──────────────────────────────────────────────
-# Clase GeminiService — agentes existentes de Fase 1
-# ──────────────────────────────────────────────
-
 class GeminiService:
-    """Servicio de integración con la API de Google Gemini."""
+    """Servicio central de IA con enrutamiento por tarea."""
 
     def __init__(self):
         self.client = _get_client()
-        self.model = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
-        logger.info(f"GeminiService inicializado | modelo: {self.model}")
+        self.gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        self.openrouter_base_url = os.getenv(
+            "OPENROUTER_BASE_URL",
+            "https://openrouter.ai/api/v1",
+        ).rstrip("/")
+        legacy_openrouter_model = os.getenv("OPENROUTER_MODEL", "").strip()
+        self.openrouter_audit_model = (
+            os.getenv("OPENROUTER_AUDIT_MODEL", "").strip()
+            or legacy_openrouter_model
+            or DEFAULT_OPENROUTER_AUDIT_MODEL
+        )
+        self.openrouter_light_model = (
+            os.getenv("OPENROUTER_LIGHT_MODEL", "").strip()
+            or self.openrouter_audit_model
+        )
+        self.openrouter_fallback_model = os.getenv(
+            "OPENROUTER_FALLBACK_MODEL",
+            "",
+        ).strip()
+        self.openrouter_audit_reasoning = _as_bool(
+            os.getenv("OPENROUTER_AUDIT_REASONING"),
+            default=False,
+        )
+        logger.info(
+            "GeminiService inicializado | gemini=%s | openrouter_audit=%s | openrouter_light=%s",
+            self.gemini_model,
+            self.openrouter_audit_model,
+            self.openrouter_light_model,
+        )
+
+    def _resolve_openrouter_model(self, route_type: str) -> str:
+        if route_type == "openrouter_audit":
+            return self.openrouter_audit_model
+        if route_type == "openrouter_light":
+            return self.openrouter_light_model or self.openrouter_audit_model
+        raise ValueError(f"Tipo de ruta OpenRouter no soportado: {route_type}")
+
+    def _log_result(self, task_name: str, result: AIResult) -> None:
+        logger.info(
+            "IA completada | tarea=%s | proveedor=%s | modelo=%s | fallback=%s | uso=%s",
+            task_name,
+            result.provider,
+            result.model,
+            result.fallback_used,
+            _usage_to_loggable(result.usage),
+        )
+
+    def _gemini_error(self, exc: Exception) -> AIProviderError:
+        message = str(exc)
+        return AIProviderError(
+            f"Gemini fallo: {message}",
+            retryable=_error_is_retryable(message),
+            provider="gemini",
+            model=self.gemini_model,
+        )
+
+    async def _call_gemini(
+        self,
+        task_name: str,
+        prompt: str,
+        config: TaskConfig,
+    ) -> AIResult:
+        try:
+            response = self.client.models.generate_content(
+                model=self.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=config.temperature,
+                    max_output_tokens=config.max_output_tokens,
+                ),
+            )
+            result = AIResult(
+                text=response.text or "",
+                provider="gemini",
+                model=self.gemini_model,
+                usage=getattr(response, "usage_metadata", None),
+            )
+            self._log_result(task_name, result)
+            return result
+        except Exception as exc:
+            raise self._gemini_error(exc) from exc
+
+    async def _post_openrouter(
+        self,
+        *,
+        task_name: str,
+        prompt: str,
+        model: str,
+        config: TaskConfig,
+        reasoning_enabled: bool,
+        fallback_used: bool,
+    ) -> AIResult:
+        if not self.openrouter_api_key:
+            raise AIProviderError(
+                "OPENROUTER_API_KEY no configurada",
+                provider="openrouter",
+                model=model,
+            )
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": config.temperature,
+            "max_tokens": config.max_output_tokens,
+        }
+        if config.json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        if reasoning_enabled:
+            payload["reasoning"] = {"enabled": True}
+
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv("FRONTEND_URL", "http://localhost:3000"),
+            "X-Title": "Silabos.AI Backend",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.openrouter_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise AIProviderError(
+                "OpenRouter timeout",
+                retryable=True,
+                provider="openrouter",
+                model=model,
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500]
+            raise AIProviderError(
+                f"OpenRouter HTTP {exc.response.status_code}: {body}",
+                retryable=exc.response.status_code in OPENROUTER_RETRYABLE_STATUS_CODES,
+                status_code=exc.response.status_code,
+                provider="openrouter",
+                model=model,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise AIProviderError(
+                f"OpenRouter request error: {exc}",
+                retryable=True,
+                provider="openrouter",
+                model=model,
+            ) from exc
+
+        data = response.json()
+        message = (data.get("choices") or [{}])[0].get("message") or {}
+        result = AIResult(
+            text=_normalize_text_from_message(message.get("content")),
+            provider="openrouter",
+            model=data.get("model") or model,
+            usage=data.get("usage"),
+            fallback_used=fallback_used,
+        )
+        self._log_result(task_name, result)
+        return result
+
+    async def _call_openrouter(
+        self,
+        task_name: str,
+        prompt: str,
+        config: TaskConfig,
+    ) -> AIResult:
+        primary_model = self._resolve_openrouter_model(config.provider)
+        reasoning_enabled = config.reasoning and self.openrouter_audit_reasoning
+
+        try:
+            return await self._post_openrouter(
+                task_name=task_name,
+                prompt=prompt,
+                model=primary_model,
+                config=config,
+                reasoning_enabled=reasoning_enabled,
+                fallback_used=False,
+            )
+        except AIProviderError as exc:
+            fallback_model = self.openrouter_fallback_model
+            can_retry = (
+                exc.retryable
+                and fallback_model
+                and fallback_model != primary_model
+            )
+            if not can_retry:
+                raise
+
+            logger.warning(
+                "OpenRouter primario fallo para %s; usando fallback %s | error=%s",
+                task_name,
+                fallback_model,
+                exc,
+            )
+            return await self._post_openrouter(
+                task_name=task_name,
+                prompt=prompt,
+                model=fallback_model,
+                config=config,
+                reasoning_enabled=False,
+                fallback_used=True,
+            )
+
+    async def _run_task(self, task_name: str, prompt: str) -> AIResult:
+        config = _task_config(task_name)
+        if config.provider == "gemini":
+            return await self._call_gemini(task_name, prompt, config)
+        if config.provider.startswith("openrouter"):
+            return await self._call_openrouter(task_name, prompt, config)
+        raise ValueError(f"Proveedor no soportado para tarea {task_name}: {config.provider}")
+
+    async def generate_text(self, task_name: str, prompt: str) -> str:
+        result = await self._run_task(task_name, prompt)
+        return result.text
+
+    async def generate_json(self, task_name: str, prompt: str) -> dict | list:
+        result = await self._run_task(task_name, prompt)
+        return json.loads(_extraer_json(result.text))
 
     async def generar_silabo(self, datos_curso: dict, contexto_curricular: str = "") -> dict:
-        """Agente 1: Genera un sílabo universitario completo."""
         try:
             prompt = construir_prompt_silabo(datos_curso, contexto_curricular)
-            logger.info(f"Generando sílabo: {datos_curso.get('nombre_curso')}")
+            logger.info("Generando silabo: %s", datos_curso.get("nombre_curso"))
+            return await self.generate_json("syllabus_generate", prompt)
+        except json.JSONDecodeError as exc:
+            logger.error("Error al parsear JSON del silabo: %s", exc)
+            return {"error": "No se pudo parsear la respuesta del modelo como JSON"}
+        except AIProviderError as exc:
+            logger.error("Error al generar silabo: %s", exc)
+            status_code = 429 if exc.retryable else 503
+            return {"error": str(exc), "_status_code": status_code}
+        except Exception as exc:
+            logger.error("Error al generar silabo: %s", exc)
+            return {"error": str(exc), "_status_code": 500}
 
-            respuesta = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.4,
-                    max_output_tokens=8192,
-                ),
-            )
+    async def generar_silabo_desde_prompt(self, prompt: str) -> dict:
+        try:
+            return await self.generate_json("syllabus_generate_v2", prompt)
+        except json.JSONDecodeError as exc:
+            logger.error("Error al parsear JSON del silabo v2: %s", exc)
+            return {"error": "No se pudo parsear la respuesta del modelo como JSON", "_status_code": 500}
+        except AIProviderError as exc:
+            logger.error("Error al generar silabo v2: %s", exc)
+            status_code = 429 if exc.retryable else 503
+            return {"error": str(exc), "_status_code": status_code}
+        except Exception as exc:
+            logger.error("Error al generar silabo v2: %s", exc)
+            return {"error": str(exc), "_status_code": 500}
 
-            json_limpio = _extraer_json(respuesta.text)
-            silabo = json.loads(json_limpio)
-            logger.info("Sílabo generado exitosamente")
-            return silabo
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Error al parsear JSON del sílabo: {e}")
-            return {"error": "No se pudo parsear la respuesta de Gemini como JSON"}
-        except Exception as e:
-            logger.error(f"Error al generar sílabo: {e}")
-            return {"error": str(e)}
+    async def _repair_validation_json(self, raw_response: str) -> dict | None:
+        repair_prompt = _build_validation_repair_prompt(raw_response)
+        try:
+            repaired_text = await self.generate_text("syllabus_validate", repair_prompt)
+            payload = json.loads(_extraer_json(repaired_text))
+            normalized = _normalize_validation_payload(payload)
+            validated = ValidacionData.model_validate(normalized)
+            return validated.model_dump()
+        except (AIProviderError, ValidationError, json.JSONDecodeError) as exc:
+            logger.warning("No se pudo reparar JSON de validacion: %s", exc)
+            return None
 
     async def validar_silabo(self, silabo: dict, perfil_egreso: str = "") -> dict:
-        """Agente 3: Valida la coherencia curricular del sílabo."""
+        prompt = construir_prompt_validacion(silabo, perfil_egreso)
+        logger.info("Validando silabo")
+
         try:
-            prompt = construir_prompt_validacion(silabo, perfil_egreso)
-            logger.info("Validando sílabo")
-
-            respuesta = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=2048,
-                ),
-            )
-
-            json_limpio = _extraer_json(respuesta.text)
-            resultado = json.loads(json_limpio)
-            resultado.setdefault("score", 0)
-            resultado.setdefault("observaciones", [])
-            resultado.setdefault("sugerencias", [])
-            resultado.setdefault("aprobado", resultado.get("score", 0) >= 70)
-
-            logger.info(f"Validación completada. Score: {resultado['score']}")
-            return resultado
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Error al parsear JSON de validación: {e}")
-            return {
-                "score": 0,
-                "observaciones": [{"criterio": "Error", "nivel": "error", "mensaje": "No se pudo procesar la validación"}],
-                "sugerencias": [],
-                "aprobado": False,
-            }
-        except Exception as e:
-            logger.error(f"Error al validar sílabo: {e}")
-            return {
-                "score": 0,
-                "observaciones": [{"criterio": "Error", "nivel": "error", "mensaje": str(e)}],
-                "sugerencias": [],
-                "aprobado": False,
-            }
+            raw_text = await self.generate_text("syllabus_validate", prompt)
+            payload = json.loads(_extraer_json(raw_text))
+            normalized = _normalize_validation_payload(payload)
+            validated = ValidacionData.model_validate(normalized)
+            logger.info("Validacion completada. Score: %s", validated.score)
+            return validated.model_dump()
+        except (json.JSONDecodeError, ValidationError) as exc:
+            logger.warning("Salida invalida del auditor, intentando reparacion: %s", exc)
+            repaired = await self._repair_validation_json(locals().get("raw_text", ""))
+            if repaired:
+                logger.info("Validacion reparada exitosamente. Score: %s", repaired["score"])
+                return repaired
+            return _default_validation_error("No se pudo procesar la validacion")
+        except AIProviderError as exc:
+            logger.error("Error al validar silabo: %s", exc)
+            return _default_validation_error(str(exc))
+        except Exception as exc:
+            logger.error("Error al validar silabo: %s", exc)
+            return _default_validation_error(str(exc))
 
     async def construir_queries_busqueda(self, tema: str, nivel: str = "pregrado") -> list[str]:
-        """Agente 2 — Paso 1: Genera queries de búsqueda académica optimizadas."""
         try:
             prompt = construir_prompt_queries(tema, nivel)
-            logger.info(f"Construyendo queries para: {tema}")
-
-            respuesta = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    max_output_tokens=512,
-                ),
-            )
-
-            json_limpio = _extraer_json(respuesta.text)
-            datos = json.loads(json_limpio)
-            queries = datos.get("queries", [])
-            logger.info(f"Se generaron {len(queries)} queries")
-            return queries
-
-        except Exception as e:
-            logger.error(f"Error al construir queries: {e}")
+            logger.info("Construyendo queries para: %s", tema)
+            payload = await self.generate_json("search_query_build", prompt)
+            queries = payload.get("queries", []) if isinstance(payload, dict) else []
+            if not isinstance(queries, list):
+                raise ValueError("El modelo no devolvio una lista de queries")
+            logger.info("Se generaron %s queries", len(queries))
+            return [str(query) for query in queries if str(query).strip()]
+        except Exception as exc:
+            logger.error("Error al construir queries: %s", exc)
             return [tema, f"{tema} academic research", f"{tema} universidad"]
 
     async def filtrar_resultados_busqueda(self, resultados_raw: list, tema: str) -> list:
-        """Agente 2 — Paso 3: Filtra y rankea los resultados crudos de Google."""
         try:
             if not resultados_raw:
                 return []
 
             prompt = construir_prompt_filtrado(resultados_raw, tema)
-            logger.info(f"Filtrando {len(resultados_raw)} resultados")
-
-            respuesta = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,
-                    max_output_tokens=2048,
-                ),
-            )
-
-            json_limpio = _extraer_json(respuesta.text)
-            datos = json.loads(json_limpio)
-            fuentes = datos.get("fuentes", [])
-            logger.info(f"Se seleccionaron {len(fuentes)} fuentes")
+            logger.info("Filtrando %s resultados", len(resultados_raw))
+            payload = await self.generate_json("search_result_filter", prompt)
+            fuentes = payload.get("fuentes", []) if isinstance(payload, dict) else []
+            if not isinstance(fuentes, list):
+                raise ValueError("El modelo no devolvio una lista de fuentes")
+            logger.info("Se seleccionaron %s fuentes", len(fuentes))
             return fuentes
-
-        except Exception as e:
-            logger.error(f"Error al filtrar resultados: {e}")
+        except Exception as exc:
+            logger.error("Error al filtrar resultados: %s", exc)
             return [
                 {
-                    "titulo": item.get("title", "Sin título"),
+                    "titulo": item.get("title", "Sin titulo"),
                     "url": item.get("link", ""),
                     "autor": None,
                     "anio": None,
@@ -304,16 +630,41 @@ class GeminiService:
                 for item in resultados_raw[:8]
             ]
 
+    async def sugerir_metodo(
+        self,
+        curso: dict,
+        metodos_base: list[dict],
+        skill_context: str,
+    ) -> dict:
+        lista_metodos_texto = "\n".join(
+            [f"ID {m['id']}: {m['name']} - {m['description']}" for m in metodos_base]
+        )
+        prompt = f"""Eres un experto en diseno curricular universitario peruano.
+
+Dado el siguiente curso y su sumilla, elige el metodo pedagogico mas adecuado de la lista.
+Responde UNICAMENTE con un JSON valido con este formato exacto:
+{{"method_id": <numero>, "reason": "<explicacion breve en espanol>"}}
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:400]}
+CATEGORIAS DE HABILIDADES PRIORIZADAS: {skill_context}
+
+METODOS DISPONIBLES:
+{lista_metodos_texto}
+
+Responde solo JSON, sin markdown, sin texto adicional."""
+
+        payload = await self.generate_json("method_suggest", prompt)
+        if not isinstance(payload, dict):
+            raise ValueError("El modelo no devolvio un objeto JSON para method_suggest")
+        return payload
+
     async def chat_documento(
         self,
         pregunta: str,
         contexto_docs: str,
         historial: list,
     ) -> str:
-        """
-        Agente 4: Responde preguntas sobre documentos usando el contexto inyectado.
-        NO usa la Files API de Gemini — texto plano en el prompt siempre.
-        """
         try:
             historial_texto = ""
             for msg in historial[-10:]:
@@ -321,8 +672,8 @@ class GeminiService:
                 historial_texto += f"\n{rol}: {msg.get('contenido', '')}"
 
             prompt = f"""# ROL
-Asistente académico especializado en documentos universitarios.
-Responde ÚNICAMENTE con información de los documentos proporcionados.
+Asistente academico especializado en documentos universitarios.
+Responde UNICAMENTE con informacion de los documentos proporcionados.
 
 # DOCUMENTOS DE REFERENCIA
 {contexto_docs[:6000]}
@@ -334,34 +685,41 @@ Responde ÚNICAMENTE con información de los documentos proporcionados.
 {pregunta}
 
 # INSTRUCCIONES
-- Cita el documento cuando uses información específica (ej: "Según el documento X...")
-- Si la información no está en los documentos: "Esta información no se encuentra en los documentos proporcionados"
+- Cita el documento cuando uses informacion especifica (ej: "Segun el documento X...")
+- Si la informacion no esta en los documentos: "Esta informacion no se encuentra en los documentos proporcionados"
 - Usa markdown para listas cuando mejore la claridad
 """
             logger.info("Procesando consulta de chat con documentos")
-
-            respuesta = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    max_output_tokens=2048,
-                ),
-            )
-            return respuesta.text
-
-        except Exception as e:
-            logger.error(f"Error en chat con documentos: {e}")
-            return f"Error al procesar la consulta: {str(e)}"
+            return await self.generate_text("document_chat", prompt)
+        except AIProviderError as exc:
+            logger.error("Error en chat con documentos: %s", exc)
+            return f"Error al procesar la consulta: {exc}"
+        except Exception as exc:
+            logger.error("Error en chat con documentos: %s", exc)
+            return f"Error al procesar la consulta: {exc}"
 
     async def verificar_conexion(self) -> bool:
-        """Verificación mínima de conectividad con la API de Gemini."""
         try:
-            respuesta = self.client.models.generate_content(
-                model=self.model,
-                contents="ping",
-            )
-            return respuesta.text is not None
-        except Exception as e:
-            logger.error(f"Error al verificar conexión con Gemini: {e}")
+            await self._call_gemini("health_gemini", "ping", TaskConfig("gemini", 0.0, 16))
+            return True
+        except AIProviderError as exc:
+            logger.error("Error al verificar conexion con Gemini: %s", exc)
             return False
+
+    async def verificar_conexion_openrouter(self) -> str:
+        if not self.openrouter_api_key:
+            return "no_configurado"
+
+        try:
+            await self._post_openrouter(
+                task_name="health_openrouter",
+                prompt="ping",
+                model=self.openrouter_light_model,
+                config=TaskConfig("openrouter_light", 0.0, 16),
+                reasoning_enabled=False,
+                fallback_used=False,
+            )
+            return "ok"
+        except AIProviderError as exc:
+            logger.error("Error al verificar conexion con OpenRouter: %s", exc)
+            return "error"

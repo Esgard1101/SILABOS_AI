@@ -143,11 +143,16 @@ Core backend variables:
 Fallback backend variables:
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_BASE_URL`
+- `OPENROUTER_AUDIT_MODEL`
+- `OPENROUTER_LIGHT_MODEL`
+- `OPENROUTER_FALLBACK_MODEL`
+- `OPENROUTER_AUDIT_REASONING`
 - `OPENROUTER_MODEL`
 
 Notes:
 - Treat declared backend env vars as required for the feature they support
-- `OPENROUTER_*` is fallback infrastructure and may remain unused until explicitly needed
+- `AI_PROVIDER` is legacy-only; task routing now happens inside `services/gemini_service.py`
+- `OPENROUTER_MODEL` is a legacy alias used only when `OPENROUTER_AUDIT_MODEL` is absent
 - If a new backend feature requires a new env var, the agent must ask the owner to add it manually in VPS/Coolify environments
 
 ### Frontend Variables
@@ -162,16 +167,19 @@ Expected values:
 ## Current AI Configuration
 
 Primary AI setup:
-- provider: Gemini
-- model: `gemini-3.1-flash-lite-preview`
+- critical provider: Gemini
+- critical model: `gemini-3.1-flash-lite-preview`
 
 Fallback AI setup:
-- provider: OpenRouter
-- model can be a lighter free model when needed
+- non-critical provider: OpenRouter
+- audit model default: `google/gemma-4-26b-a4b-it:free`
+- light model: configurable; if unset, reuses the audit model
+- optional fallback model: configurable paid/cheap model for retries on 429/timeout
 
 Current policy:
-- Gemini is the approved production path
-- OpenRouter is fallback only
+- Gemini is reserved for generation critica del silabo y embeddings
+- OpenRouter atiende auditoria, chat documental, sugerencia de metodo y utilidades ligeras
+- No se hace fallback automatico de tareas no criticas hacia Gemini
 
 ## Database Strategy
 

@@ -293,6 +293,7 @@ export interface SourcesData {
 export interface HealthData {
   api: string;
   gemini: string;
+  openrouter: string;
   supabase: string;
   google_search: string;
 }

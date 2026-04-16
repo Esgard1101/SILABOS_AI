@@ -255,4 +255,4 @@ Responde basándote SOLO en el contexto provisto.
 Si la respuesta no está en el contexto, indícalo claramente.
 Cita la sección del documento cuando sea posible.
 """
-    return await generate_content(prompt)
+    return await generate_content(prompt, task="document_chat")

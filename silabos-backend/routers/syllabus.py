@@ -6,8 +6,6 @@
 
 import json
 import logging
-import os
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -542,11 +540,6 @@ async def generar_silabo_v2(
 
         # Llamar al generador con el método pedagógico
         from prompts.syllabus_prompt import construir_prompt_silabo
-        from google import genai
-        import os
-
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
-        model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite-preview")
 
         grading_list = [item.model_dump() for item in (datos.grading_scheme or [])]
 
@@ -559,12 +552,17 @@ async def generar_silabo_v2(
             grading_requires_midterm_final=datos.grading_requires_midterm_final,
         )
 
-        client = genai.Client(api_key=api_key)
-        try:
-            response = client.models.generate_content(model=model_name, contents=prompt)
-        except Exception as e:
-            error_message = str(e).lower()
-            logger.error(f"Error del proveedor Gemini al generar sÃ­labo v2: {e}")
+        silabo = await gemini.generar_silabo_desde_prompt(prompt)
+        if "error" in silabo:
+            status_code = int(silabo.get("_status_code") or 500)
+            detail = silabo["error"]
+            if status_code == 429:
+                detail = (
+                    "Perdón, la IA está muy ocupada en este momento. "
+                    "Intenta de nuevo en 1 minuto mientras tomas un cafe ☕"
+                )
+            raise HTTPException(status_code=status_code, detail=detail)
+            logger.error(f"Error del proveedor Gemini al generar silabo v2: {e}")
             if any(
                 keyword in error_message
                 for keyword in ("429", "quota", "rate limit", "exhausted")
@@ -578,15 +576,7 @@ async def generar_silabo_v2(
                 detail="Error interno al generar el sílabo",
             )
 
-        texto = response.text.strip()
-        if texto.startswith("```"):
-            partes = texto.split("```")
-            texto = partes[1] if len(partes) > 1 else texto
-            if texto.startswith("json"):
-                texto = texto[4:]
-            texto = texto.strip()
-
-        silabo = json.loads(texto)
+        # El servicio central ya devuelve el JSON parseado.
 
         if curso.get("capacidad") and not silabo.get("capacidad_del_curso"):
             silabo["capacidad_del_curso"] = curso["capacidad"]
