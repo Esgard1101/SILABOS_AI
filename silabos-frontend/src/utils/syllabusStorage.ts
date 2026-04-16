@@ -54,6 +54,7 @@ export function resolveSyllabusStatus(
   if (
     rawStatus === 'draft' ||
     rawStatus === 'review' ||
+    rawStatus === 'returned' ||
     rawStatus === 'approved' ||
     rawStatus === 'published' ||
     rawStatus === 'generated' ||

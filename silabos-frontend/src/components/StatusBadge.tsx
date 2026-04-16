@@ -28,6 +28,12 @@ const STATUS_CONFIG: Record<
     text: 'text-amber-700',
     dot: 'bg-amber-500 animate-pulse',
   },
+  returned: {
+    label: 'Observado',
+    bg: 'bg-red-50',
+    text: 'text-red-700',
+    dot: 'bg-red-500',
+  },
   approved: {
     label: 'Aprobado',
     bg: 'bg-green-50',

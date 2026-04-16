@@ -58,6 +58,35 @@ def _matches_criterion(criterion: dict, *, keyword: str, sigla: str) -> bool:
     return keyword in text or _normalize_text(criterion.get("sigla")) == sigla.lower()
 
 
+def _mezclar_bibliografia(silabo: dict, refs_precargadas: list[str]) -> None:
+    """
+    Combina la bibliografía generada por IA con las referencias pre-parseadas
+    del PDF subido por el docente.
+
+    Estrategia:
+    - Mantiene las refs IA al principio (ya ordenadas por relevancia).
+    - Agrega las refs del PDF que no dupliquen autor+año ya presentes.
+    - El docente verá el total combinado (~16) y elegirá las que quiera.
+    """
+    from services.bibliography_parser import refs_a_bibliografia_json
+
+    ai_refs: list[dict] = silabo.get("bibliografia") or []
+    parsed_json = refs_a_bibliografia_json(refs_precargadas)
+
+    # Dedup ligero: ignorar refs cuyo texto ya está en la lista IA
+    ai_texts = {r.get("referencia", "").lower()[:60] for r in ai_refs}
+    nuevas = [
+        r for r in parsed_json
+        if r.get("referencia", "").lower()[:60] not in ai_texts
+    ]
+
+    silabo["bibliografia"] = ai_refs + nuevas
+    logger.info(
+        f"Bibliografía combinada: {len(ai_refs)} IA + {len(nuevas)} NotebookLM "
+        f"= {len(silabo['bibliografia'])} total"
+    )
+
+
 def _ensure_midterm_final_criteria(criteria: list) -> list:
     normalized = [dict(item) for item in criteria if isinstance(item, dict)]
     if not normalized:
@@ -207,11 +236,10 @@ async def generar_silabo(
                 error=silabo["error"],
             )
 
-        # ── Reemplazar bibliografía generada por Gemini con las refs reales ──
+        # ── Combinar bibliografía IA + refs pre-parseadas de NotebookLM ──
         if refs_precargadas:
             from services.bibliography_parser import refs_a_bibliografia_json
-            silabo["bibliografia"] = refs_a_bibliografia_json(refs_precargadas)
-            logger.info("Bibliografía del sílabo reemplazada con referencias pre-parseadas")
+            _mezclar_bibliografia(silabo, refs_precargadas)
 
         if not datos.persist_result:
             return APIResponse(success=True, data=silabo, error=None)
@@ -588,6 +616,11 @@ async def generar_silabo_v2(
         silabo["datos_generales"]["course_id"] = datos.course_id
         silabo["datos_generales"]["semestre"] = datos.semester
 
+        # ── Combinar bibliografía IA + refs pre-parseadas de NotebookLM ──
+        refs_precargadas_v2 = await supabase.obtener_referencias_curso(datos.course_id)
+        if refs_precargadas_v2:
+            _mezclar_bibliografia(silabo, refs_precargadas_v2)
+
         # Guardar en BD
         silabo_guardado = await supabase.guardar_silabo(
             silabo,
@@ -784,20 +817,33 @@ async def enviar_revision(
     request: Request,
     current_user: dict = Depends(get_current_user_record),
 ):
-    """Cambia el status a 'review' (enviar a revisiÃ³n)."""
+    """Cambia el status a 'review' (enviar a revisión)."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
-    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
+
+    # Fetch without user_id filter so legacy rows (user_id IS NULL) are found
+    registro = await supabase.obtener_silabo(syllabus_id)
     if not registro:
-        raise HTTPException(404, "SÃƒÂ­labo no encontrado")
-    ok = await supabase.actualizar_status(
-        syllabus_id, "review"
-    )
+        raise HTTPException(404, "Sílabo no encontrado")
+
+    # Ownership check for docentes; NULL user_id = legacy row → allow submitter
+    scope_user_id = _get_scope_user_id(current_user)
+    if scope_user_id is not None:
+        row_user_id = registro.get("user_id")
+        if row_user_id is not None and str(row_user_id) != str(scope_user_id):
+            raise HTTPException(403, "No tienes permiso para enviar este sílabo a revisión")
+
+    # Guard: only editable statuses can transition to review
+    current_status = registro.get("status", "draft")
+    if current_status not in ("draft", "generated", "returned"):
+        raise HTTPException(400, f"No se puede enviar a revisión desde el estado '{current_status}'")
+
+    ok = await supabase.actualizar_status(syllabus_id, "review")
     if not ok:
-        raise HTTPException(404, "SÃ­labo no encontrado")
+        raise HTTPException(500, "Error al actualizar el estado del sílabo")
+
     return APIResponse(
         success=True,
         data={"status": "review"},
@@ -828,6 +874,47 @@ async def aprobar_silabo(
     return APIResponse(
         success=True,
         data={"status": "approved"},
+        error=None,
+    )
+
+
+class DevolverSilaboInput(BaseModel):
+    observation: str = ""
+    observer_name: str = "Dirección de Escuela"
+
+
+@router.post("/{syllabus_id}/return-to-teacher", response_model=APIResponse)
+async def devolver_al_docente(
+    syllabus_id: str,
+    datos: DevolverSilaboInput,
+    request: Request,
+    current_user: dict = Depends(require_roles("admin")),
+):
+    """Devuelve el sílabo al docente con estado 'returned' (observado)."""
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(503, "DB no disponible")
+
+    registro = await supabase.obtener_silabo(syllabus_id)
+    if not registro:
+        raise HTTPException(404, "Sílabo no encontrado")
+
+    if registro.get("status") != "review":
+        raise HTTPException(400, "Solo se pueden devolver sílabos en estado 'review'")
+
+    if datos.observation.strip():
+        await supabase.guardar_observacion(
+            syllabus_id, datos.observer_name, datos.observation.strip()
+        )
+
+    ok = await supabase.actualizar_status(syllabus_id, "returned")
+    if not ok:
+        raise HTTPException(500, "Error al actualizar el estado del sílabo")
+
+    return APIResponse(
+        success=True,
+        data={"status": "returned"},
         error=None,
     )
 

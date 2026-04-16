@@ -298,7 +298,7 @@ export interface HealthData {
 }
 
 export type SyllabusStatus =
-  'draft' | 'review' | 'approved' | 'published' | 'generated' | 'exported';
+  'draft' | 'review' | 'returned' | 'approved' | 'published' | 'generated' | 'exported';
 
 export interface SyllabusVersion {
   id: string;

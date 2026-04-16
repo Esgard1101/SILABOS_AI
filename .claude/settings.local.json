@@ -8,7 +8,8 @@
       "Bash(\"c:/TEST_CODE/SILABOSAIAUTOMATIZACION/silabos_app/silabos-backend/venv/Scripts/pip.exe\" install:*)",
       "Bash(npm run *)",
       "Bash(python -)",
-      "Bash(python -c \"from services.bibliography_parser import parsear_referencias_bibliograficas, refs_a_bibliografia_json, detectar_tipo_referencia; print\\('imports OK'\\)\")"
+      "Bash(python -c \"from services.bibliography_parser import parsear_referencias_bibliograficas, refs_a_bibliografia_json, detectar_tipo_referencia; print\\('imports OK'\\)\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

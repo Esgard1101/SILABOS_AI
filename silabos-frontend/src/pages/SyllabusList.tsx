@@ -256,7 +256,7 @@ export default function SyllabusList() {
     const status = resolveSyllabusStatus(item);
     const isBusy = actionLoadingId === item.id;
 
-    if (status === 'draft' || status === 'generated') {
+    if (status === 'draft' || status === 'generated' || status === 'returned') {
       return (
         <>
           <button

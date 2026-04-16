@@ -527,3 +527,211 @@ VITE_API_URL=https://[URL-COOLIFY]
    Frontend → vercel --prod o push si está conectado.
    Verificar /health antes de probar el flujo completo.
 ```
+
+---
+
+## IMPLEMENTACIONES COMPLETADAS — POST FASE 0 (Abril 2026)
+
+Esta sección documenta los cambios reales ya desplegados. Todo lo que sigue
+está en rama `main` y funcionando en producción.
+
+---
+
+### A. NotebookLMGuide — Rediseño completo
+
+**Archivo:** `silabos-frontend/src/components/NotebookLMGuide.tsx`
+
+El componente fue reescrito completamente. El flujo ya NO es un stepper lineal,
+sino **cards expandibles con modales** que muestran imágenes paso a paso.
+
+**Diseño:**
+- Cards con gradiente futurista inline:
+  `background: linear-gradient(345deg, rgba(63,94,251,1) 0%, rgba(156,82,180,1) 50%, rgba(252,70,107,1) 93%)`
+- Card completa es clickeable (`cursor-pointer`) → abre modal con imagen de referencia
+- Imágenes en `/public/images/notebooklm_steps/` (`step1.png` … `step7.png`, `step2a.png`…`step2d5.png`)
+- Modal con imagen grande (max-w-4xl) + prompt copiable cuando aplica
+- Paso 2 tiene **tabs** internos: Tab A (subir archivos) y Tab B (Deep Research agent)
+
+**Props actuales:**
+```typescript
+interface NotebookLMGuideProps {
+  courseName: string;
+  sumilla: string;
+  metodologias?: string;            // nombre del método pedagógico seleccionado
+  onFileSelected?: (file: File) => void;
+  uploading?: boolean;
+  uploadedBiblio?: { docId: string; fileName: string; refCount: number } | null;
+  onRemoveBiblio?: () => void;
+  removingBiblio?: boolean;
+}
+```
+
+**Zona de upload bifurcada:**
+- Si `uploadedBiblio` existe: muestra nombre de archivo + conteo de refs + botón "✕ Quitar archivo"
+- Si no: uploader normal con nota "Solo un archivo por sílabo"
+- Restricción de un único archivo se aplica también en backend (HTTP 409)
+
+---
+
+### B. Pipeline de Bibliografía NotebookLM → Sílabo
+
+Este es el flujo más importante implementado. El objetivo es eliminar las
+alucinaciones de Gemini en la sección de bibliografía y usar refs reales.
+
+#### B.1 Nueva tabla: `course_bibliography_refs`
+
+Creada automáticamente en `_ensure_runtime_schema_sync` (NO requiere migración manual):
+
+```sql
+CREATE TABLE IF NOT EXISTS course_bibliography_refs (
+    id          UUID PRIMARY KEY,
+    course_id   VARCHAR NOT NULL,
+    doc_id      VARCHAR NOT NULL,
+    ref_text    TEXT NOT NULL,
+    ref_order   INT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+- Índices en `course_id` y `doc_id`
+- Semántica REPLACE: al guardar refs nuevas se eliminan las anteriores del mismo `course_id`
+
+#### B.2 Nuevo servicio: `services/bibliography_parser.py`
+
+Parsea texto extraído de PDF (PyPDF2) o Markdown para encontrar la sección
+`REFERENCIAS BIBLIOGRÁFICAS` y devolver una lista limpia de strings APA.
+
+**Problema resuelto:** PyPDF2 extrae PDFs con word-wrap (`\n`) pero SIN líneas
+en blanco entre referencias. Las refs van pegadas:
+`...Editorial Areces.Cerrada Somolinos, J. A., y Collado...`
+
+**Solución — `_insertar_saltos_entre_refs(texto)`:**
+1. **Paso 1**: Colapsar saltos de línea PDF en espacios (de-wrap)
+2. **Paso 2a**: `.Apellido [Compuesto], I.` → split (cubre apellidos simples, compuestos y con guión como `García-Bermejo`)
+3. **Paso 2b**: `.SIGLA. (año)` → split para instituciones tipo `UNED. (2025)`
+4. **Paso 2c**: `dígitos+Apellido, I.` → split post-DOI (`13030113Insuasti, J.`)
+5. **Paso 2d**: `.Nombre Propio Multi-Palabra. (año)` → split para `La Salle Campus Barcelona. (2026)`
+
+Funciones exportadas:
+```python
+parsear_referencias_bibliograficas(texto: str) -> list[str]
+detectar_tipo_referencia(ref_text: str) -> 'libro' | 'articulo' | 'video' | 'web'
+refs_a_bibliografia_json(refs: list[str]) -> list[dict]  # [{tipo, referencia}]
+```
+
+#### B.3 `services/supabase_service.py` — 4 métodos nuevos
+
+```python
+await supabase.guardar_referencias_curso(course_id, doc_id, refs)
+    # DELETE old refs by course_id, INSERT new ones with ref_order
+
+await supabase.obtener_referencias_curso(course_id) -> list[str]
+    # SELECT ref_text ORDER BY ref_order ASC
+
+await supabase.eliminar_referencias_doc(doc_id)
+    # Llamado desde eliminar_documento (cascade)
+
+await supabase.obtener_doc_id_refs_curso(course_id) -> str | None
+    # Verifica si el curso ya tiene un doc de refs (para bloquear segundo upload)
+```
+
+`eliminar_documento` ahora hace cascade: borra refs antes de borrar el doc.
+
+#### B.4 `routers/documents.py` — Upload con parseo automático
+
+El endpoint `POST /api/documents/upload` ahora recibe:
+- `course_id` (Form, opcional)
+- `doc_type` (Form, opcional — si es `"bibliografia"` activa el parseo)
+- `program_id`, `scope`, `name` (Form, opcionales)
+
+Flujo cuando `doc_type == "bibliografia"` y hay `course_id`:
+1. Verifica que el curso no tenga ya refs → HTTP 409 si existe (mensaje claro al docente)
+2. Extrae texto del PDF/MD
+3. Llama `parsear_referencias_bibliograficas(texto)`
+4. Guarda en `course_bibliography_refs`
+5. Devuelve `ref_count` en el data de respuesta
+
+#### B.5 `routers/syllabus.py` — Merge bibliografía en generación
+
+Helper `_mezclar_bibliografia(silabo, refs_precargadas)`:
+- Toma las refs IA de `silabo["bibliografia"]` (generadas por Gemini, ~6-8 items)
+- Agrega las refs parseadas del PDF (~10 items), deduplicando por primeros 60 chars
+- Resultado: ~16 refs combinadas en el sílabo
+
+**Inyectado en AMBOS endpoints de generación:**
+- `/api/syllabus/generate` (v1)
+- `/api/syllabus/generate-v2` (wizard — el que usa el frontend)
+
+El docente ve todas las refs en el editor y elige cuáles incluir al exportar DOCX.
+
+#### B.6 `api/client.ts` — método `deleteDocument`
+
+```typescript
+deleteDocument: (docId: string) =>
+  request<APIResponse>(`/api/documents/${encodeURIComponent(docId)}`, {
+    method: 'DELETE',
+  }),
+```
+
+(Se eliminó la versión duplicada que existía antes.)
+
+---
+
+### C. Dashboard — Reemplazo del repositorio RAG inseguro
+
+**Problema:** La pantalla "Base de Conocimiento" usaba el hook `useDocuments`
+que llama `GET /api/documents/` → devuelve documentos de TODOS los usuarios
+(sin filtro por `user_id`). Vulnerabilidad de privacidad antes del deploy.
+
+**Solución:** Dashboard reescrito completamente como "Panel Principal".
+
+**Archivo:** `silabos-frontend/src/pages/Dashboard.tsx`
+
+Qué se eliminó:
+- `useDocuments` hook (y su llamada al endpoint inseguro)
+- Grid de documentos compartidos, filtro de tipos, botón "Subir documento"
+- Widget "Agentes Activos" (decorativo, sin funcionalidad real)
+- Campo de búsqueda
+
+Qué se agregó:
+- **Métricas** (3 cards): Total Sílabos / En Progreso / Publicados
+  — datos obtenidos de `api.listSyllabiAll()` (sílabos propios del usuario)
+- **Sílabos recientes** (grid de 4): muestra los últimos actualizados con
+  badge de estado color-coded, nombre del curso y semestre
+- Estado vacío con CTA "Crear primer sílabo"
+- Header simplificado: solo botón "Nuevo Sílabo"
+
+**NavSidebar:** label `/dashboard` cambiado de `"Base de Conocimiento"` a
+`"Panel Principal"`, icono `Folder` → `Home`.
+
+---
+
+### D. Estado de seguridad RAG (pendiente para post-demo)
+
+El endpoint `GET /api/documents/` y la tabla `curriculum_docs` NO tienen
+filtro por `user_id`. El componente de UI fue deshabilitado (solución de
+presentación), pero el endpoint sigue expuesto.
+
+**Cuando se reactive el RAG:**
+1. Agregar columna `user_id UUID` a `curriculum_docs`
+2. En `listar_documentos()`: agregar `WHERE user_id = :uid`
+3. En `subir_pdf()`: pasar `user_id` al INSERT
+4. El chat RAG (`routers/chat.py`) tampoco verifica ownership de `doc_ids`
+
+---
+
+### E. Tabla de estado actual por archivo
+
+| Archivo | Estado | Notas |
+|---|---|---|
+| `services/bibliography_parser.py` | ✅ Nuevo | Parser APA para PDF+MD |
+| `services/supabase_service.py` | ✅ Modificado | Tabla + 4 métodos nuevos |
+| `routers/documents.py` | ✅ Modificado | Parseo en upload |
+| `routers/syllabus.py` | ✅ Modificado | `_mezclar_bibliografia` en v1+v2 |
+| `components/NotebookLMGuide.tsx` | ✅ Reescrito | Cards gradiente + modales |
+| `pages/SyllabusCreator.tsx` | ✅ Modificado | Estado `uploadedBiblio`, handlers |
+| `pages/Dashboard.tsx` | ✅ Reescrito | Panel métricas, sin RAG |
+| `components/NavSidebar.tsx` | ✅ Modificado | Label + icono dashboard |
+| `api/client.ts` | ✅ Modificado | `deleteDocument` deduplicado |
+| `routers/chat.py` | ⚠️ Sin tocar | RAG chat — stand by, no wired en UI |
+| `hooks/useDocuments.ts` | ⚠️ Sin tocar | Solo accesible desde admin/docs |

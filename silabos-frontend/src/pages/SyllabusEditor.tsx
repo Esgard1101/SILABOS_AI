@@ -761,7 +761,7 @@ export default function SyllabusEditor() {
               <Save size={16} />
               {savingDraft ? 'Guardando...' : 'Guardar borrador'}
             </button>
-            {syllabusId && syllabusStatus === 'draft' && (
+            {syllabusId && (syllabusStatus === 'draft' || syllabusStatus === 'returned') && (
               <button
                 onClick={handleSubmitReview}
                 className="bg-orange-600 text-white px-3 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-orange-700"

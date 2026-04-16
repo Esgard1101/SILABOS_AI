@@ -26,11 +26,11 @@ import {
   setSyllabusStatusOverride,
 } from '../utils/syllabusStorage';
 
-type ReviewTab = 'review' | 'draft' | 'approved' | 'published';
+type ReviewTab = 'review' | 'returned' | 'approved' | 'published';
 
 const TAB_META: Array<{ key: ReviewTab; label: string }> = [
-  { key: 'review', label: 'Pendientes de revisión' },
-  { key: 'draft', label: 'Observados' },
+  { key: 'review',   label: 'Pendientes de revisión' },
+  { key: 'returned', label: 'Observados' },
   { key: 'approved', label: 'Aprobados' },
   { key: 'published', label: 'Publicados' },
 ];
@@ -195,15 +195,19 @@ export default function Review() {
     setActionLoading(true);
 
     try {
-      if (observationText.trim()) {
-        await addObservationIfNeeded();
-      }
-
-      showToast('Observación registrada. El sílabo sigue en revisión.', 'success');
-      setObservationText('');
+      await api.returnToTeacher(selectedItem.id, observationText.trim(), observerName);
+      setSyllabusStatusOverride(selectedItem.id, 'returned');
+      setSyllabi((current) =>
+        current.map((item) =>
+          item.id === selectedItem.id
+            ? { ...item, status: 'returned', updated_at: new Date().toISOString() }
+            : item,
+        ),
+      );
+      showToast('Sílabo devuelto al docente para corrección', 'success');
       closeDrawer();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No se pudo registrar la observación', 'error');
+      showToast(error instanceof Error ? error.message : 'No se pudo devolver el sílabo', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -283,7 +287,7 @@ export default function Review() {
                 label={
                   activeTab === 'review'
                     ? 'No hay sílabos en revisión'
-                    : activeTab === 'draft'
+                    : activeTab === 'returned'
                       ? 'No hay sílabos observados'
                       : activeTab === 'approved'
                         ? 'No hay sílabos aprobados'

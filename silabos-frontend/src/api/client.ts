@@ -261,6 +261,16 @@ export const api = {
       { method: 'POST' },
     ),
 
+  returnToTeacher: (syllabusId: string, observation = '', observerName = 'Dirección de Escuela') =>
+    request<APIResponse>(
+      `/api/syllabus/${syllabusId}/return-to-teacher`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observation, observer_name: observerName }),
+      },
+    ),
+
   getSyllabusVersions: (syllabusId: string) =>
     request<APIResponse>(
       `/api/syllabus/${syllabusId}/versions`,
