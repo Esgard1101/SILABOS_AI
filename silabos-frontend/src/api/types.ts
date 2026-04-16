@@ -22,8 +22,12 @@ export interface LoginResponse {
     email: string;
     role: string;
     career_id?: string | null;
+    status?: UserAccountStatus;
+    auth_provider?: string;
   };
 }
+
+export type UserAccountStatus = 'pending' | 'active' | 'rejected';
 
 export interface AuthUser {
   id: string;
@@ -31,6 +35,59 @@ export interface AuthUser {
   email: string;
   role: string;
   career_id?: string | null;
+  status?: UserAccountStatus;
+  auth_provider?: string;
+}
+
+export interface GoogleTokenRequest {
+  id_token: string;
+}
+
+export interface GoogleRegisterRequest extends GoogleTokenRequest {
+  career_id: string;
+}
+
+export interface GoogleAuthData {
+  account_status: 'active' | 'pending' | 'rejected' | 'not_registered';
+  message: string;
+  access_token?: string;
+  token_type?: string;
+  user?: AuthUser | null;
+}
+
+export type GoogleAuthResponse = ApiResponse<GoogleAuthData>;
+
+export interface AdminUserItem extends AuthUser {
+  created_at?: string | null;
+  approved_at?: string | null;
+  google_sub?: string | null;
+}
+
+export interface AdminCourseItem {
+  id: string;
+  name: string;
+  code?: string | null;
+  credits?: number | null;
+  cycle?: number | null;
+  is_common?: boolean;
+  scope?: string | null;
+  sumilla?: string | null;
+  program_id?: string | null;
+  program_name?: string | null;
+  career_id?: string | null;
+  career_name?: string | null;
+  faculty_id?: string | null;
+  faculty_name?: string | null;
+}
+
+export interface CourseSumillaHistoryItem {
+  id: string;
+  course_id: string;
+  previous_sumilla?: string | null;
+  new_sumilla: string;
+  changed_by?: string | null;
+  changed_by_name?: string | null;
+  changed_at: string;
 }
 
 // Entrada para generar silabo
@@ -348,6 +405,9 @@ export type ValidationResponse = ApiResponse<ValidationResult>;
 export type SourcesResponse = ApiResponse<SourcesData>;
 export type HealthResponse = ApiResponse<HealthData>;
 export type BibliographySearchApiResponse = ApiResponse<BibliographySearchResponse>;
+export type AdminUserListResponse = ApiResponse<{ items: AdminUserItem[] }>;
+export type AdminCourseListResponse = ApiResponse<{ items: AdminCourseItem[] }>;
+export type CourseSumillaHistoryResponse = ApiResponse<{ items: CourseSumillaHistoryItem[] }>;
 
 // ── Wizard v2 — Programas, Cursos, Métodos ─────────────────────────────────
 

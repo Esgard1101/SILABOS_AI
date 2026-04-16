@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from auth.auth_bearer import JWTBearer
+from auth.permissions import get_current_user_record, require_roles
 from models.schemas import GenerarSilaboInput, SyllabusGenerateRequest, ValidarSilaboInput, APIResponse
 from services.word_generator import (
     generar_docx,
@@ -135,6 +135,10 @@ def _obtener_servicios(request: Request):
     return servicios
 
 
+def _get_scope_user_id(current_user: dict) -> str | None:
+    return None if current_user.get("role") == "admin" else str(current_user["id"])
+
+
 class GuardarDraftInput(BaseModel):
     payload_json: dict
     status: str = "draft"
@@ -155,7 +159,7 @@ class ActualizarSilaboInput(BaseModel):
 async def generar_silabo(
     datos: GenerarSilaboInput,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """
     Genera un sílabo universitario completo usando Gemini Flash-Lite.
@@ -165,6 +169,7 @@ async def generar_silabo(
         servicios = _obtener_servicios(request)
         gemini = servicios.get("gemini")
         supabase = servicios.get("supabase")
+        user_id = str(current_user["id"])
 
         if not gemini:
             raise HTTPException(status_code=503, detail="Servicio de IA no disponible")
@@ -180,6 +185,17 @@ async def generar_silabo(
             contexto_curricular = "\n\n".join(textos)
             logger.info(f"Contexto curricular: {len(docs)} documentos, {len(contexto_curricular)} chars")
 
+        # ── Cargar refs pre-parseadas de NotebookLM (si existen) ──
+        refs_precargadas: list[str] = []
+        course_id = datos.course_id if hasattr(datos, "course_id") else None
+        if course_id and supabase:
+            refs_precargadas = await supabase.obtener_referencias_curso(course_id)
+            if refs_precargadas:
+                logger.info(
+                    f"Usando {len(refs_precargadas)} referencias pre-parseadas "
+                    f"(course_id={course_id})"
+                )
+
         # Llamar al Agente 1 (Gemini)
         datos_dict = datos.model_dump()
         silabo = await gemini.generar_silabo(datos_dict, contexto_curricular)
@@ -190,6 +206,12 @@ async def generar_silabo(
                 data=None,
                 error=silabo["error"],
             )
+
+        # ── Reemplazar bibliografía generada por Gemini con las refs reales ──
+        if refs_precargadas:
+            from services.bibliography_parser import refs_a_bibliografia_json
+            silabo["bibliografia"] = refs_a_bibliografia_json(refs_precargadas)
+            logger.info("Bibliografía del sílabo reemplazada con referencias pre-parseadas")
 
         if not datos.persist_result:
             return APIResponse(success=True, data=silabo, error=None)
@@ -260,7 +282,7 @@ async def generar_silabo(
 async def validar_silabo(
     datos: ValidarSilaboInput,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """
     Valida la coherencia curricular de un sílabo.
@@ -270,6 +292,7 @@ async def validar_silabo(
         servicios = _obtener_servicios(request)
         gemini = servicios.get("gemini")
         supabase = servicios.get("supabase")
+        scope_user_id = _get_scope_user_id(current_user)
 
         if not gemini:
             raise HTTPException(status_code=503, detail="Servicio de IA no disponible")
@@ -281,7 +304,7 @@ async def validar_silabo(
 
         if datos.syllabus_id and supabase:
             registro = await supabase.obtener_silabo(
-                datos.syllabus_id, user_id=user_id
+                datos.syllabus_id, user_id=scope_user_id
             )
             if not registro:
                 raise HTTPException(status_code=404, detail=f"Sílabo {datos.syllabus_id} no encontrado")
@@ -322,17 +345,18 @@ async def validar_silabo(
 async def obtener_silabo(
     syllabus_id: str,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """Obtiene un sílabo por su UUID."""
     try:
         servicios = _obtener_servicios(request)
         supabase = servicios.get("supabase")
+        scope_user_id = _get_scope_user_id(current_user)
 
         if not supabase:
             raise HTTPException(status_code=503, detail="Base de datos no disponible")
 
-        registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+        registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
         if not registro:
             raise HTTPException(status_code=404, detail="Sílabo no encontrado")
 
@@ -354,7 +378,7 @@ async def listar_silabos(
     skip: int = 0,
     limit: int = 20,
     program_id: str = None,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """
     Lista sílabos con paginación simple (skip, limit).
@@ -363,22 +387,31 @@ async def listar_silabos(
     try:
         servicios = _obtener_servicios(request)
         supabase = servicios.get("supabase")
+        scope_user_id = _get_scope_user_id(current_user)
 
         if not supabase:
             raise HTTPException(status_code=503, detail="Base de datos no disponible")
 
         if program_id:
-            silabos = await supabase.listar_silabos_programa(
-                user_id=user_id,
-                program_id=program_id,
-                skip=skip,
-                limit=limit,
-            )
+            if current_user.get("role") == "admin":
+                silabos = await supabase.listar_silabos_programa_admin(
+                    program_id=program_id,
+                    skip=skip,
+                    limit=limit,
+                    user_id=scope_user_id,
+                )
+            else:
+                silabos = await supabase.listar_silabos_programa(
+                    user_id=scope_user_id,
+                    program_id=program_id,
+                    skip=skip,
+                    limit=limit,
+                )
         else:
             silabos = await supabase.listar_silabos(
                 skip=skip,
                 limit=limit,
-                user_id=user_id,
+                user_id=scope_user_id,
             )
         return APIResponse(success=True, data={"items": silabos, "skip": skip, "limit": limit}, error=None)
 
@@ -393,7 +426,7 @@ async def listar_silabos(
 async def generar_silabo_v2(
     datos: SyllabusGenerateRequest,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """
     Genera un sílabo usando el wizard de 4 pasos.
@@ -404,6 +437,7 @@ async def generar_silabo_v2(
         servicios = _obtener_servicios(request)
         gemini = servicios.get("gemini")
         supabase = servicios.get("supabase")
+        user_id = str(current_user["id"])
 
         if not gemini:
             raise HTTPException(status_code=503, detail="Servicio de IA no disponible")
@@ -591,10 +625,11 @@ async def generar_silabo_v2(
 async def guardar_borrador(
     datos: GuardarDraftInput,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    user_id = str(current_user["id"])
 
     if not supabase:
         raise HTTPException(503, "Base de datos no disponible")
@@ -619,22 +654,23 @@ async def actualizar_borrador(
     syllabus_id: str,
     datos: ActualizarSilaboInput,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
 
     if not supabase:
         raise HTTPException(503, "Base de datos no disponible")
 
-    existente = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    existente = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not existente:
         raise HTTPException(404, "Sílabo no encontrado")
 
     actualizado = await supabase.actualizar_silabo(
         syllabus_id,
         datos.payload_json,
-        user_id=user_id,
+        user_id=scope_user_id,
         status=datos.status or existente.get("status") or "draft",
     )
     if not actualizado:
@@ -661,7 +697,7 @@ async def exportar_silabo(
     syllabus_id: str,
     request: Request,
     format: str = "docx",
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """
     Exporta sílabo a DOCX (sin rowspan, editable) o PDF (WeasyPrint).
@@ -670,11 +706,12 @@ async def exportar_silabo(
     """
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
 
     if not supabase:
         raise HTTPException(503, "Base de datos no disponible")
 
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, f"Sílabo {syllabus_id} no encontrado")
 
@@ -745,14 +782,15 @@ class GuardarObservacionInput(BaseModel):
 async def enviar_revision(
     syllabus_id: str,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """Cambia el status a 'review' (enviar a revisiÃ³n)."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, "SÃƒÂ­labo no encontrado")
     ok = await supabase.actualizar_status(
@@ -771,14 +809,15 @@ async def enviar_revision(
 async def aprobar_silabo(
     syllabus_id: str,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(require_roles("admin")),
 ):
     """Cambia el status a 'approved'."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, "SÃƒÂ­labo no encontrado")
     ok = await supabase.actualizar_status(
@@ -797,14 +836,15 @@ async def aprobar_silabo(
 async def publicar_silabo(
     syllabus_id: str,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(require_roles("admin")),
 ):
     """Cambia el status a 'published'."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, "SÃƒÂ­labo no encontrado")
     ok = await supabase.actualizar_status(
@@ -823,14 +863,15 @@ async def publicar_silabo(
 async def listar_versiones(
     syllabus_id: str,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """Lista el historial de versiones de un sÃ­labo."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, "SÃƒÂ­labo no encontrado")
     versiones = await supabase.listar_versiones(
@@ -848,14 +889,15 @@ async def agregar_observacion(
     syllabus_id: str,
     datos: GuardarObservacionInput,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(require_roles("admin")),
 ):
     """Agrega una observaciÃ³n curricular al sÃ­labo."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, "SÃƒÂ­labo no encontrado")
     obs = await supabase.guardar_observacion(
@@ -872,14 +914,15 @@ async def agregar_observacion(
 async def listar_observaciones(
     syllabus_id: str,
     request: Request,
-    user_id: str = Depends(JWTBearer()),
+    current_user: dict = Depends(get_current_user_record),
 ):
     """Lista las observaciones de un sÃ­labo."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
+    scope_user_id = _get_scope_user_id(current_user)
     if not supabase:
         raise HTTPException(503, "DB no disponible")
-    registro = await supabase.obtener_silabo(syllabus_id, user_id=user_id)
+    registro = await supabase.obtener_silabo(syllabus_id, user_id=scope_user_id)
     if not registro:
         raise HTTPException(404, "SÃƒÂ­labo no encontrado")
     obs = await supabase.listar_observaciones(

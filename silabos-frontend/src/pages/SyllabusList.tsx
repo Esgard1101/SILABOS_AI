@@ -103,6 +103,8 @@ async function downloadExport(
 
 export default function SyllabusList() {
   const navigate = useNavigate();
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'admin';
   const [syllabi, setSyllabi] = useState<SyllabusListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -284,6 +286,17 @@ export default function SyllabusList() {
     }
 
     if (status === 'review') {
+      if (!isAdmin) {
+        return (
+          <button
+            onClick={() => openInEditor(item)}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-orange-200 hover:text-orange-600"
+          >
+            <Eye size={16} />
+            Ver
+          </button>
+        );
+      }
       return (
         <>
           <button
@@ -320,6 +333,26 @@ export default function SyllabusList() {
     }
 
     if (status === 'approved') {
+      if (!isAdmin) {
+        return (
+          <>
+            <button
+              onClick={() => openInEditor(item)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-orange-200 hover:text-orange-600"
+            >
+              <Eye size={16} />
+              Ver
+            </button>
+            <button
+              onClick={() => downloadExport(item.id, 'docx', showToast)}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-orange-200 hover:text-orange-600"
+            >
+              <FileDown size={16} />
+              Descargar DOCX
+            </button>
+          </>
+        );
+      }
       return (
         <>
           <button

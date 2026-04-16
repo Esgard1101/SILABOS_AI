@@ -7,6 +7,7 @@ import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import SyllabusEditor from './pages/SyllabusEditor';
 import SyllabusCreator from './pages/SyllabusCreator';
@@ -15,6 +16,8 @@ import Analytics from './pages/Analytics';
 import Catalog from './pages/Catalog';
 import Review from './pages/Review';
 import ContextSelector from './pages/ContextSelector';
+import AdminUsers from './pages/AdminUsers';
+import AdminSumillas from './pages/AdminSumillas';
 import { useAppContext } from './hooks/useAppContext';
 
 // Guard que exige contexto activo (programa seleccionado)
@@ -30,15 +33,21 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/select-context" element={<ContextSelector />} />
+        <Route path="/register" element={<Register />} />
+        <Route
+          path="/select-context"
+          element={
+            <ProtectedRoute>
+              <ContextSelector />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/"
           element={
             <ProtectedRoute>
-              <ContextGuard>
-                <Dashboard />
-              </ContextGuard>
+              <Dashboard />
             </ProtectedRoute>
           }
         />
@@ -46,9 +55,7 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <ContextGuard>
-                <Dashboard />
-              </ContextGuard>
+              <Dashboard />
             </ProtectedRoute>
           }
         />
@@ -66,9 +73,7 @@ export default function App() {
           path="/editor"
           element={
             <ProtectedRoute>
-              <ContextGuard>
-                <SyllabusEditor />
-              </ContextGuard>
+              <SyllabusEditor />
             </ProtectedRoute>
           }
         />
@@ -76,19 +81,15 @@ export default function App() {
           path="/syllabi"
           element={
             <ProtectedRoute>
-              <ContextGuard>
-                <SyllabusList />
-              </ContextGuard>
+              <SyllabusList />
             </ProtectedRoute>
           }
         />
         <Route
           path="/analytics"
           element={
-            <ProtectedRoute>
-              <ContextGuard>
-                <Analytics />
-              </ContextGuard>
+            <ProtectedRoute roles={['admin']}>
+              <Analytics />
             </ProtectedRoute>
           }
         />
@@ -96,19 +97,31 @@ export default function App() {
           path="/catalog"
           element={
             <ProtectedRoute>
-              <ContextGuard>
-                <Catalog />
-              </ContextGuard>
+              <Catalog />
             </ProtectedRoute>
           }
         />
         <Route
           path="/review"
           element={
-            <ProtectedRoute>
-              <ContextGuard>
-                <Review />
-              </ContextGuard>
+            <ProtectedRoute roles={['admin']}>
+              <Review />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminUsers />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/sumillas"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminSumillas />
             </ProtectedRoute>
           }
         />

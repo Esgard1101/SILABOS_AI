@@ -3,9 +3,14 @@ import {
   BookOpen,
   ClipboardCheck,
   Folder,
+  Home,
   Library,
   LogOut,
+  PenSquare,
+  ShieldCheck,
+  Users,
 } from 'lucide-react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStoredUser, useAuth } from '../hooks/useAuth';
 
@@ -13,12 +18,26 @@ interface NavSidebarProps {
   currentPath: string;
 }
 
-const NAV_ITEMS = [
-  { path: '/dashboard', label: 'Base de Conocimiento', icon: Folder },
+type NavItem = {
+  path: string;
+  label: string;
+  icon: typeof Folder;
+};
+
+const DOCENTE_NAV_ITEMS: NavItem[] = [
+  { path: '/dashboard', label: 'Panel Principal', icon: Home },
   { path: '/syllabi', label: 'Mis Silabos', icon: BookOpen },
-  { path: '/analytics', label: 'Analitica', icon: BarChart3 },
+  { path: '/catalog', label: 'Catalogos', icon: Library },
+];
+
+const ADMIN_NAV_ITEMS: NavItem[] = [
+  { path: '/dashboard', label: 'Panel Principal', icon: Home },
+  { path: '/syllabi', label: 'Mis Silabos', icon: BookOpen },
   { path: '/catalog', label: 'Catalogos', icon: Library },
   { path: '/review', label: 'Revision Academica', icon: ClipboardCheck },
+  { path: '/analytics', label: 'Analitica', icon: BarChart3 },
+  { path: '/admin/users', label: 'Gestion de Usuarios', icon: Users },
+  { path: '/admin/sumillas', label: 'Gestion de Sumillas', icon: PenSquare },
 ];
 
 export default function NavSidebar({ currentPath }: NavSidebarProps) {
@@ -34,8 +53,13 @@ export default function NavSidebar({ currentPath }: NavSidebarProps) {
       .map((chunk) => chunk[0]?.toUpperCase() || '')
       .join('') || 'US';
 
+  const navItems = useMemo(
+    () => (currentUser?.role === 'admin' ? ADMIN_NAV_ITEMS : DOCENTE_NAV_ITEMS),
+    [currentUser?.role],
+  );
+
   return (
-    <aside className="group hidden md:flex md:h-screen md:w-16 md:flex-col md:overflow-hidden md:border-r md:border-orange-100 md:bg-white md:shadow-sm md:transition-all md:duration-300 md:hover:w-56">
+    <aside className="group hidden md:flex md:h-screen md:w-16 md:flex-col md:overflow-hidden md:border-r md:border-orange-100 md:bg-white md:shadow-sm md:transition-all md:duration-300 md:hover:w-60">
       <div className="flex h-16 items-center justify-center border-b border-orange-100 px-4 group-hover:justify-start">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-600 text-white shadow-sm">
           <Folder size={18} />
@@ -46,8 +70,8 @@ export default function NavSidebar({ currentPath }: NavSidebarProps) {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-2 px-2 py-4">
-        {NAV_ITEMS.map((item) => {
+      <nav className="flex-1 space-y-2 overflow-y-auto px-2 py-4">
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPath === item.path;
 
@@ -84,7 +108,10 @@ export default function NavSidebar({ currentPath }: NavSidebarProps) {
           </div>
           <div className="min-w-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
             <p className="truncate text-sm font-semibold text-slate-800">{fullName}</p>
-            <p className="truncate text-xs text-slate-500">{currentUser?.role || 'Usuario'}</p>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              {currentUser?.role === 'admin' ? <ShieldCheck size={12} /> : null}
+              <span className="truncate">{currentUser?.role || 'Usuario'}</span>
+            </div>
           </div>
         </div>
 

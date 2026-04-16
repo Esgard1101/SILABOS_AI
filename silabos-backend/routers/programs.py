@@ -131,7 +131,11 @@ async def listar_skills(
 
 
 @router.get("/methods/suggest")
-async def sugerir_metodo(request: Request, course_id: str = Query(...)):
+async def sugerir_metodo(
+    request: Request,
+    course_id: str = Query(...),
+    categories: str = Query(default="", description="Categorías separadas por coma"),
+):
     """
     Sugiere el método pedagógico más adecuado para un curso.
     Llama a Gemini con la sumilla del curso.
@@ -165,6 +169,9 @@ async def sugerir_metodo(request: Request, course_id: str = Query(...)):
     if not sumilla:
         return {"success": True, "data": fallback, "error": None}
 
+    skill_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else []
+    skill_context = ", ".join(skill_categories) if skill_categories else "Sin categorías explícitas"
+
     try:
         from google import genai
 
@@ -183,6 +190,7 @@ Responde ÚNICAMENTE con un JSON válido con este formato exacto:
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {sumilla[:400]}
+CATEGORÍAS DE HABILIDADES PRIORIZADAS: {skill_context}
 
 MÉTODOS DISPONIBLES:
 {lista_metodos_texto}

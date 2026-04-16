@@ -36,8 +36,8 @@ interface GradingRow {
 const STEP_LABELS: Record<Step, string> = {
   1: 'Curso',
   2: 'Bibliografía',
-  3: 'Método',
-  4: 'Habilidades',
+  3: 'Habilidades',
+  4: 'Método',
   5: 'Calificación',
   6: 'Confirmar',
 };
@@ -50,7 +50,7 @@ const DEFAULT_GRADING_ROWS: GradingRow[] = [
 ];
 
 function StepIndicator({ current }: { current: Step }) {
-  const steps: Step[] = [1, 2, 3, 4, 5];
+  const steps: Step[] = [1, 2, 3, 4, 5, 6];
   return (
     <div className="flex items-center gap-2 mb-8">
       {steps.map((s, idx) => (
@@ -101,9 +101,16 @@ export default function SyllabusCreator() {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const [uploadingBiblio, setUploadingBiblio] = useState(false);
+  const [uploadedBiblio, setUploadedBiblio] = useState<{
+    docId: string;
+    fileName: string;
+    refCount: number;
+  } | null>(null);
+  const [removingBiblio, setRemovingBiblio] = useState(false);
 
   const [selectedMethodId, setSelectedMethodId] = useState<number | null>(null);
   const [selectedMethodName, setSelectedMethodName] = useState<string>('');
+  const [selectedMethodSequence, setSelectedMethodSequence] = useState<string>('');
 
   // Paso 4 — Enfoques de habilidades
   const [skillCategories, setSkillCategories] = useState<string[]>([]);
@@ -128,9 +135,9 @@ export default function SyllabusCreator() {
   );
   const canContinueFromGrading = useAiGrading || (gradingTotal === 100 && gradingRowsValid);
 
-  // Cargar categorías de habilidades cuando llega al paso 4
+  // Cargar categorías de habilidades cuando llega al paso 3
   useEffect(() => {
-    if (step !== 4 || skillCategories.length > 0) return;
+    if (step !== 3 || skillCategories.length > 0) return;
     setLoadingSkillCategories(true);
     fetch(`${BASE_URL}/api/skills/categories`, {
       headers: { Authorization: `Bearer ${getToken()}` },
@@ -168,19 +175,49 @@ export default function SyllabusCreator() {
 
   const handleBibliographyFile = async (file: File) => {
     if (!context || !courseDetail) return;
+    if (uploadedBiblio) {
+      showToast(
+        'Al crear un sílabo debes subir un solo archivo final de tus referencias consolidadas en NotebookLM. Elimina el archivo actual primero.',
+        'error',
+      );
+      return;
+    }
     setUploadingBiblio(true);
     try {
-      await api.uploadBibliography(
+      const res = await api.uploadBibliography(
         file,
         courseDetail.id,
         context.program_id,
         courseDetail.scope || 'program',
       );
-      showToast('Bibliografía cargada correctamente', 'success');
-    } catch {
-      showToast('Error al subir el archivo', 'error');
+      const refCount: number = (res as any)?.data?.ref_count ?? 0;
+      const docId: string = (res as any)?.data?.id ?? '';
+      setUploadedBiblio({ docId, fileName: file.name, refCount });
+      showToast(
+        refCount > 0
+          ? `Bibliografía cargada — ${refCount} referencias extraídas automáticamente`
+          : 'Bibliografía cargada (no se detectaron referencias APA en el archivo)',
+        'success',
+      );
+    } catch (err: any) {
+      const msg: string = err?.message || 'Error al subir el archivo';
+      showToast(msg, 'error');
     } finally {
       setUploadingBiblio(false);
+    }
+  };
+
+  const handleRemoveBibliography = async () => {
+    if (!uploadedBiblio) return;
+    setRemovingBiblio(true);
+    try {
+      await api.deleteDocument(uploadedBiblio.docId);
+      setUploadedBiblio(null);
+      showToast('Archivo eliminado. Puedes subir uno nuevo.', 'success');
+    } catch {
+      showToast('No se pudo eliminar el archivo', 'error');
+    } finally {
+      setRemovingBiblio(false);
     }
   };
 
@@ -369,8 +406,12 @@ export default function SyllabusCreator() {
               <NotebookLMGuide
                 courseName={courseDetail.name}
                 sumilla={courseDetail.sumilla || ''}
+                metodologias={selectedMethodName || undefined}
                 onFileSelected={handleBibliographyFile}
                 uploading={uploadingBiblio}
+                uploadedBiblio={uploadedBiblio}
+                onRemoveBiblio={handleRemoveBibliography}
+                removingBiblio={removingBiblio}
               />
 
               <div className="flex items-center justify-between pt-2">
@@ -401,7 +442,7 @@ export default function SyllabusCreator() {
           )}
 
           {/* ──── PASO 3: Método pedagógico ──── */}
-          {step === 3 && courseDetail && (
+          {step === 4 && courseDetail && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Método pedagógico</h2>
@@ -412,23 +453,25 @@ export default function SyllabusCreator() {
 
               <MethodSelector
                 courseId={courseDetail.id}
+                selectedCategories={selectedSkillCategories}
                 value={selectedMethodId}
-                onChange={(id, name) => {
+                onChange={(id, name, sequence) => {
                   setSelectedMethodId(id);
                   setSelectedMethodName(name);
+                  setSelectedMethodSequence(sequence || '');
                 }}
               />
 
               <div className="flex items-center justify-between pt-2">
                 <button
-                  onClick={() => setStep(2)}
+                  onClick={() => setStep(3)}
                   className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Atrás
                 </button>
                 <button
-                  onClick={() => setStep(4)}
+                  onClick={() => setStep(5)}
                   disabled={selectedMethodId === null}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold rounded-lg text-sm transition-colors"
                 >
@@ -440,7 +483,7 @@ export default function SyllabusCreator() {
           )}
 
           {/* ──── PASO 4: Enfoques de habilidades ──── */}
-          {step === 4 && courseDetail && (
+          {step === 3 && courseDetail && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Enfoques de habilidades</h2>
@@ -508,7 +551,7 @@ export default function SyllabusCreator() {
 
               <div className="flex items-center justify-between pt-2">
                 <button
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep(2)}
                   className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
                 >
                   <ArrowLeft className="w-4 h-4" />
@@ -516,13 +559,13 @@ export default function SyllabusCreator() {
                 </button>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => { setSelectedSkillCategories([]); setStep(5); }}
+                    onClick={() => { setSelectedSkillCategories([]); setStep(4); }}
                     className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
                   >
                     Omitir
                   </button>
                   <button
-                    onClick={() => setStep(5)}
+                    onClick={() => setStep(4)}
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg text-sm transition-colors"
                   >
                     Continuar
@@ -704,6 +747,9 @@ export default function SyllabusCreator() {
                       Método pedagógico
                     </p>
                     <p className="text-sm font-medium text-gray-800">{selectedMethodName}</p>
+                    {selectedMethodSequence ? (
+                      <p className="mt-1 text-xs text-gray-500">Secuencia: {selectedMethodSequence}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="px-5 py-4">

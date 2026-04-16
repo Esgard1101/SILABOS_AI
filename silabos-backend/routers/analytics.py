@@ -1,7 +1,9 @@
 # Router de analítica — Silabos.AI
 # Datos reales de DB + algunos contadores mock
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from auth.permissions import require_roles
 
 router = APIRouter(
     prefix="/analytics",
@@ -15,11 +17,15 @@ def _obtener_servicios(request: Request):
 
 
 @router.get("/dashboard")
-async def dashboard_stats(request: Request):
+async def dashboard_stats(
+    request: Request,
+    current_user: dict = Depends(require_roles("admin")),
+):
     """
     Estadísticas para el dashboard analítico.
     Combina datos reales de DB con proyecciones.
     """
+    del current_user
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
 

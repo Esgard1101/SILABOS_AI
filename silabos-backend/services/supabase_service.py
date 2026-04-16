@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import bcrypt
 import PyPDF2
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -62,6 +63,7 @@ class SupabaseService:
             connect_args={"options": "-c timezone=utc"},
         )
         self._Session = sessionmaker(bind=self._engine, autocommit=False, autoflush=False)
+        self._ensure_runtime_schema_sync()
         logger.info("SupabaseService inicializado con SQLAlchemy + psycopg2")
 
     # ──────────────────────────────────────────────
@@ -71,6 +73,103 @@ class SupabaseService:
     async def _ejecutar(self, func, *args, **kwargs):
         """Corre una función síncrona en un hilo del pool del SO."""
         return await asyncio.to_thread(func, *args, **kwargs)
+
+    def _ensure_runtime_schema_sync(self) -> None:
+        """
+        Ajustes de esquema requeridos por el sprint actual.
+        Se ejecutan al iniciar para no depender de una migracion manual.
+        """
+        with self._Session() as sesion:
+            sesion.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'")
+            )
+            sesion.execute(
+                text("UPDATE users SET status = 'active' WHERE status IS NULL")
+            )
+            sesion.execute(
+                text("ALTER TABLE users ALTER COLUMN status SET DEFAULT 'active'")
+            )
+            sesion.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR")
+            )
+            sesion.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR DEFAULT 'local'")
+            )
+            sesion.execute(
+                text("UPDATE users SET auth_provider = 'local' WHERE auth_provider IS NULL")
+            )
+            sesion.execute(
+                text("ALTER TABLE users ALTER COLUMN auth_provider SET DEFAULT 'local'")
+            )
+            sesion.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by UUID")
+            )
+            sesion.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ")
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub_unique
+                    ON users (google_sub)
+                    WHERE google_sub IS NOT NULL
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS course_sumilla_revisions (
+                        id UUID PRIMARY KEY,
+                        course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                        previous_sumilla TEXT,
+                        new_sumilla TEXT NOT NULL,
+                        changed_by UUID REFERENCES users(id),
+                        changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_course_sumilla_revisions_course_id_changed_at
+                    ON course_sumilla_revisions (course_id, changed_at DESC)
+                    """
+                )
+            )
+            # ── Tabla de referencias bibliográficas parseadas desde NotebookLM ──
+            sesion.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS course_bibliography_refs (
+                        id UUID PRIMARY KEY,
+                        course_id VARCHAR NOT NULL,
+                        doc_id VARCHAR NOT NULL,
+                        ref_text TEXT NOT NULL,
+                        ref_order INT NOT NULL DEFAULT 0,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_course_bibliography_refs_course_id
+                    ON course_bibliography_refs (course_id)
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_course_bibliography_refs_doc_id
+                    ON course_bibliography_refs (doc_id)
+                    """
+                )
+            )
+            sesion.commit()
 
     # ──────────────────────────────────────────────
     # SÍLABOS
@@ -293,6 +392,32 @@ class SupabaseService:
             logger.error(f"Error al subir PDF {filename}: {e}")
             return {"error": str(e)}
 
+    async def subir_texto_plano(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        carrera_id: Optional[str] = None,
+    ) -> dict:
+        """Guarda un archivo de texto o markdown y persiste su contenido."""
+        try:
+            doc_id = str(uuid.uuid4())
+            storage_path = f"{doc_id}/{filename}"
+            await asyncio.to_thread(self._guardar_pdf_disco, file_bytes, storage_path)
+            texto_extraido = file_bytes.decode("utf-8", errors="ignore")
+
+            registro = {
+                "id": doc_id,
+                "name": filename,
+                "career_id": carrera_id,
+                "storage_path": storage_path,
+                "text_content": texto_extraido[:50000],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            return await self._ejecutar(self._insertar_doc_sync, registro)
+        except Exception as e:
+            logger.error(f"Error al subir archivo de texto {filename}: {e}")
+            return {"error": str(e)}
+
     def _listar_docs_sync(self) -> list:
         """Lista todos los documentos curriculares (síncrono)."""
         with self._Session() as sesion:
@@ -390,12 +515,102 @@ class SupabaseService:
         return True
 
     async def eliminar_documento(self, doc_id: str) -> bool:
-        """Elimina un documento de la base de datos y del disco."""
+        """Elimina un documento de la base de datos, del disco y sus refs parseadas."""
         try:
+            await self.eliminar_referencias_doc(doc_id)
             return await self._ejecutar(self._eliminar_doc_sync, doc_id)
         except Exception as e:
             logger.error(f"Error al eliminar documento {doc_id}: {e}")
             return False
+
+    # ──────────────────────────────────────────────
+    # REFERENCIAS BIBLIOGRÁFICAS (NotebookLM)
+    # ──────────────────────────────────────────────
+
+    def _guardar_refs_sync(self, course_id: str, doc_id: str, refs: list[str]) -> int:
+        """Reemplaza las refs del curso y guarda las nuevas (síncrono)."""
+        with self._Session() as sesion:
+            # Borrar refs anteriores del mismo curso (replace, no acumulate)
+            sesion.execute(
+                text("DELETE FROM course_bibliography_refs WHERE course_id = :course_id"),
+                {"course_id": course_id},
+            )
+            # Insertar nuevas
+            ahora = datetime.now(timezone.utc).isoformat()
+            for orden, ref_text in enumerate(refs):
+                sesion.execute(
+                    text(
+                        """
+                        INSERT INTO course_bibliography_refs
+                            (id, course_id, doc_id, ref_text, ref_order, created_at)
+                        VALUES
+                            (:id, :course_id, :doc_id, :ref_text, :ref_order, :created_at)
+                        """
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "course_id": course_id,
+                        "doc_id": doc_id,
+                        "ref_text": ref_text,
+                        "ref_order": orden,
+                        "created_at": ahora,
+                    },
+                )
+            sesion.commit()
+        return len(refs)
+
+    async def guardar_referencias_curso(
+        self, course_id: str, doc_id: str, refs: list[str]
+    ) -> int:
+        """Persiste las referencias parseadas de un PDF de NotebookLM."""
+        return await self._ejecutar(self._guardar_refs_sync, course_id, doc_id, refs)
+
+    def _obtener_refs_sync(self, course_id: str) -> list[str]:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(
+                    """
+                    SELECT ref_text FROM course_bibliography_refs
+                    WHERE course_id = :course_id
+                    ORDER BY ref_order ASC
+                    """
+                ),
+                {"course_id": course_id},
+            ).mappings().all()
+        return [f["ref_text"] for f in filas]
+
+    async def obtener_referencias_curso(self, course_id: str) -> list[str]:
+        """Devuelve las referencias APA pre-parseadas de un curso."""
+        return await self._ejecutar(self._obtener_refs_sync, course_id)
+
+    def _eliminar_refs_doc_sync(self, doc_id: str) -> None:
+        with self._Session() as sesion:
+            sesion.execute(
+                text("DELETE FROM course_bibliography_refs WHERE doc_id = :doc_id"),
+                {"doc_id": doc_id},
+            )
+            sesion.commit()
+
+    async def eliminar_referencias_doc(self, doc_id: str) -> None:
+        """Elimina las referencias ligadas a un documento (para cascada en delete doc)."""
+        await self._ejecutar(self._eliminar_refs_doc_sync, doc_id)
+
+    async def obtener_doc_id_refs_curso(self, course_id: str) -> str | None:
+        """Devuelve el doc_id del último upload de bibliografía para el curso, o None."""
+        def _sync():
+            with self._Session() as sesion:
+                fila = sesion.execute(
+                    text(
+                        """
+                        SELECT doc_id FROM course_bibliography_refs
+                        WHERE course_id = :course_id
+                        LIMIT 1
+                        """
+                    ),
+                    {"course_id": course_id},
+                ).mappings().first()
+            return fila["doc_id"] if fila else None
+        return await self._ejecutar(_sync)
 
     async def obtener_texto_docs(self, doc_ids: list) -> str:
         """
@@ -586,6 +801,304 @@ class SupabaseService:
             return await self._ejecutar(self._obtener_usuario_por_id_sync, user_id)
         except Exception as e:
             logger.error(f"Error al obtener usuario por ID {user_id}: {e}")
+            return None
+
+    def _mapear_usuario_fila(self, fila) -> Optional[dict]:
+        if not fila:
+            return None
+
+        data = dict(fila)
+        for campo in ("id", "career_id", "approved_by"):
+            if data.get(campo) is not None:
+                data[campo] = str(data[campo])
+
+        for campo in ("created_at", "approved_at"):
+            if campo in data:
+                data[campo] = self._serializar_fecha(data.get(campo))
+
+        return data
+
+    def _obtener_usuario_por_email_sync(self, email: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    SELECT
+                        id, email, password_hash, full_name, role, career_id,
+                        status, google_sub, auth_provider, approved_by,
+                        approved_at, created_at
+                    FROM users
+                    WHERE LOWER(email) = LOWER(:email)
+                    """
+                ),
+                {"email": email},
+            ).mappings().first()
+        return self._mapear_usuario_fila(fila)
+
+    async def obtener_usuario_por_email(self, email: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_usuario_por_email_sync, email)
+        except Exception as e:
+            logger.error(f"Error al obtener usuario por email {email}: {e}")
+            return None
+
+    def _obtener_usuario_por_google_sub_sync(self, google_sub: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    SELECT
+                        id, email, password_hash, full_name, role, career_id,
+                        status, google_sub, auth_provider, approved_by,
+                        approved_at, created_at
+                    FROM users
+                    WHERE google_sub = :google_sub
+                    """
+                ),
+                {"google_sub": google_sub},
+            ).mappings().first()
+        return self._mapear_usuario_fila(fila)
+
+    async def obtener_usuario_por_google_sub(self, google_sub: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_usuario_por_google_sub_sync, google_sub)
+        except Exception as e:
+            logger.error(f"Error al obtener usuario por google_sub: {e}")
+            return None
+
+    def _obtener_usuario_por_id_sync(self, user_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    SELECT
+                        id, email, password_hash, full_name, role, career_id,
+                        status, google_sub, auth_provider, approved_by,
+                        approved_at, created_at
+                    FROM users
+                    WHERE id = :id
+                    """
+                ),
+                {"id": user_id},
+            ).mappings().first()
+        return self._mapear_usuario_fila(fila)
+
+    async def obtener_usuario_por_id(self, user_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_usuario_por_id_sync, user_id)
+        except Exception as e:
+            logger.error(f"Error al obtener usuario por ID {user_id}: {e}")
+            return None
+
+    @staticmethod
+    def _placeholder_password_hash() -> str:
+        return bcrypt.hashpw(
+            uuid.uuid4().hex.encode("utf-8"),
+            bcrypt.gensalt(),
+        ).decode("utf-8")
+
+    def _crear_usuario_google_sync(
+        self,
+        *,
+        email: str,
+        full_name: str,
+        career_id: Optional[str],
+        google_sub: str,
+        role: str = "docente",
+        status: str = "pending",
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    INSERT INTO users (
+                        id, email, password_hash, full_name, role, career_id,
+                        status, google_sub, auth_provider, created_at
+                    )
+                    VALUES (
+                        :id, :email, :password_hash, :full_name, :role, :career_id,
+                        :status, :google_sub, 'google', NOW()
+                    )
+                    RETURNING
+                        id, email, password_hash, full_name, role, career_id,
+                        status, google_sub, auth_provider, approved_by,
+                        approved_at, created_at
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "email": email.strip().lower(),
+                    "password_hash": self._placeholder_password_hash(),
+                    "full_name": full_name.strip(),
+                    "role": role,
+                    "career_id": career_id,
+                    "status": status,
+                    "google_sub": google_sub,
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._mapear_usuario_fila(fila)
+
+    async def crear_usuario_google(
+        self,
+        *,
+        email: str,
+        full_name: str,
+        career_id: Optional[str],
+        google_sub: str,
+        role: str = "docente",
+        status: str = "pending",
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._crear_usuario_google_sync,
+                email=email,
+                full_name=full_name,
+                career_id=career_id,
+                google_sub=google_sub,
+                role=role,
+                status=status,
+            )
+        except Exception as e:
+            logger.error(f"Error al crear usuario Google {email}: {e}")
+            return None
+
+    def _vincular_google_usuario_sync(
+        self,
+        *,
+        user_id: str,
+        google_sub: str,
+        full_name: str,
+        email: str,
+        career_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[dict]:
+        query = """
+            UPDATE users
+            SET email = :email,
+                full_name = :full_name,
+                google_sub = :google_sub,
+                auth_provider = 'google'
+        """
+        params = {
+            "id": user_id,
+            "email": email.strip().lower(),
+            "full_name": full_name.strip(),
+            "google_sub": google_sub,
+        }
+        if career_id is not None:
+            query += ", career_id = :career_id"
+            params["career_id"] = career_id
+        if status is not None:
+            query += ", status = :status"
+            params["status"] = status
+        query += """
+            WHERE id = :id
+            RETURNING
+                id, email, password_hash, full_name, role, career_id,
+                status, google_sub, auth_provider, approved_by,
+                approved_at, created_at
+        """
+
+        with self._Session() as sesion:
+            fila = sesion.execute(text(query), params).mappings().first()
+            sesion.commit()
+        return self._mapear_usuario_fila(fila)
+
+    async def vincular_google_usuario(
+        self,
+        *,
+        user_id: str,
+        google_sub: str,
+        full_name: str,
+        email: str,
+        career_id: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._vincular_google_usuario_sync,
+                user_id=user_id,
+                google_sub=google_sub,
+                full_name=full_name,
+                email=email,
+                career_id=career_id,
+                status=status,
+            )
+        except Exception as e:
+            logger.error(f"Error al vincular Google para usuario {user_id}: {e}")
+            return None
+
+    def _listar_usuarios_sync(self, status: Optional[str] = None) -> list:
+        query = """
+            SELECT
+                id, email, full_name, role, career_id, status,
+                google_sub, auth_provider, approved_by, approved_at, created_at
+            FROM users
+        """
+        params = {}
+        if status:
+            query += " WHERE status = :status"
+            params["status"] = status
+        query += " ORDER BY created_at DESC, full_name ASC"
+
+        with self._Session() as sesion:
+            filas = sesion.execute(text(query), params).mappings().all()
+        return [self._mapear_usuario_fila(fila) for fila in filas]
+
+    async def listar_usuarios(self, status: Optional[str] = None) -> list:
+        try:
+            return await self._ejecutar(self._listar_usuarios_sync, status)
+        except Exception as e:
+            logger.error(f"Error al listar usuarios: {e}")
+            return []
+
+    def _actualizar_estado_usuario_sync(
+        self,
+        user_id: str,
+        new_status: str,
+        acted_by: Optional[str] = None,
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET status = :status,
+                        approved_by = :approved_by,
+                        approved_at = :approved_at
+                    WHERE id = :id
+                    RETURNING
+                        id, email, password_hash, full_name, role, career_id,
+                        status, google_sub, auth_provider, approved_by,
+                        approved_at, created_at
+                    """
+                ),
+                {
+                    "id": user_id,
+                    "status": new_status,
+                    "approved_by": acted_by if new_status == "active" else None,
+                    "approved_at": datetime.now(timezone.utc) if new_status == "active" else None,
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._mapear_usuario_fila(fila)
+
+    async def actualizar_estado_usuario(
+        self,
+        user_id: str,
+        new_status: str,
+        acted_by: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._actualizar_estado_usuario_sync,
+                user_id,
+                new_status,
+                acted_by,
+            )
+        except Exception as e:
+            logger.error(f"Error al actualizar estado del usuario {user_id}: {e}")
             return None
 
     # ──────────────────────────────────────────────
@@ -1347,6 +1860,183 @@ class SupabaseService:
             logger.error(f"Error al obtener curso {course_id}: {e}")
             return None
 
+    def _listar_cursos_admin_sync(
+        self,
+        program_id: Optional[str] = None,
+        search: str = "",
+    ) -> list:
+        query = """
+            SELECT
+                c.id,
+                c.name,
+                c.code,
+                c.credits,
+                c.cycle,
+                c.is_common,
+                c.scope,
+                c.program_id,
+                c.sumilla,
+                p.name AS program_name,
+                cr.id AS career_id,
+                cr.name AS career_name,
+                f.id AS faculty_id,
+                f.name AS faculty_name
+            FROM courses c
+            LEFT JOIN programs p ON p.id = c.program_id
+            LEFT JOIN careers cr ON cr.id = p.career_id
+            LEFT JOIN faculties f ON f.id = cr.faculty_id
+            WHERE 1 = 1
+        """
+        params = {}
+        if program_id:
+            query += " AND (c.program_id = :program_id OR c.is_common = true)"
+            params["program_id"] = program_id
+        if search.strip():
+            query += " AND (LOWER(c.name) LIKE :search OR LOWER(COALESCE(c.code, '')) LIKE :search)"
+            params["search"] = f"%{search.strip().lower()}%"
+        query += " ORDER BY c.cycle ASC NULLS LAST, c.name ASC"
+
+        with self._Session() as sesion:
+            filas = sesion.execute(text(query), params).mappings().all()
+
+        resultado = []
+        for fila in filas:
+            item = dict(fila)
+            for campo in ("id", "program_id", "career_id", "faculty_id"):
+                if item.get(campo) is not None:
+                    item[campo] = str(item[campo])
+            resultado.append(item)
+        return resultado
+
+    async def listar_cursos_admin(
+        self,
+        program_id: Optional[str] = None,
+        search: str = "",
+    ) -> list:
+        try:
+            return await self._ejecutar(self._listar_cursos_admin_sync, program_id, search)
+        except Exception as e:
+            logger.error(f"Error al listar cursos para admin: {e}")
+            return []
+
+    def _actualizar_sumilla_curso_sync(
+        self,
+        course_id: str,
+        new_sumilla: str,
+        changed_by: str,
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text(
+                    """
+                    SELECT id, name, code, program_id, sumilla
+                    FROM courses
+                    WHERE id = :course_id
+                    """
+                ),
+                {"course_id": course_id},
+            ).mappings().first()
+            if not previo:
+                return None
+
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE courses
+                    SET sumilla = :sumilla
+                    WHERE id = :course_id
+                    RETURNING
+                        id, name, code, program_id, sumilla,
+                        competencia_egreso, resultado_aprendizaje, capacidad
+                    """
+                ),
+                {"course_id": course_id, "sumilla": new_sumilla},
+            ).mappings().first()
+
+            sesion.execute(
+                text(
+                    """
+                    INSERT INTO course_sumilla_revisions (
+                        id, course_id, previous_sumilla, new_sumilla, changed_by
+                    )
+                    VALUES (
+                        :id, :course_id, :previous_sumilla, :new_sumilla, :changed_by
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "course_id": course_id,
+                    "previous_sumilla": previo.get("sumilla") or "",
+                    "new_sumilla": new_sumilla,
+                    "changed_by": changed_by,
+                },
+            )
+            sesion.commit()
+
+        result = dict(fila) if fila else None
+        if result:
+            for campo in ("id", "program_id"):
+                if result.get(campo) is not None:
+                    result[campo] = str(result[campo])
+        return result
+
+    async def actualizar_sumilla_curso(
+        self,
+        course_id: str,
+        new_sumilla: str,
+        changed_by: str,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._actualizar_sumilla_curso_sync,
+                course_id,
+                new_sumilla,
+                changed_by,
+            )
+        except Exception as e:
+            logger.error(f"Error al actualizar sumilla del curso {course_id}: {e}")
+            return None
+
+    def _listar_historial_sumilla_sync(self, course_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(
+                    """
+                    SELECT
+                        r.id,
+                        r.course_id,
+                        r.previous_sumilla,
+                        r.new_sumilla,
+                        r.changed_at,
+                        r.changed_by,
+                        u.full_name AS changed_by_name
+                    FROM course_sumilla_revisions r
+                    LEFT JOIN users u ON u.id = r.changed_by
+                    WHERE r.course_id = :course_id
+                    ORDER BY r.changed_at DESC
+                    """
+                ),
+                {"course_id": course_id},
+            ).mappings().all()
+
+        resultado = []
+        for fila in filas:
+            item = dict(fila)
+            for campo in ("id", "course_id", "changed_by"):
+                if item.get(campo) is not None:
+                    item[campo] = str(item[campo])
+            item["changed_at"] = self._serializar_fecha(item.get("changed_at"))
+            resultado.append(item)
+        return resultado
+
+    async def listar_historial_sumilla(self, course_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_historial_sumilla_sync, course_id)
+        except Exception as e:
+            logger.error(f"Error al listar historial de sumilla {course_id}: {e}")
+            return []
+
     # ──────────────────────────────────────────────
     # CAREERS (para endpoint institucional)
     # ──────────────────────────────────────────────
@@ -1418,4 +2108,58 @@ class SupabaseService:
             )
         except Exception as e:
             logger.error(f"Error al listar sílabos por programa: {e}")
+            return []
+
+    def _listar_silabos_programa_admin_sync(
+        self,
+        program_id: str,
+        skip: int,
+        limit: int,
+        user_id: Optional[str] = None,
+    ) -> list:
+        query = """
+            SELECT
+                s.id, s.course_id, s.user_id, s.semester,
+                s.teacher_name, s.status, s.payload_json,
+                s.created_at, s.updated_at
+            FROM syllabi s
+            WHERE s.course_id IN (
+                SELECT id FROM courses
+                WHERE program_id = :program_id OR is_common = true
+            )
+        """
+        params = {
+            "program_id": program_id,
+            "limit": limit,
+            "skip": skip,
+        }
+        if user_id:
+            query += " AND s.user_id = :user_id"
+            params["user_id"] = user_id
+        query += """
+            ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC
+            LIMIT :limit OFFSET :skip
+        """
+
+        with self._Session() as sesion:
+            filas = sesion.execute(text(query), params).mappings().all()
+        return [self._mapear_silabo_fila(f) for f in filas]
+
+    async def listar_silabos_programa_admin(
+        self,
+        program_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        user_id: Optional[str] = None,
+    ) -> list:
+        try:
+            return await self._ejecutar(
+                self._listar_silabos_programa_admin_sync,
+                program_id,
+                skip,
+                limit,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al listar sílabos por programa (admin): {e}")
             return []

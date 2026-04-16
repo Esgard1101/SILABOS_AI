@@ -1,205 +1,190 @@
-# Informe Interno Developer - Analisis de Deploy y Pasos Pendientes
+# Informe Interno Developer - Estado Real de Deploy y Decision de Infraestructura
 
-Fecha: 2026-04-13
+Fecha: 2026-04-14
 
-## 1. Resumen ejecutivo
+## 1. Estado actual confirmado
 
-El documento original `AGENTS/informetoDEPLOYFINAL` es util como base comercial, pero hoy mezcla una arquitectura propuesta con otra que ya esta implementada en el repo.
+La arquitectura real de despliegue queda asi:
 
-La foto mas consistente entre codigo y contexto del proyecto es esta:
+| Componente | Estado actual |
+|---|---|
+| Frontend preview | Vercel |
+| Frontend cliente | cPanel |
+| Backend | VPS CubePath administrado con Coolify |
+| Base de datos | PostgreSQL dentro del VPS |
+| IA principal | Gemini |
+| Fallback IA | OpenRouter |
 
-- Frontend preview en Vercel.
-- Frontend cliente en cPanel mediante build manual.
-- Backend en VPS CubePath administrado con Coolify.
-- Base de datos activa en Supabase PostgreSQL.
-- IA principal en Gemini.
-- Fallback de IA en OpenRouter.
-- Busqueda web opcional con Google Custom Search.
+La migracion de la base de datos al VPS ya fue ejecutada. El backend ya esta levantando correctamente con la nueva `DATABASE_URL` interna del VPS.
 
-## 2. Diferencias entre el documento original y el estado real del proyecto
+## 2. Hallazgo clave de la migracion
 
-| Tema | Documento original | Estado real del repo/contexto | Impacto |
-|---|---|---|---|
-| Frontend | cPanel del cliente | Vercel como preview y cPanel como produccion cliente | El informe final debe distinguir preview y produccion |
-| Backend | VPS CubePath | VPS CubePath con Coolify | Correcto, mantener |
-| Base de datos | Migrar de Supabase a PostgreSQL propio en VPS | Codigo actual usa `DATABASE_URL` apuntando a Supabase PostgreSQL | Decidir si la migracion sigue vigente o no |
-| Almacenamiento de documentos | Se sugiere infraestructura propia o externa | El codigo guarda archivos en `silabos-backend/uploads/` | Hay que asegurar persistencia y backup en VPS |
-| IA | APIs de Google | Gemini principal y OpenRouter como fallback | Conviene documentar ambas capas internamente |
-| Catalogo de metodos | Tabla `teaching_methods` | El router usa catalogo hardcodeado en `institutional_catalog` | No venderlo como 100% dinamico si aun no lo es |
-| Bibliografia | Documento habla de PDF/MD en partes del contexto | `routers/documents.py` hoy acepta solo PDF | Si el flujo comercial promete MD, hay desalineacion |
+El backend no dependia realmente de Supabase como plataforma, sino de PostgreSQL por `DATABASE_URL`.
 
-## 3. Costos confirmados y margen interno
+Eso significa que:
 
-### 3.1 VPS / hosting backend
+- no fue necesario reescribir la logica principal;
+- el cambio fue de infraestructura, no de producto;
+- la compatibilidad con PostgreSQL propio era alta desde el inicio.
 
-- Costo real estimado: 9.51 USD/mes
-  - VPS gp.micro: 8.00 USD/mes
-  - IP flotante: 1.51 USD/mes
-- Precio cobrado al cliente: 15.00 USD/mes
-- Margen bruto estimado: 5.49 USD/mes
-- Margen porcentual aproximado: 57%
+El unico ajuste de codigo necesario fue normalizar `postgres://` hacia `postgresql+psycopg2://` para SQLAlchemy.
+
+## 3. Conclusiones tecnicas sobre la base de datos
+
+### 3.1 PostgreSQL en VPS: decision correcta
+
+Mover la base de datos al mismo VPS del backend fue la mejor decision por estas razones:
+
+- elimina la dependencia de Supabase como costo o riesgo operativo;
+- mejora la cercania entre backend y base de datos;
+- simplifica la arquitectura;
+- permite administrar el entorno de forma centralizada.
+
+### 3.2 PostgreSQL de cPanel: no recomendado
+
+Aunque cPanel muestre un modulo PostgreSQL, no conviene usarlo como base principal del sistema.
+
+Razones:
+
+- menor control sobre configuracion y rendimiento;
+- mas dependencia del hosting compartido;
+- mayor riesgo de restricciones de acceso, politicas del proveedor o limites del entorno;
+- peor separacion entre capa web y capa de datos.
+
+Conclusion interna:
+
+- cPanel solo debe usarse para el frontend;
+- backend y base de datos deben quedarse en el VPS.
+
+## 4. Costos y margen interno actualizados
+
+### 4.1 Costo real de infraestructura
+
+| Concepto | Costo real mensual |
+|---|---:|
+| VPS gp.micro | 8.00 USD |
+| IP flotante | 1.51 USD |
+| Base de datos PostgreSQL en el mismo VPS | 0 USD adicional |
+| Total real base | 9.51 USD |
+
+### 4.2 Precio propuesto al cliente
+
+| Concepto comercial | Precio mensual |
+|---|---:|
+| Hosting administrado de aplicacion y base de datos | 17.00 USD |
+| Presupuesto operativo de IA | 12.00 USD |
+| Total mensual estimado al cliente | 29.00 USD |
+
+### 4.3 Margen interno
+
+| Indicador | Valor |
+|---|---:|
+| Costo real del VPS e IP | 9.51 USD |
+| Cobro por aplicacion + base de datos | 17.00 USD |
+| Diferencia operativa | 7.49 USD |
+| Markup aproximado sobre costo | 78.76% |
 
 Lectura interna:
 
-- El precio de 15 USD no debe verse como solo alquiler de maquina.
-- Ese margen cubre administracion, despliegue, monitoreo basico, seguridad, soporte e incidencias.
+- el aumento de 2 USD esta justificado porque ahora el VPS sostiene backend y base de datos;
+- ese fee no es solo hosting, tambien cubre administracion, soporte, operacion y responsabilidad tecnica.
 
-### 3.2 Presupuesto de IA
+## 5. Que cambio en el software y que no
 
-- Presupuesto comercial actual propuesto al cliente: 12 USD/mes
-- Uso real todavia debe medirse en produccion
-- Si el consumo inicial es bajo, funciona como colchon para soporte y operacion
-- Si sube el consumo, hay que renegociar o separar claramente costo de uso y fee de soporte
+### 5.1 Lo que no cambio
 
-## 4. Gastos ya hechos y por que fueron necesarios
+- no cambio la logica de negocio;
+- no cambio el frontend por la migracion;
+- no cambio el flujo principal de generacion de silabos.
 
-### 4.1 VPS primer mes pagado
+### 5.2 Lo que si cambio
 
-- Gasto confirmado: 15 USD
-- Necesidad:
-  - publicar el backend en un entorno real;
-  - probar conectividad, SSL, CORS y disponibilidad publica;
-  - permitir integracion real entre frontend y backend.
+- la fuente de datos ya no es Supabase;
+- la `DATABASE_URL` ahora apunta al PostgreSQL interno del VPS;
+- el backend usa la misma capa de acceso, pero contra la nueva base.
 
-Sin este servicio el sistema habria quedado solo en desarrollo local y no se podria haber validado como producto utilizable.
+### 5.3 Ajuste tecnico aplicado
 
-### 4.2 Base de datos PostgreSQL/Supabase
+Se agrego una normalizacion de URL para aceptar valores tipo `postgres://` y convertirlos a un formato compatible con SQLAlchemy.
 
-Aunque el documento original hablaba de migrar a PostgreSQL propio en VPS, el sistema actual depende de una base PostgreSQL accesible por `DATABASE_URL`.
+Esto evito el error:
 
-Necesidad:
+`Can't load plugin: sqlalchemy.dialects:postgres`
 
-- guarda usuarios, cursos, programas, silabos y documentos;
-- sostiene el flujo multiusuario;
-- soporta `document_embeddings` con pgvector para RAG.
+## 6. RAG y estado del sistema
 
-Sin base de datos, no hay producto operable.
+El subsistema RAG sigue presente en el codigo, pero ya no es un requisito para justificar la migracion de la base al VPS.
 
-### 4.3 Gemini
+Hallazgos:
 
-Necesidad:
+- el flujo principal `generate-v2` no depende de RAG;
+- el RAG esta concentrado sobre todo en el chat con documentos;
+- el paso satelite de NotebookLM puede convivir sin que el RAG sea el centro del producto.
 
-- generacion de silabos;
-- sugerencia de metodos;
-- embeddings para flujos RAG.
+Recomendacion:
 
-Sin IA, el sistema pierde su funcionalidad principal y se convierte en un gestor manual.
+- no tocar RAG ahora si no estorba el deploy;
+- si luego quieres simplificar el producto, se puede retirar en una fase separada.
 
-### 4.4 OpenRouter como fallback
+## 7. Tareas pendientes de alta prioridad
 
-No es el camino principal, pero si es una capa de resiliencia util.
+| Tarea | Prioridad | Motivo |
+|---|---|---|
+| Probar `GET /health` | Alta | Confirmar estado real de servicios con la nueva base |
+| Probar login | Alta | Validar usuarios y autenticacion sobre la nueva DB |
+| Probar listado de programas y cursos | Alta | Confirmar integridad de catalogos migrados |
+| Probar generacion de silabo | Alta | Validar flujo principal del producto |
+| Probar guardado y lectura de silabos | Alta | Confirmar persistencia correcta |
+| Probar exportacion | Alta | Confirmar que el flujo final del usuario funciona |
+| Revisar persistencia de `uploads/` | Alta | Los archivos siguen en disco local |
+| Configurar backups del PostgreSQL del VPS | Alta | Ya no existe respaldo externo por Supabase |
 
-Necesidad:
+## 8. Tareas recomendadas de orden y limpieza
 
-- mantener continuidad cuando Gemini tenga errores de cuota o conectividad;
-- evitar que se caiga por completo la experiencia central del sistema.
+| Tarea | Prioridad | Comentario |
+|---|---|---|
+| Renombrar `SupabaseService` a `DatabaseService` | Media | El nombre ya no representa la arquitectura real |
+| Actualizar `main.py` para que `/health` deje de decir `supabase` | Media | Es solo deuda tecnica de naming |
+| Actualizar README del frontend | Media | Sigue desalineado del deploy real |
+| Alinear upload de bibliografia con PDF/MD/TXT | Media | El frontend y backend aun no coinciden del todo |
 
-### 4.5 Frontend publicado
+## 9. Riesgos actuales
 
-Necesidad:
+### 9.1 Password expuesta en conversacion
 
-- exponer la interfaz del sistema a usuarios reales;
-- permitir acceso desde navegador y flujo completo de login a generacion.
+La credencial de la nueva base fue compartida en el chat.
 
-Sin frontend publicado no hay operacion cliente, aunque el backend exista.
+Accion recomendada inmediata:
 
-## 5. Lo que debes hacer ahora para subirlo
+- rotar la contraseña de PostgreSQL;
+- actualizar la `DATABASE_URL` en Coolify;
+- redeployar una vez mas.
 
-### 5.1 Decision de arquitectura que debes cerrar primero
+### 9.2 Backups
 
-Debes confirmar una de estas dos rutas:
+Antes parte del riesgo operativo quedaba amortiguado por el proveedor externo. Ahora todo el control es tuyo, lo cual es mejor, pero exige disciplina de backup.
 
-1. Mantener base de datos en Supabase por ahora.
-2. Migrar ya a PostgreSQL propio dentro del VPS.
+### 9.3 Uploads locales
 
-Hoy el repo y el contexto operativo apuntan a Supabase. Si no vas a migrar de inmediato, no conviene prometer en la documentacion que la BD ya vive en el VPS.
+La base de datos ya esta dentro del VPS, pero los documentos siguen guardandose en disco local del contenedor o del entorno montado. Si no hay persistencia clara, puedes perder archivos aunque la DB este bien.
 
-### 5.2 Checklist tecnico inmediato
+## 10. Verificaciones realizadas
 
-1. Confirmar variables de entorno del backend en Coolify:
-   - `DATABASE_URL`
-   - `GEMINI_API_KEY`
-   - `GEMINI_MODEL`
-   - `FRONTEND_URL`
-   - `JWT_SECRET`
-   - `GOOGLE_SEARCH_API_KEY`
-   - `GOOGLE_SEARCH_ENGINE_ID`
-   - `AI_PROVIDER`
-   - `OPENROUTER_API_KEY` si usaras fallback
+| Verificacion | Resultado |
+|---|---|
+| `npm run lint` en frontend | OK |
+| `npm run build` en frontend | OK |
+| Redeploy backend tras migracion DB | OK |
+| Inicializacion de GeminiService | OK |
+| Inicializacion de SearchService | OK |
+| Inicializacion de acceso a PostgreSQL en VPS | OK |
 
-2. Confirmar variable del frontend:
-   - `VITE_API_URL=https://api.innovasaber.com.pe`
+## 11. Recomendacion final
 
-3. Verificar que el backend tenga persistencia para `silabos-backend/uploads/`.
-   - Hoy los documentos se guardan en disco local.
-   - Si el contenedor se recrea sin volumen persistente, puedes perder archivos.
+La documentacion comercial ya debe dejar de hablar de Supabase como estado actual. La narrativa correcta es:
 
-4. Definir respaldo de base de datos y archivos.
-   - Backup de PostgreSQL/Supabase
-   - Backup de carpeta `uploads/`
+- frontend en cPanel del cliente;
+- backend y base de datos PostgreSQL en VPS administrado;
+- IA como servicio operativo complementario.
 
-5. Validar la plantilla de exportacion.
-   - `silabos-backend/templates/anexo_c_template.docx` aun no esta en repo.
-   - Sin esa plantilla, el endpoint de exportacion puede devolver error 503.
-
-6. Ejecutar build final del frontend y publicarlo.
-   - `npm run build`
-   - comprimir el contenido de `dist/`
-   - subir ZIP al cPanel del cliente
-   - extraer en `public_html` o carpeta asignada
-   - dejar `.htaccess` con rewrite para SPA
-
-7. Hacer prueba funcional minima en produccion:
-   - login
-   - selector de contexto
-   - listado de silabos
-   - creacion de silabo
-   - carga de documento
-   - exportacion
-   - `GET /health`
-
-### 5.3 Si decides migrar la base de datos al VPS
-
-Ademas del checklist anterior, debes:
-
-1. Exportar dump SQL desde Supabase.
-2. Instalar PostgreSQL en el VPS o provisionar servicio administrado.
-3. Restaurar esquema y datos.
-4. Verificar extensiones necesarias como `pgvector` si el flujo RAG sigue activo.
-5. Cambiar `DATABASE_URL`.
-6. Reprobar generacion, documentos, dashboard y consultas.
-
-## 6. Hallazgos tecnicos que te conviene corregir o al menos documentar
-
-### 6.1 El README del frontend esta desalineado
-
-`silabos-frontend/README.md` todavia habla de AI Studio y no del deploy real del proyecto. No bloquea el despliegue, pero si genera confusion.
-
-### 6.2 Uploads locales requieren persistencia real
-
-`services/supabase_service.py` indica que los PDFs se guardan en disco local. Si Coolify no monta volumen persistente, ese punto es un riesgo de perdida de archivos.
-
-### 6.3 El flujo de bibliografia no esta alineado al 100%
-
-Hay contexto del proyecto que habla de PDF y Markdown, pero `routers/documents.py` hoy valida solo PDF.
-
-### 6.4 El documento comercial no debe prometer una arquitectura distinta a la actual
-
-Si vas a vender "PostgreSQL en el VPS" pero el sistema sigue en Supabase, dejalo como ruta objetivo o fase siguiente, no como hecho consumado.
-
-## 7. Verificaciones realizadas en esta revision
-
-- `npm run lint` en frontend: OK
-- `npm run build` en frontend: OK al reintentarlo fuera del sandbox; se genero `silabos-frontend/dist/`
-- Verificacion del backend por Python: no se pudo ejecutar porque en esta sesion no hay `python` ni `py` disponibles en PATH
-
-## 8. Preguntas que debes responder para cerrar la documentacion final
-
-1. La base de datos final se queda en Supabase o la migras ahora al VPS?
-2. El cliente usara cPanel como frontend definitivo o solo quieres manejar Vercel?
-3. Ademas del VPS, ya pagaste algo mas que quieras recuperar en la cotizacion?
-   - dominio
-   - hosting extra
-   - plan pago de Supabase
-   - consumo real de Gemini
-   - configuracion de Coolify
+Tambien es correcto subir el fee del entorno administrado a 17 USD mensuales, porque ahora ese mismo servicio sostiene tanto la aplicacion como la base de datos. Eso mejora el argumento comercial y refleja mejor la responsabilidad tecnica asumida.

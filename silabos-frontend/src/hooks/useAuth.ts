@@ -1,6 +1,6 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, clearSession, getToken } from '../api/client';
-import { AuthUser } from '../api/types';
+import { AuthUser, GoogleAuthData } from '../api/types';
 
 const USER_STORAGE_KEY = 'silabos_user';
 
@@ -16,6 +16,30 @@ function readStoredUser(): AuthUser | null {
     sessionStorage.removeItem(USER_STORAGE_KEY);
     return null;
   }
+}
+
+function persistSession(accessToken: string, user: AuthUser) {
+  sessionStorage.setItem('silabos_token', accessToken);
+  sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+}
+
+function clearAuthState(setUser: (value: AuthUser | null) => void, setIsAuthenticated: (value: boolean) => void) {
+  clearSession();
+  setUser(null);
+  setIsAuthenticated(false);
+}
+
+function resolveErrorMessage(err: unknown, fallback = 'Error de conexión con el servidor') {
+  if (err instanceof ApiError) {
+    return err.message || fallback;
+  }
+  if (err instanceof Error && /conexion con el servidor/i.test(err.message)) {
+    return 'Error de conexión con el servidor';
+  }
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return fallback;
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -34,24 +58,65 @@ export function useAuth() {
 
     try {
       const response = await api.login({ email, password });
-      sessionStorage.setItem('silabos_token', response.access_token);
-      sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
+      persistSession(response.access_token, response.user);
       setUser(response.user);
       setIsAuthenticated(true);
       return response.user;
     } catch (err) {
-      clearSession();
-      setUser(null);
-      setIsAuthenticated(false);
+      clearAuthState(setUser, setIsAuthenticated);
+      setError(resolveErrorMessage(err, 'No se pudo iniciar sesión'));
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-      if (err instanceof ApiError && err.status === 401) {
-        setError('Credenciales inválidas');
-      } else if (err instanceof Error && /conexion con el servidor/i.test(err.message)) {
-        setError('Error de conexión con el servidor');
+  const loginWithGoogle = useCallback(async (idToken: string): Promise<GoogleAuthData> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.googleLogin({ id_token: idToken });
+      const payload = response.data;
+
+      if (
+        payload.account_status === 'active' &&
+        payload.access_token &&
+        payload.user
+      ) {
+        persistSession(payload.access_token, payload.user);
+        setUser(payload.user);
+        setIsAuthenticated(true);
       } else {
-        setError('Error de conexión con el servidor');
+        clearAuthState(setUser, setIsAuthenticated);
+        setError(payload.message);
       }
 
+      return payload;
+    } catch (err) {
+      clearAuthState(setUser, setIsAuthenticated);
+      setError(resolveErrorMessage(err, 'No se pudo validar el acceso con Google'));
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const registerWithGoogle = useCallback(async (idToken: string, careerId: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.registerGoogle({
+        id_token: idToken,
+        career_id: careerId,
+      });
+      if (response.data.account_status !== 'active') {
+        clearAuthState(setUser, setIsAuthenticated);
+      }
+      return response.data;
+    } catch (err) {
+      setError(resolveErrorMessage(err, 'No se pudo registrar la solicitud'));
       throw err;
     } finally {
       setIsLoading(false);
@@ -59,9 +124,7 @@ export function useAuth() {
   }, []);
 
   const logout = useCallback(() => {
-    clearSession();
-    setUser(null);
-    setIsAuthenticated(false);
+    clearAuthState(setUser, setIsAuthenticated);
     window.location.href = '/login';
   }, []);
 
@@ -87,6 +150,13 @@ export function useAuth() {
           return;
         }
 
+        if (currentUser.status && currentUser.status !== 'active') {
+          clearAuthState(setUser, setIsAuthenticated);
+          setError('Tu cuenta no tiene acceso activo');
+          setIsLoading(false);
+          return;
+        }
+
         sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(currentUser));
         setUser(currentUser);
         setIsAuthenticated(true);
@@ -95,12 +165,10 @@ export function useAuth() {
           return;
         }
 
-        clearSession();
-        setUser(null);
-        setIsAuthenticated(false);
+        clearAuthState(setUser, setIsAuthenticated);
 
         if (!(err instanceof ApiError && err.status === 401)) {
-          setError(err instanceof Error ? err.message : 'No se pudo validar la sesión');
+          setError(resolveErrorMessage(err, 'No se pudo validar la sesión'));
         }
       } finally {
         if (active) {
@@ -122,6 +190,8 @@ export function useAuth() {
     isLoading,
     error,
     login,
+    loginWithGoogle,
+    registerWithGoogle,
     logout,
   };
 }

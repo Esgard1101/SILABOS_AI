@@ -102,7 +102,7 @@ app.add_middleware(
 # ──────────────────────────────────────────────
 # Incluir routers
 # ──────────────────────────────────────────────
-from routers import syllabus, documents, search, chat, auth, institutional  # noqa: E402
+from routers import syllabus, documents, search, chat, auth, institutional, admin  # noqa: E402
 from routers.analytics import router as analytics_router  # noqa: E402
 from routers.institutional_catalog import router as catalog_router  # noqa: E402
 from routers.programs import router as programs_router  # noqa: E402
@@ -113,6 +113,7 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(institutional.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(programs_router, prefix="/api")

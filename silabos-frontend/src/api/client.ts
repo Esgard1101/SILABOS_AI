@@ -1,15 +1,21 @@
 import {
+  AdminCourseListResponse,
+  AdminUserListResponse,
   AnalyticsDashboard,
   APIResponse,
   AuthUser,
   BibliographySearchApiResponse,
   BibliographySearchRequest,
+  CourseSumillaHistoryResponse,
   CourseDetail,
   CourseListItem,
   DocumentListResponse,
   DocumentResponse,
   EvaluationInstrumentsResponse,
   GenerateSyllabusInput,
+  GoogleAuthResponse,
+  GoogleRegisterRequest,
+  GoogleTokenRequest,
   HealthResponse,
   InstitutionalFacultiesResponse,
   InstitutionalSkillsResponse,
@@ -153,6 +159,20 @@ async function request<T>(
 export const api = {
   login: (data: LoginRequest) =>
     request<LoginResponse>('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  googleLogin: (data: GoogleTokenRequest) =>
+    request<GoogleAuthResponse>('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  registerGoogle: (data: GoogleRegisterRequest) =>
+    request<GoogleAuthResponse>('/api/auth/register-google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -305,13 +325,6 @@ export const api = {
     };
   },
 
-  deleteDocument: async (id: string) => {
-    await request<{ success: boolean; data: { eliminado: string }; error: string | null }>(
-      `/api/documents/${id}`,
-      { method: 'DELETE' },
-    );
-  },
-
   searchSources: (tema: string, nivel: string) =>
     request<SourcesResponse>('/api/search/sources', {
       method: 'POST',
@@ -371,9 +384,13 @@ export const api = {
   getPedagogicMethods: () =>
     request<{ success: boolean; data: MethodItem[]; error: string | null }>('/api/methods'),
 
-  suggestMethod: (courseId: string) =>
+  suggestMethod: (courseId: string, categories: string[] = []) =>
     request<{ success: boolean; data: MethodSuggest; error: string | null }>(
-      `/api/methods/suggest?course_id=${encodeURIComponent(courseId)}`,
+      `/api/methods/suggest?course_id=${encodeURIComponent(courseId)}${
+        categories.length
+          ? `&categories=${encodeURIComponent(categories.join(','))}`
+          : ''
+      }`,
     ),
 
   generateSyllabusV2: (data: SyllabusGenerateV2Input) =>
@@ -410,4 +427,44 @@ export const api = {
       body: formData,
     });
   },
+
+  deleteDocument: (docId: string) =>
+    request<APIResponse>(`/api/documents/${encodeURIComponent(docId)}`, {
+      method: 'DELETE',
+    }),
+
+  listAdminUsers: (status?: string) =>
+    request<AdminUserListResponse>(
+      status ? `/api/admin/users?status=${encodeURIComponent(status)}` : '/api/admin/users',
+    ),
+
+  approveUser: (userId: string) =>
+    request<APIResponse>(`/api/admin/users/${encodeURIComponent(userId)}/approve`, {
+      method: 'POST',
+    }),
+
+  rejectUser: (userId: string) =>
+    request<APIResponse>(`/api/admin/users/${encodeURIComponent(userId)}/reject`, {
+      method: 'POST',
+    }),
+
+  listAdminCourses: (programId?: string, search = '') => {
+    const params = new URLSearchParams();
+    if (programId) params.set('program_id', programId);
+    if (search.trim()) params.set('search', search.trim());
+    const query = params.toString();
+    return request<AdminCourseListResponse>(`/api/admin/courses${query ? `?${query}` : ''}`);
+  },
+
+  updateCourseSumilla: (courseId: string, sumilla: string) =>
+    request<APIResponse>(`/api/admin/courses/${encodeURIComponent(courseId)}/sumilla`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sumilla }),
+    }),
+
+  getCourseSumillaHistory: (courseId: string) =>
+    request<CourseSumillaHistoryResponse>(
+      `/api/admin/courses/${encodeURIComponent(courseId)}/sumilla-history`,
+    ),
 };
