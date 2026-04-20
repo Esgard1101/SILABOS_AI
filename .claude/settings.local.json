@@ -9,7 +9,9 @@
       "Bash(npm run *)",
       "Bash(python -)",
       "Bash(python -c \"from services.bibliography_parser import parsear_referencias_bibliograficas, refs_a_bibliografia_json, detectar_tipo_referencia; print\\('imports OK'\\)\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(grep -n \"def _stringify_uuids\" \"c:\\\\\\\\TEST_CODE\\\\\\\\SILABOSAIAUTOMATIZACION\\\\\\\\silabos_app\\\\\\\\silabos-backend\\\\\\\\services\\\\\\\\supabase_service.py\")",
+      "Bash(grep -c \"INSERT INTO.*_history\" \"c:\\\\\\\\TEST_CODE\\\\\\\\SILABOSAIAUTOMATIZACION\\\\\\\\silabos_app\\\\\\\\silabos-backend\\\\\\\\services\\\\\\\\supabase_service.py\")"
     ]
   }
 }

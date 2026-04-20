@@ -188,3 +188,133 @@ La documentacion comercial ya debe dejar de hablar de Supabase como estado actua
 - IA como servicio operativo complementario.
 
 Tambien es correcto subir el fee del entorno administrado a 17 USD mensuales, porque ahora ese mismo servicio sostiene tanto la aplicacion como la base de datos. Eso mejora el argumento comercial y refleja mejor la responsabilidad tecnica asumida.
+---
+### ANALISIS DE LA DB AL 18/04/2026
+
+## 1. Visión General de Tablas y Volumetría
+Base de datos relacional migrada a PostgreSQL. A continuación, el estado actual de registros:
+
+* `courses`: ~ 317 registros
+* `skills_catalog`: ~ 300 registros
+* `teaching_methods`: 11 registros
+* `syllabi`: ~ 10 registros
+* `programs`: ~ 8 registros
+* `users`: ~ 4 registros
+* `faculties`: ~ 3 registros
+* `careers`: ~ 1 registro
+* `performances`: 0 registros (vacía actualmente)
+* `course_bibliography_refs`: Activa (contiene referencias parseadas)
+
+---
+
+## 2. Diccionario de Datos (Tablas Core del Flujo)
+
+### Tabla: `courses`
+Almacena el catálogo de cursos. Es de solo lectura para el flujo de generación, pero editable desde el módulo Admin.
+* **id**: `uuid` (PK)
+* **career_id** / **program_id**: `uuid` (Relaciones)
+* **name**: `varchar(200)`
+* **code**: `varchar(30)`
+* **credits**: `integer`
+* **cycle**: `integer`
+* **is_common**: `boolean` (indica si es de formación general)
+* **scope**: `varchar(100)`
+* **sumilla**: `text`
+* **competencia_egreso**: `text`
+* **resultado_aprendizaje**: `text`
+
+### Tabla: `performances`
+Almacena los desempeños oficiales desglosados por curso. (Actualmente vacía, dispara el fallback de IA).
+* **id**: `uuid` (PK)
+* **course_id**: `uuid` (FK a `courses`)
+* **code**: `varchar` (ej. "D1", "D2")
+* **statement**: `text` (el texto del desempeño)
+* **display_order**: `integer` (secuencia)
+
+### Tabla: `skills_catalog`
+Catálogo estático de habilidades (~300 registros en 7 categorías).
+* **id**: `uuid` (PK)
+* **id_habilidad**: `varchar(20)` (ej. "HAB-COG-001")
+* **nombre**: `varchar(300)` (ej. "Identificar conceptos clave")
+* **descripcion**: `text`
+* **categoria**: `varchar(100)` (ej. "Cognitiva")
+* **subcategoria**: `varchar(150)` (ej. "Comprensión conceptual")
+* **nivel_cognitivo**: `varchar(50)` (ej. "Comprender")
+* **verbo_principal**: `varchar(100)` (ej. "identificar")
+* **evidencias_sugeridas**: `text` (ej. "mapa conceptual, glosario")
+* **instrumentos_sugeridos**: `text` (ej. "lista de cotejo")
+
+### Tabla: `teaching_methods`
+Metodologías pedagógicas institucionales (11 registros). Controla la generación de la metodología y cronograma.
+* **id**: `uuid` (PK)
+* **name**: `varchar(200)`
+* **code**: `varchar(20)`
+* **description**: `text`
+* **phases**: `jsonb` (ej. `["Fase 1", "Fase 2"]`)
+* **weekly_template**: `text` (ej. "Semanas 1-4: Fase 1 | Semanas 5-8: Fase 2")
+* **tecnicas_didacticas**: `jsonb`
+* **estrategias_evaluacion**: `text`
+* **instrumentos_evaluacion**: `jsonb`
+
+### Tabla: `course_bibliography_refs`
+Almacena las referencias extraídas vía NotebookLM/PDFs.
+* **id**: `uuid` (PK)
+* **course_id**: `varchar`
+* **doc_id**: `varchar`
+* **ref_text**: `text` (la cita en formato APA)
+* **ref_order**: `integer` (orden de aparición)
+
+### Tabla: `syllabi`
+Guarda el sílabo final generado y su metadata.
+* **id**: `uuid` (PK)
+* **course_id**: `uuid` (FK a `courses`)
+* **user_id**: `uuid` (FK a `users`)
+* **teaching_method_id**: `uuid` (FK a `teaching_methods`)
+* **semester**: `varchar(20)`
+* **teacher_name**: `varchar(200)`
+* **status**: `varchar(20)` (default: draft)
+* **payload_json**: `jsonb` (Almacena la estructura completa del sílabo, debe incluir skills confirmados y flag de origen de desempeños)
+* **methodology_json**: `jsonb`
+
+### Tabla: `users`
+Maneja la autenticación y autorización (combina data transaccional con metadata de auth). Columnas de negocio clave:
+* **id**: `uuid` (PK)
+* **email**: `varchar`
+* **full_name**: `varchar`
+* **role**: `varchar` (Define el nivel de acceso: Admin, Coordinador, Docente)
+* **career_id**: `uuid` (Define el alcance institucional del usuario)
+* **status**: `varchar`
+
+---
+### ADMIN DB 17/04/26
+
+Contexto General: La base de datos fue migrada exitosamente de la plataforma en la nube de Supabase a un contenedor PostgreSQL auto-alojado dentro del VPS principal (CubePath), gestionado a través de Coolify. Esto centraliza la arquitectura y mejora el margen operativo.
+
+1. Herramientas de Administración Aprobadas
+Visualización y CRUD Rápido (UI): Se utiliza Adminer (adminer:latest) desplegado como un contenedor dentro de Coolify. Esta es la herramienta principal para inspeccionar tablas, verificar registros y hacer ajustes manuales rápidos.
+
+Operaciones de Bajo Nivel: Se utiliza la Terminal (SSH) directa al servidor root para configuraciones de sistema operativo, reinicios de Docker o gestión de firewall.
+
+2. Protocolo de Migraciones y Cambios de Esquema (Para Agentes de IA)
+Cualquier futuro agente de IA debe adherirse a esta regla estricta sobre las migraciones:
+
+Cero Ejecución Automática: Los agentes nunca deben intentar ejecutar scripts de migración automática de DDL directamente desde el código del backend en producción. No se debe asumir que existe automatización para esto.
+
+Propuesta de SQL Crudo: Cualquier cambio estructural (crear tablas, alterar columnas, modificar índices) debe ser propuesto por la IA como un script de SQL puro (Raw SQL).
+
+Ejecución Manual: El desarrollador (dueño) tomará ese script SQL y lo ejecutará manualmente utilizando la interfaz de Adminer (en la pestaña "Comando SQL") o por consola.
+
+3. Lecciones Aprendidas de Infraestructura (CubePath y Coolify)
+Seguridad y Firewall (El peligro de la política DROP): Modificar el firewall externo de CubePath es altamente riesgoso. La política por defecto es DROP (bloqueo total). Un error al abrir un puerto nuevo (como olvidar incluir el puerto 22 o el 8000) resultará en el bloqueo completo del acceso al servidor y a Coolify.
+
+Conexiones Seguras (Infiltración vs. Exposición): Intentar exponer puertos de bases de datos al exterior (ej. puerto 3000) genera problemas de timeout. La estrategia más segura es la comunicación interna de Docker. Al instalar Adminer dentro de Coolify, la app visual y la base de datos se comunican por la red interna usando el nombre del contenedor (ej. postgresql-database-...), saltándose completamente la muralla del firewall de CubePath.
+
+Manejo del SSL Local: PostgreSQL suele rechazar conexiones locales si el cliente intenta forzar protocolos SSL (prefer) de manera inesperada. Las herramientas internas dentro de la misma red no requieren SSL (disable).
+
+Proxy y Puertos Internos en Coolify: Cuando se despliegan herramientas de terceros (como Adminer) en Coolify, es vital asegurarse de que el proxy inverso sepa a qué puerto interno apuntar (ej. cambiar el puerto expuesto al 8080 si la imagen de Docker así lo exige) para evitar errores de Bad Gateway.
+
+4. Gestión de Recursos y Prevención de Caídas
+Restricción de RAM: El servidor es una instancia gp.micro. Los recursos (RAM y CPU) son limitados y deben ser protegidos celosamente para asegurar que el backend de FastAPI no sufra caídas.
+
+Prohibición de Contenedores Pesados: Queda terminantemente prohibido instalar gestores de base de datos pesados como pgAdmin 4 o el ecosistema completo de Supabase Studio. Estas herramientas consumen demasiada memoria y pueden provocar que el sistema operativo mate procesos vitales (OOM Killer). Adminer fue elegido por ser un único archivo ligero que consume recursos insignificantes.
+

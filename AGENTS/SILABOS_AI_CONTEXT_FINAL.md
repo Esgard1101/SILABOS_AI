@@ -69,6 +69,45 @@ Embeddings→ gemini-embedding-2-preview (768 dims)
 - Outputs NotebookLM aceptados: PDF y Markdown (backend normaliza ambos)
 - RAG: un solo índice con campo scope (common | program_id)
 ```
+---
+# Lecciones Aprendidas: Gestión de Bases de Datos y Entornos (.env)
+
+Esta seccion resume las decisiones técnicas, errores comunes y aprendizajes clave obtenidos durante la configuración de la arquitectura de datos y el manejo de variables de entorno en un entorno híbrido (Local + VPS/Coolify).
+
+## 1. Arquitectura de Conectividad y Redes
+
+### Aislamiento de Red Docker (Internal vs. External)
+* **URL Interna:** Los hostnames generados por Docker o Coolify (ej. `e8yrc6n76...`) son solo resolubles dentro de la red privada del VPS. El backend en producción debe usar esta URL para comunicarse con la base de datos a alta velocidad y con máxima seguridad.
+* **Limitación Local:** Una máquina Windows local no puede resolver nombres de host internos de Docker. Para conectar el backend local a una DB en el VPS, se requiere usar la **IP Pública** del servidor y el **Puerto Expuesto** configurado en el firewall.
+* **Recomendación:** Mantener entornos de base de datos separados (Supabase Cloud para local, PostgreSQL interno para producción) para evitar latencias, problemas de firewall y riesgos de corrupción de datos reales durante pruebas.
+
+## 2. Gestión de Variables de Entorno (`.env`)
+
+### Prioridad de Carga en Python/FastAPI
+* **Nombre por Defecto:** La librería `python-dotenv` busca por defecto un archivo llamado exactamente `.env`. Si existen otros como `.env.local` o `.env.production`, el sistema los ignorará a menos que se fuerce su carga.
+* **Comando de Carga:** Se puede especificar el archivo de entorno al arrancar Uvicorn mediante el parámetro `--env-file .env.local`.
+* **Limpieza de Deuda Técnica:** En migraciones de SDK (ej. de Supabase SDK a SQLAlchemy directo), variables como `SUPABASE_URL` o `SUPABASE_KEY` pasan a ser obsoletas si el código ya no las consume, dejando a `DATABASE_URL` como la única fuente de verdad para la conexión.
+
+## 3. Estrategia de Persistencia: Borrado Lógico (Soft Delete)
+
+### Implementación de `is_archived`
+* **Definición:** En lugar de ejecutar `DELETE` físicos que eliminan filas permanentemente, se utiliza una columna booleana `is_archived`.
+* **Importancia:**
+    1. **Integridad Referencial:** Evita romper registros históricos que dependen de elementos del catálogo que ya no están vigentes.
+    2. **Filtrado de Catálogos:** Permite que el backend (y la IA) consulten solo los elementos activos mediante `WHERE is_archived = false`.
+    3. **Recuperación:** Facilita la restauración inmediata de registros eliminados por error simplemente cambiando el valor del booleano.
+
+## 4. Protocolo de Operación y Migraciones
+
+### Regla de "Cero Ejecución Automática"
+* **Sincronización Manual:** Los cambios en el código del backend que dependen de nuevas columnas (ej. el filtro de `is_archived`) deben ir precedidos por una actualización manual del esquema de la base de datos vía SQL (`ALTER TABLE`).
+* **Flujo de Trabajo:**
+    1. Probar el script SQL en el entorno de desarrollo local.
+    2. Ejecutar manualmente en producción (vía Adminer o similar).
+    3. Desplegar el código actualizado del backend.
+
+### Gestión de Semillas (Seeds)
+* Los datos maestros o catálogos (métodos, habilidades, etc.) deben centralizarse en un script `seed.sql`. Este script debe aplicarse tanto en la base de datos local como en la de producción para garantizar que el motor de IA y el Wizard operen con la misma lógica en ambos entornos.
 
 ---
 

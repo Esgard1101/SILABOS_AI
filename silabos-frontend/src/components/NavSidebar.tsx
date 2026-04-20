@@ -1,8 +1,10 @@
 import {
   BarChart3,
   BookOpen,
+  BrainCircuit,
   ClipboardCheck,
   Folder,
+  GraduationCap,
   Home,
   Library,
   LogOut,
@@ -38,6 +40,9 @@ const ADMIN_NAV_ITEMS: NavItem[] = [
   { path: '/analytics', label: 'Analitica', icon: BarChart3 },
   { path: '/admin/users', label: 'Gestion de Usuarios', icon: Users },
   { path: '/admin/sumillas', label: 'Gestion de Sumillas', icon: PenSquare },
+  { path: '/admin/methods', label: 'Metodologias', icon: BrainCircuit },
+  { path: '/admin/skills', label: 'Habilidades', icon: GraduationCap },
+  { path: '/admin/curriculum', label: 'Curriculum', icon: ClipboardCheck },
 ];
 
 export default function NavSidebar({ currentPath }: NavSidebarProps) {

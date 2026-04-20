@@ -6,11 +6,14 @@ import {
   AuthUser,
   BibliographySearchApiResponse,
   BibliographySearchRequest,
+  CompatibleSkillsResponse,
+  CourseSumillaHistoryItem,
   CourseSumillaHistoryResponse,
   CourseDetail,
   CourseListItem,
   DocumentListResponse,
   DocumentResponse,
+  EffectivePermissions,
   EvaluationInstrumentsResponse,
   GenerateSyllabusInput,
   GoogleAuthResponse,
@@ -22,13 +25,19 @@ import {
   LoginRequest,
   LoginResponse,
   MethodItem,
+  MethodSkillLink,
   MethodSuggest,
+  PerformanceDB,
+  PermissionOverride,
   ProgramItem,
+  SkillDB,
   SourcesResponse,
   SyllabusGenerateV2Input,
   SyllabusListResponse,
   SyllabusResponse,
+  TeachingMethodDB,
   TeachingMethodsResponse,
+  UserScopeAssignment,
   ValidationResponse,
 } from './types';
 
@@ -477,4 +486,221 @@ export const api = {
     request<CourseSumillaHistoryResponse>(
       `/api/admin/courses/${encodeURIComponent(courseId)}/sumilla-history`,
     ),
+
+  // ── Admin — Teaching Methods ──────────────────────────────────────────────
+
+  listAdminMethods: (includeArchived = false) =>
+    request<APIResponse<{ items: TeachingMethodDB[] }>>(
+      `/api/admin/teaching-methods${includeArchived ? '?include_archived=true' : ''}`,
+    ),
+
+  createMethod: (data: Partial<TeachingMethodDB>) =>
+    request<APIResponse<TeachingMethodDB>>('/api/admin/teaching-methods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  updateMethod: (methodId: string, data: Partial<TeachingMethodDB>) =>
+    request<APIResponse<TeachingMethodDB>>(`/api/admin/teaching-methods/${encodeURIComponent(methodId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  archiveMethod: (methodId: string) =>
+    request<APIResponse>(`/api/admin/teaching-methods/${encodeURIComponent(methodId)}/archive`, {
+      method: 'POST',
+    }),
+
+  restoreMethod: (methodId: string) =>
+    request<APIResponse>(`/api/admin/teaching-methods/${encodeURIComponent(methodId)}/restore`, {
+      method: 'POST',
+    }),
+
+  // ── Admin — Method-Skill Links ────────────────────────────────────────────
+
+  listMethodSkills: (methodId: string) =>
+    request<APIResponse<{ items: MethodSkillLink[] }>>(
+      `/api/admin/teaching-methods/${encodeURIComponent(methodId)}/skills`,
+    ),
+
+  addMethodSkill: (methodId: string, data: { skill_id: string; priority?: number; is_recommended?: boolean }) =>
+    request<APIResponse<MethodSkillLink>>(`/api/admin/teaching-methods/${encodeURIComponent(methodId)}/skills`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  updateMethodSkill: (methodId: string, linkId: string, data: { priority: number; is_recommended: boolean }) =>
+    request<APIResponse<MethodSkillLink>>(
+      `/api/admin/teaching-methods/${encodeURIComponent(methodId)}/skills/${encodeURIComponent(linkId)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+    ),
+
+  removeMethodSkill: (methodId: string, linkId: string) =>
+    request<APIResponse>(
+      `/api/admin/teaching-methods/${encodeURIComponent(methodId)}/skills/${encodeURIComponent(linkId)}`,
+      { method: 'DELETE' },
+    ),
+
+  // ── Admin — Skills Catalog ────────────────────────────────────────────────
+
+  listAdminSkills: (params?: { search?: string; categoria?: string; page?: number; page_size?: number; include_archived?: boolean }) => {
+    const p = new URLSearchParams();
+    if (params?.search) p.set('search', params.search);
+    if (params?.categoria) p.set('categoria', params.categoria);
+    if (params?.page) p.set('page', String(params.page));
+    if (params?.page_size) p.set('page_size', String(params.page_size));
+    if (params?.include_archived) p.set('include_archived', 'true');
+    const q = p.toString();
+    return request<APIResponse<{ items: SkillDB[]; total: number }>>(
+      `/api/admin/skills${q ? `?${q}` : ''}`,
+    );
+  },
+
+  createSkill: (data: Partial<SkillDB>) =>
+    request<APIResponse<SkillDB>>('/api/admin/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  updateSkill: (skillId: string, data: Partial<SkillDB>) =>
+    request<APIResponse<SkillDB>>(`/api/admin/skills/${encodeURIComponent(skillId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  archiveSkill: (skillId: string) =>
+    request<APIResponse>(`/api/admin/skills/${encodeURIComponent(skillId)}/archive`, {
+      method: 'POST',
+    }),
+
+  restoreSkill: (skillId: string) =>
+    request<APIResponse>(`/api/admin/skills/${encodeURIComponent(skillId)}/restore`, {
+      method: 'POST',
+    }),
+
+  // ── Admin — Course Curriculum ─────────────────────────────────────────────
+
+  getCourseCurriculum: (courseId: string) =>
+    request<{ success: boolean; data: CourseDetail; error: string | null }>(
+      `/api/courses/${encodeURIComponent(courseId)}`,
+    ),
+
+  updateCourseCurriculum: (courseId: string, data: {
+    sumilla?: string;
+    competencia_egreso?: string;
+    resultado_aprendizaje?: string;
+    capacidad?: string;
+  }) =>
+    request<APIResponse>(`/api/admin/courses/${encodeURIComponent(courseId)}/curriculum`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  getCourseCurriculumHistory: (courseId: string) =>
+    request<APIResponse<{ items: CourseSumillaHistoryItem[] }>>(
+      `/api/admin/courses/${encodeURIComponent(courseId)}/curriculum-history`,
+    ),
+
+  // ── Admin — Performances ──────────────────────────────────────────────────
+
+  listPerformances: (courseId: string, includeArchived = false) =>
+    request<APIResponse<{ items: PerformanceDB[] }>>(
+      `/api/admin/courses/${encodeURIComponent(courseId)}/performances${includeArchived ? '?include_archived=true' : ''}`,
+    ),
+
+  createPerformance: (courseId: string, statement: string) =>
+    request<APIResponse<PerformanceDB>>(`/api/admin/courses/${encodeURIComponent(courseId)}/performances`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ statement }),
+    }),
+
+  updatePerformance: (courseId: string, perfId: string, statement: string) =>
+    request<APIResponse<PerformanceDB>>(
+      `/api/admin/courses/${encodeURIComponent(courseId)}/performances/${encodeURIComponent(perfId)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statement }),
+      },
+    ),
+
+  archivePerformance: (courseId: string, perfId: string) =>
+    request<APIResponse>(
+      `/api/admin/courses/${encodeURIComponent(courseId)}/performances/${encodeURIComponent(perfId)}/archive`,
+      { method: 'POST' },
+    ),
+
+  // ── Admin — User Roles & Scopes ───────────────────────────────────────────
+
+  updateUserRole: (userId: string, role: string) =>
+    request<APIResponse>(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role }),
+    }),
+
+  getUserScopes: (userId: string) =>
+    request<APIResponse<{ items: UserScopeAssignment[] }>>(
+      `/api/admin/users/${encodeURIComponent(userId)}/scopes`,
+    ),
+
+  addUserScope: (userId: string, data: { scope_type: 'career' | 'program'; scope_id: string }) =>
+    request<APIResponse<UserScopeAssignment>>(`/api/admin/users/${encodeURIComponent(userId)}/scopes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  removeUserScope: (userId: string, scopeId: string) =>
+    request<APIResponse>(
+      `/api/admin/users/${encodeURIComponent(userId)}/scopes/${encodeURIComponent(scopeId)}`,
+      { method: 'DELETE' },
+    ),
+
+  // ── Admin — User Permissions ──────────────────────────────────────────────
+
+  getUserPermissions: (userId: string) =>
+    request<APIResponse<EffectivePermissions>>(
+      `/api/admin/users/${encodeURIComponent(userId)}/permissions`,
+    ),
+
+  addPermissionOverride: (userId: string, data: { permission_key: string; effect: 'allow' | 'deny' }) =>
+    request<APIResponse<PermissionOverride>>(
+      `/api/admin/users/${encodeURIComponent(userId)}/permissions/overrides`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+    ),
+
+  removePermissionOverride: (userId: string, overrideId: string) =>
+    request<APIResponse>(
+      `/api/admin/users/${encodeURIComponent(userId)}/permissions/overrides/${encodeURIComponent(overrideId)}`,
+      { method: 'DELETE' },
+    ),
+
+  // ── Wizard — Method Skills ────────────────────────────────────────────────
+
+  getMethodSkills: (methodId: string, params?: { q?: string; page?: number; page_size?: number }) => {
+    const p = new URLSearchParams();
+    if (params?.q) p.set('q', params.q);
+    if (params?.page) p.set('page', String(params.page));
+    if (params?.page_size) p.set('page_size', String(params.page_size));
+    const q = p.toString();
+    return request<APIResponse<CompatibleSkillsResponse>>(
+      `/api/methods/${encodeURIComponent(methodId)}/skills${q ? `?${q}` : ''}`,
+    );
+  },
 };

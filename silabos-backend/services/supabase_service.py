@@ -1359,6 +1359,7 @@ class SupabaseService:
         silabo_dict: dict,
         user_id: Optional[str] = None,
         status: str = "draft",
+        teaching_method_id: Optional[str] = None,
     ) -> dict:
         meta = self._extraer_meta_silabo(silabo_dict, status)
         syllabus_id = str(uuid.uuid4())
@@ -1370,6 +1371,7 @@ class SupabaseService:
                         (
                             id, course_id, user_id, semester,
                             teacher_name, status, payload_json,
+                            teaching_method_id,
                             created_at, updated_at
                         )
                     VALUES
@@ -1377,12 +1379,13 @@ class SupabaseService:
                             :id, :course_id, :user_id, :semester,
                             :teacher_name, :status,
                             CAST(:payload_json AS JSONB),
+                            :teaching_method_id,
                             now(), now()
                         )
                     RETURNING
                         id, course_id, user_id, semester,
                         teacher_name, status, payload_json,
-                        created_at, updated_at
+                        teaching_method_id, created_at, updated_at
                 """),
                 {
                     "id": syllabus_id,
@@ -1392,12 +1395,13 @@ class SupabaseService:
                     "teacher_name": meta["teacher_name"],
                     "status": meta["status"],
                     "payload_json": json.dumps(silabo_dict, ensure_ascii=False),
+                    "teaching_method_id": teaching_method_id,
                 },
             )
             sesion.commit()
             fila = resultado.mappings().first()
 
-        logger.info(f"SÃ­labo guardado con ID: {syllabus_id}")
+        logger.info(f"Sílabo guardado con ID: {syllabus_id}")
         return self._mapear_silabo_fila(fila) or {}
 
     async def guardar_silabo(
@@ -1405,6 +1409,7 @@ class SupabaseService:
         silabo_dict: dict,
         user_id: Optional[str] = None,
         status: str = "draft",
+        teaching_method_id: Optional[str] = None,
     ) -> dict:
         try:
             return await self._ejecutar(
@@ -1412,6 +1417,7 @@ class SupabaseService:
                 silabo_dict,
                 user_id,
                 status,
+                teaching_method_id,
             )
         except Exception as e:
             logger.error(f"Error al guardar sÃ­labo: {e}")
@@ -1780,6 +1786,55 @@ class SupabaseService:
             "instrumentos": instrumentos[:15],
             "habilidades": habilidades[:12],
         }
+
+    def _listar_skills_por_ids_sync(self, skill_ids: list) -> dict:
+        if not skill_ids:
+            return {"verbos": [], "instrumentos": [], "habilidades": []}
+        placeholders = ", ".join([f":sid{i}" for i in range(len(skill_ids))])
+        params = {f"sid{i}": sid for i, sid in enumerate(skill_ids)}
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT verbo_principal, instrumentos_sugeridos, evidencias_sugeridas,
+                           subcategoria, nivel_cognitivo, descripcion, categoria
+                    FROM skills_catalog
+                    WHERE id IN ({placeholders}) AND estado = 'activa'
+                """),
+                params,
+            ).mappings().all()
+        return self._listar_skills_por_categorias_sync.__func__(self, []) if not filas else \
+            self.__class__._build_skills_context(list(filas))
+
+    @staticmethod
+    def _build_skills_context(filas: list) -> dict:
+        verbos, verbos_set = [], set()
+        instrumentos, instrumentos_set = [], set()
+        habilidades, habilidades_set = [], set()
+        for fila in filas:
+            v = (fila.get("verbo_principal") or "").strip()
+            if v and v.lower() not in verbos_set:
+                verbos_set.add(v.lower()); verbos.append(v)
+            for inst in (fila.get("instrumentos_sugeridos") or "").replace(";", ",").split(","):
+                i = inst.strip()
+                if i and i.lower() not in instrumentos_set:
+                    instrumentos_set.add(i.lower()); instrumentos.append(i)
+            key = (v.lower(), (fila.get("nivel_cognitivo") or "").lower())
+            if key not in habilidades_set:
+                habilidades_set.add(key)
+                habilidades.append({
+                    "verbo": v, "nivel": fila.get("nivel_cognitivo", ""),
+                    "subcat": fila.get("subcategoria", ""),
+                    "descripcion": fila.get("descripcion", ""),
+                    "evidencia": (fila.get("evidencias_sugeridas") or "")[:140],
+                })
+        return {"verbos": verbos[:30], "instrumentos": instrumentos[:15], "habilidades": habilidades[:12]}
+
+    async def listar_skills_por_ids(self, skill_ids: list) -> dict:
+        try:
+            return await self._ejecutar(self._listar_skills_por_ids_sync, skill_ids)
+        except Exception as e:
+            logger.error(f"Error al listar skills por IDs: {e}")
+            return {"verbos": [], "instrumentos": [], "habilidades": []}
 
     async def listar_skills_por_categorias(self, categories: list) -> dict:
         try:
@@ -2163,3 +2218,1081 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error al listar sílabos por programa (admin): {e}")
             return []
+
+    # ══════════════════════════════════════════════════════════════
+    # MÉTODOS PEDAGÓGICOS (teaching_methods) — desde DB
+    # ══════════════════════════════════════════════════════════════
+
+    def _mapear_teaching_method(self, fila) -> dict:
+        item = dict(fila)
+        if item.get("id") is not None:
+            item["id"] = str(item["id"])
+        for campo in ("created_at", "updated_at"):
+            if campo in item:
+                item[campo] = self._serializar_fecha(item.get(campo))
+        for campo in ("phases", "tecnicas_didacticas", "instrumentos_evaluacion"):
+            if isinstance(item.get(campo), str):
+                try:
+                    item[campo] = json.loads(item[campo])
+                except Exception:
+                    pass
+        return item
+
+    def _listar_teaching_methods_sync(self, include_archived: bool = False) -> list:
+        where = "" if include_archived else "WHERE is_archived = false"
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT id, name, code, description, phases, weekly_template,
+                           tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion,
+                           is_archived
+                    FROM teaching_methods
+                    {where}
+                    ORDER BY name ASC
+                """)
+            ).mappings().all()
+        return [self._mapear_teaching_method(f) for f in filas]
+
+    async def listar_teaching_methods(self, include_archived: bool = False) -> list:
+        try:
+            return await self._ejecutar(self._listar_teaching_methods_sync, include_archived)
+        except Exception as e:
+            logger.error(f"Error al listar teaching_methods: {e}")
+            return []
+
+    def _obtener_teaching_method_sync(self, method_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    SELECT id, name, code, description, phases, weekly_template,
+                           tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion,
+                           is_archived
+                    FROM teaching_methods
+                    WHERE id = :id
+                """),
+                {"id": method_id},
+            ).mappings().first()
+        return self._mapear_teaching_method(fila) if fila else None
+
+    async def obtener_teaching_method(self, method_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_teaching_method_sync, method_id)
+        except Exception as e:
+            logger.error(f"Error al obtener teaching_method {method_id}: {e}")
+            return None
+
+    def _crear_teaching_method_sync(self, data: dict, changed_by: str) -> Optional[dict]:
+        mid = str(uuid.uuid4())
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO teaching_methods
+                        (id, name, code, description, phases, weekly_template,
+                         tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion)
+                    VALUES
+                        (:id, :name, :code, :description,
+                         :phases::jsonb, :weekly_template,
+                         :tecnicas::jsonb, :estrategias, :instrumentos::jsonb)
+                    RETURNING id, name, code, description, phases, weekly_template,
+                              tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion, is_archived
+                """),
+                {
+                    "id": mid,
+                    "name": data["name"],
+                    "code": data.get("code", ""),
+                    "description": data.get("description", ""),
+                    "phases": json.dumps(data.get("phases", []), ensure_ascii=False),
+                    "weekly_template": data.get("weekly_template", ""),
+                    "tecnicas": json.dumps(data.get("tecnicas_didacticas", []), ensure_ascii=False),
+                    "estrategias": data.get("estrategias_evaluacion", ""),
+                    "instrumentos": json.dumps(data.get("instrumentos_evaluacion", []), ensure_ascii=False),
+                },
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO teaching_methods_history
+                        (id, teaching_method_id, action, payload_after, changed_by)
+                    VALUES (:hid, :mid, 'create', :payload, :by)
+                """),
+                {"hid": str(uuid.uuid4()), "mid": mid, "payload": json.dumps(data, ensure_ascii=False, default=str), "by": changed_by},
+            )
+            sesion.commit()
+        return self._mapear_teaching_method(fila) if fila else None
+
+    async def crear_teaching_method(self, data: dict, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._crear_teaching_method_sync, data, changed_by)
+        except Exception as e:
+            logger.error(f"Error al crear teaching_method: {e}")
+            return None
+
+    def _actualizar_teaching_method_sync(self, method_id: str, data: dict, changed_by: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT * FROM teaching_methods WHERE id = :id"),
+                {"id": method_id},
+            ).mappings().first()
+            if not previo:
+                return None
+            fila = sesion.execute(
+                text("""
+                    UPDATE teaching_methods
+                    SET name = COALESCE(:name, name),
+                        code = COALESCE(:code, code),
+                        description = COALESCE(:description, description),
+                        phases = COALESCE(:phases::jsonb, phases),
+                        weekly_template = COALESCE(:weekly_template, weekly_template),
+                        tecnicas_didacticas = COALESCE(:tecnicas::jsonb, tecnicas_didacticas),
+                        estrategias_evaluacion = COALESCE(:estrategias, estrategias_evaluacion),
+                        instrumentos_evaluacion = COALESCE(:instrumentos::jsonb, instrumentos_evaluacion)
+                    WHERE id = :id
+                    RETURNING id, name, code, description, phases, weekly_template,
+                              tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion, is_archived
+                """),
+                {
+                    "id": method_id,
+                    "name": data.get("name"),
+                    "code": data.get("code"),
+                    "description": data.get("description"),
+                    "phases": json.dumps(data["phases"], ensure_ascii=False) if "phases" in data else None,
+                    "weekly_template": data.get("weekly_template"),
+                    "tecnicas": json.dumps(data["tecnicas_didacticas"], ensure_ascii=False) if "tecnicas_didacticas" in data else None,
+                    "estrategias": data.get("estrategias_evaluacion"),
+                    "instrumentos": json.dumps(data["instrumentos_evaluacion"], ensure_ascii=False) if "instrumentos_evaluacion" in data else None,
+                },
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO teaching_methods_history
+                        (id, teaching_method_id, action, payload_before, payload_after, changed_by)
+                    VALUES (:hid, :mid, 'update', :before, :after, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "mid": method_id,
+                    "before": json.dumps(dict(previo), ensure_ascii=False, default=str),
+                    "after": json.dumps(data, ensure_ascii=False, default=str),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return self._mapear_teaching_method(fila) if fila else None
+
+    async def actualizar_teaching_method(self, method_id: str, data: dict, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._actualizar_teaching_method_sync, method_id, data, changed_by)
+        except Exception as e:
+            logger.error(f"Error al actualizar teaching_method {method_id}: {e}")
+            return None
+
+    def _archivar_teaching_method_sync(self, method_id: str, changed_by: str) -> bool:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT * FROM teaching_methods WHERE id = :id"),
+                {"id": method_id},
+            ).mappings().first()
+            if not previo:
+                return False
+            sesion.execute(
+                text("UPDATE teaching_methods SET is_archived = true WHERE id = :id"),
+                {"id": method_id},
+            )
+            sesion.execute(
+                text("""
+                    INSERT INTO teaching_methods_history
+                        (id, teaching_method_id, action, payload_before, changed_by)
+                    VALUES (:hid, :mid, 'archive', :before, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "mid": method_id,
+                    "before": json.dumps(dict(previo), ensure_ascii=False, default=str),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return True
+
+    async def archivar_teaching_method(self, method_id: str, changed_by: str) -> bool:
+        try:
+            return await self._ejecutar(self._archivar_teaching_method_sync, method_id, changed_by)
+        except Exception as e:
+            logger.error(f"Error al archivar teaching_method {method_id}: {e}")
+            return False
+
+    # ══════════════════════════════════════════════════════════════
+    # SKILLS (admin CRUD sobre skills_catalog)
+    # ══════════════════════════════════════════════════════════════
+
+    def _mapear_skill_admin(self, fila) -> dict:
+        item = dict(fila)
+        if item.get("id") is not None:
+            item["id"] = str(item["id"])
+        if "created_at" in item:
+            item["created_at"] = self._serializar_fecha(item.get("created_at"))
+        return item
+
+    def _listar_skills_admin_sync(
+        self,
+        categoria: Optional[str] = None,
+        search: str = "",
+        include_archived: bool = False,
+        page: int = 1,
+        page_size: int = 30,
+    ) -> dict:
+        params: dict = {}
+        conditions = [] if include_archived else ["estado = 'activa'"]
+        if categoria:
+            conditions.append("categoria = :categoria")
+            params["categoria"] = categoria
+        if search.strip():
+            conditions.append("(LOWER(nombre) LIKE :search OR LOWER(verbo_principal) LIKE :search OR LOWER(id_habilidad) LIKE :search)")
+            params["search"] = f"%{search.strip().lower()}%"
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        offset = (max(page, 1) - 1) * page_size
+        with self._Session() as sesion:
+            total_row = sesion.execute(
+                text(f"SELECT COUNT(*) FROM skills_catalog {where}"), params
+            ).scalar()
+            filas = sesion.execute(
+                text(f"""
+                    SELECT id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                           nivel_cognitivo, verbo_principal, evidencias_sugeridas,
+                           instrumentos_sugeridos, estado
+                    FROM skills_catalog
+                    {where}
+                    ORDER BY categoria ASC, subcategoria ASC, nombre ASC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {**params, "limit": page_size, "offset": offset},
+            ).mappings().all()
+        return {"items": [self._mapear_skill_admin(f) for f in filas], "total": total_row or 0}
+
+    async def listar_skills_admin(
+        self,
+        categoria: Optional[str] = None,
+        search: str = "",
+        include_archived: bool = False,
+        page: int = 1,
+        page_size: int = 30,
+    ) -> dict:
+        try:
+            return await self._ejecutar(
+                self._listar_skills_admin_sync, categoria, search, include_archived, page, page_size
+            )
+        except Exception as e:
+            logger.error(f"Error al listar skills admin: {e}")
+            return {"items": [], "total": 0}
+
+    def _obtener_skill_sync(self, skill_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    SELECT id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                           nivel_cognitivo, verbo_principal, evidencias_sugeridas,
+                           instrumentos_sugeridos, estado
+                    FROM skills_catalog WHERE id = :id
+                """),
+                {"id": skill_id},
+            ).mappings().first()
+        return self._mapear_skill_admin(fila) if fila else None
+
+    async def obtener_skill(self, skill_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_skill_sync, skill_id)
+        except Exception as e:
+            logger.error(f"Error al obtener skill {skill_id}: {e}")
+            return None
+
+    def _crear_skill_sync(self, data: dict, changed_by: str) -> Optional[dict]:
+        sid = str(uuid.uuid4())
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO skills_catalog
+                        (id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                         nivel_cognitivo, verbo_principal, evidencias_sugeridas,
+                         instrumentos_sugeridos, estado)
+                    VALUES
+                        (:id, :id_habilidad, :nombre, :descripcion, :categoria, :subcategoria,
+                         :nivel_cognitivo, :verbo_principal, :evidencias_sugeridas,
+                         :instrumentos_sugeridos, 'activa')
+                    RETURNING id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                              nivel_cognitivo, verbo_principal, evidencias_sugeridas,
+                              instrumentos_sugeridos, estado
+                """),
+                {"id": sid, **{k: data.get(k, "") for k in (
+                    "id_habilidad", "nombre", "descripcion", "categoria", "subcategoria",
+                    "nivel_cognitivo", "verbo_principal", "evidencias_sugeridas", "instrumentos_sugeridos"
+                )}},
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO skills_catalog_history
+                        (id, skill_id, action, payload_after, changed_by)
+                    VALUES (:hid, :sid, 'create', :payload, :by)
+                """),
+                {"hid": str(uuid.uuid4()), "sid": sid, "payload": json.dumps(data, ensure_ascii=False, default=str), "by": changed_by},
+            )
+            sesion.commit()
+        return self._mapear_skill_admin(fila) if fila else None
+
+    async def crear_skill(self, data: dict, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._crear_skill_sync, data, changed_by)
+        except Exception as e:
+            logger.error(f"Error al crear skill: {e}")
+            return None
+
+    def _actualizar_skill_sync(self, skill_id: str, data: dict, changed_by: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT * FROM skills_catalog WHERE id = :id"),
+                {"id": skill_id},
+            ).mappings().first()
+            if not previo:
+                return None
+            campos = {k: data[k] for k in (
+                "id_habilidad", "nombre", "descripcion", "categoria", "subcategoria",
+                "nivel_cognitivo", "verbo_principal", "evidencias_sugeridas", "instrumentos_sugeridos"
+            ) if k in data}
+            if not campos:
+                return self._mapear_skill_admin(previo)
+            sets = ", ".join(f"{k} = :{k}" for k in campos)
+            fila = sesion.execute(
+                text(f"""
+                    UPDATE skills_catalog SET {sets} WHERE id = :id
+                    RETURNING id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                              nivel_cognitivo, verbo_principal, evidencias_sugeridas,
+                              instrumentos_sugeridos, estado
+                """),
+                {**campos, "id": skill_id},
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO skills_catalog_history
+                        (id, skill_id, action, payload_before, payload_after, changed_by)
+                    VALUES (:hid, :sid, 'update', :before, :after, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "sid": skill_id,
+                    "before": json.dumps(dict(previo), ensure_ascii=False, default=str),
+                    "after": json.dumps(data, ensure_ascii=False, default=str),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return self._mapear_skill_admin(fila) if fila else None
+
+    async def actualizar_skill(self, skill_id: str, data: dict, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._actualizar_skill_sync, skill_id, data, changed_by)
+        except Exception as e:
+            logger.error(f"Error al actualizar skill {skill_id}: {e}")
+            return None
+
+    def _archivar_skill_sync(self, skill_id: str, changed_by: str) -> bool:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT * FROM skills_catalog WHERE id = :id"),
+                {"id": skill_id},
+            ).mappings().first()
+            if not previo:
+                return False
+            sesion.execute(
+                text("UPDATE skills_catalog SET estado = 'archivada' WHERE id = :id"),
+                {"id": skill_id},
+            )
+            sesion.execute(
+                text("""
+                    INSERT INTO skills_catalog_history
+                        (id, skill_id, action, payload_before, changed_by)
+                    VALUES (:hid, :sid, 'archive', :before, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "sid": skill_id,
+                    "before": json.dumps(dict(previo), ensure_ascii=False, default=str),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return True
+
+    async def archivar_skill(self, skill_id: str, changed_by: str) -> bool:
+        try:
+            return await self._ejecutar(self._archivar_skill_sync, skill_id, changed_by)
+        except Exception as e:
+            logger.error(f"Error al archivar skill {skill_id}: {e}")
+            return False
+
+    # ══════════════════════════════════════════════════════════════
+    # CURRÍCULO DE CURSOS (curriculum + historial)
+    # ══════════════════════════════════════════════════════════════
+
+    def _actualizar_curriculo_curso_sync(
+        self, course_id: str, data: dict, changed_by: str, user_career_id: Optional[str], user_role: str
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("""
+                    SELECT c.id, c.is_common, c.program_id, c.sumilla, c.competencia_egreso,
+                           c.resultado_aprendizaje, c.capacidad, p.career_id
+                    FROM courses c
+                    LEFT JOIN programs p ON p.id = c.program_id
+                    WHERE c.id = :course_id
+                """),
+                {"course_id": course_id},
+            ).mappings().first()
+            if not previo:
+                return None
+            # Regla: cursos comunes solo admin o director
+            if previo.get("is_common") and user_role not in ("admin", "director"):
+                raise PermissionError("Solo admin o director puede editar cursos comunes")
+            # Scope check: director solo su carrera
+            if user_role == "director" and user_career_id:
+                if str(previo.get("career_id", "")) != user_career_id:
+                    raise PermissionError("Fuera de tu scope de carrera")
+
+            campos_validos = ("sumilla", "competencia_egreso", "resultado_aprendizaje", "capacidad")
+            campos = {k: data[k] for k in campos_validos if k in data}
+            if not campos:
+                return dict(previo)
+            sets = ", ".join(f"{k} = :{k}" for k in campos)
+            fila = sesion.execute(
+                text(f"""
+                    UPDATE courses SET {sets} WHERE id = :course_id
+                    RETURNING id, name, sumilla, competencia_egreso, resultado_aprendizaje, capacidad
+                """),
+                {**campos, "course_id": course_id},
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO courses_curriculum_history
+                        (id, course_id, action, payload_before, payload_after, changed_by)
+                    VALUES (:hid, :cid, 'update', :before, :after, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "cid": course_id,
+                    "before": json.dumps({k: previo.get(k) for k in campos_validos}, ensure_ascii=False, default=str),
+                    "after": json.dumps(campos, ensure_ascii=False, default=str),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return dict(fila) if fila else None
+
+    async def actualizar_curriculo_curso(
+        self, course_id: str, data: dict, changed_by: str,
+        user_career_id: Optional[str] = None, user_role: str = "admin"
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._actualizar_curriculo_curso_sync,
+                course_id, data, changed_by, user_career_id, user_role
+            )
+        except PermissionError:
+            raise
+        except Exception as e:
+            logger.error(f"Error al actualizar currículo del curso {course_id}: {e}")
+            return None
+
+    def _listar_historial_curriculo_sync(self, course_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT h.id, h.course_id, h.action, h.payload_before, h.payload_after,
+                           h.changed_at, u.full_name AS changed_by_name
+                    FROM courses_curriculum_history h
+                    LEFT JOIN users u ON u.id = h.changed_by
+                    WHERE h.course_id = :course_id
+                    ORDER BY h.changed_at DESC
+                """),
+                {"course_id": course_id},
+            ).mappings().all()
+        resultado = []
+        for fila in filas:
+            item = dict(fila)
+            item["changed_at"] = self._serializar_fecha(item.get("changed_at"))
+            resultado.append(item)
+        return resultado
+
+    async def listar_historial_curriculo(self, course_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_historial_curriculo_sync, course_id)
+        except Exception as e:
+            logger.error(f"Error al listar historial curriculo {course_id}: {e}")
+            return []
+
+    # ══════════════════════════════════════════════════════════════
+    # DESEMPEÑOS (performances) por curso
+    # ══════════════════════════════════════════════════════════════
+
+    def _mapear_performance(self, fila) -> dict:
+        item = dict(fila)
+        for campo in ("id", "course_id"):
+            if item.get(campo) is not None:
+                item[campo] = str(item[campo])
+        if "created_at" in item:
+            if campo in item:
+                item[campo] = self._serializar_fecha(item.get(campo))
+        return item
+
+    def _listar_performances_curso_sync(self, course_id: str, include_archived: bool = False) -> list:
+        where_arch = "" if include_archived else "AND (is_archived = false OR is_archived IS NULL)"
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT id, course_id, code, statement, display_order, is_archived
+                    FROM performances
+                    WHERE course_id = :course_id {where_arch}
+                    ORDER BY display_order ASC
+                """),
+                {"course_id": course_id},
+            ).mappings().all()
+        return [self._mapear_performance(f) for f in filas]
+
+    async def listar_performances_curso(self, course_id: str, include_archived: bool = False) -> list:
+        try:
+            return await self._ejecutar(self._listar_performances_curso_sync, course_id, include_archived)
+        except Exception as e:
+            logger.error(f"Error al listar performances {course_id}: {e}")
+            return []
+
+    def _recalcular_performance_codes_sync(self, sesion, course_id: str) -> None:
+        sesion.execute(
+            text("""
+                UPDATE performances AS p
+                SET code = 'D' || rn.row_num::text,
+                    display_order = rn.row_num
+                FROM (
+                    SELECT id,
+                           ROW_NUMBER() OVER (ORDER BY display_order ASC) AS row_num
+                    FROM performances
+                    WHERE course_id = :course_id AND (is_archived = false OR is_archived IS NULL)
+                ) AS rn
+                WHERE p.id = rn.id
+            """),
+            {"course_id": course_id},
+        )
+
+    def _crear_performance_sync(self, course_id: str, statement: str, changed_by: str) -> Optional[dict]:
+        pid = str(uuid.uuid4())
+        with self._Session() as sesion:
+            max_order = sesion.execute(
+                text("""
+                    SELECT COALESCE(MAX(display_order), 0) + 1
+                    FROM performances
+                    WHERE course_id = :course_id AND (is_archived = false OR is_archived IS NULL)
+                """),
+                {"course_id": course_id},
+            ).scalar()
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO performances (id, course_id, code, statement, display_order)
+                    VALUES (:id, :course_id, :code, :statement, :order)
+                    RETURNING id, course_id, code, statement, display_order, is_archived
+                """),
+                {
+                    "id": pid, "course_id": course_id,
+                    "code": f"D{max_order}", "statement": statement, "order": max_order,
+                },
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO performances_history
+                        (id, performance_id, course_id, action, payload_after, changed_by)
+                    VALUES (:hid, :pid, :cid, 'create', :payload, :by)
+                """),
+                {"hid": str(uuid.uuid4()), "pid": pid, "cid": course_id,
+                 "payload": json.dumps({"statement": statement}, ensure_ascii=False), "by": changed_by},
+            )
+            sesion.commit()
+        return self._mapear_performance(fila) if fila else None
+
+    async def crear_performance(self, course_id: str, statement: str, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._crear_performance_sync, course_id, statement, changed_by)
+        except Exception as e:
+            logger.error(f"Error al crear performance: {e}")
+            return None
+
+    def _actualizar_performance_sync(
+        self, perf_id: str, statement: str, changed_by: str
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT id, course_id, statement FROM performances WHERE id = :id"),
+                {"id": perf_id},
+            ).mappings().first()
+            if not previo:
+                return None
+            fila = sesion.execute(
+                text("""
+                    UPDATE performances SET statement = :statement WHERE id = :id
+                    RETURNING id, course_id, code, statement, display_order, is_archived
+                """),
+                {"statement": statement, "id": perf_id},
+            ).mappings().first()
+            sesion.execute(
+                text("""
+                    INSERT INTO performances_history
+                        (id, performance_id, course_id, action, payload_before, payload_after, changed_by)
+                    VALUES (:hid, :pid, :cid, 'update', :before, :after, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "pid": perf_id, "cid": str(previo["course_id"]),
+                    "before": json.dumps({"statement": previo["statement"]}, ensure_ascii=False),
+                    "after": json.dumps({"statement": statement}, ensure_ascii=False),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return self._mapear_performance(fila) if fila else None
+
+    async def actualizar_performance(self, perf_id: str, statement: str, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._actualizar_performance_sync, perf_id, statement, changed_by)
+        except Exception as e:
+            logger.error(f"Error al actualizar performance {perf_id}: {e}")
+            return None
+
+    def _archivar_performance_sync(self, perf_id: str, changed_by: str) -> bool:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT id, course_id, code, statement FROM performances WHERE id = :id"),
+                {"id": perf_id},
+            ).mappings().first()
+            if not previo:
+                return False
+            sesion.execute(
+                text("UPDATE performances SET is_archived = true WHERE id = :id"),
+                {"id": perf_id},
+            )
+            self._recalcular_performance_codes_sync(sesion, str(previo["course_id"]))
+            sesion.execute(
+                text("""
+                    INSERT INTO performances_history
+                        (id, performance_id, course_id, action, payload_before, changed_by)
+                    VALUES (:hid, :pid, :cid, 'archive', :before, :by)
+                """),
+                {
+                    "hid": str(uuid.uuid4()), "pid": perf_id, "cid": str(previo["course_id"]),
+                    "before": json.dumps(dict(previo), ensure_ascii=False, default=str),
+                    "by": changed_by,
+                },
+            )
+            sesion.commit()
+        return True
+
+    async def archivar_performance(self, perf_id: str, changed_by: str) -> bool:
+        try:
+            return await self._ejecutar(self._archivar_performance_sync, perf_id, changed_by)
+        except Exception as e:
+            logger.error(f"Error al archivar performance {perf_id}: {e}")
+            return False
+
+    # ══════════════════════════════════════════════════════════════
+    # VÍNCULOS MÉTODO ↔ HABILIDAD (teaching_method_skill_links)
+    # ══════════════════════════════════════════════════════════════
+
+    def _listar_method_skill_links_sync(self, method_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT l.id, l.teaching_method_id AS method_id, l.skill_id,
+                           l.priority, l.is_recommended,
+                           s.id_habilidad, s.nombre AS skill_nombre,
+                           s.categoria AS skill_categoria, s.subcategoria, s.nivel_cognitivo
+                    FROM teaching_method_skill_links l
+                    JOIN skills_catalog s ON s.id = l.skill_id
+                    WHERE l.teaching_method_id = :mid AND s.estado = 'activa'
+                    ORDER BY l.is_recommended DESC, l.priority ASC, s.nombre ASC
+                """),
+                {"mid": method_id},
+            ).mappings().all()
+        return [self._stringify_uuids(dict(f)) for f in filas]
+
+    def _stringify_uuids(self, item: dict) -> dict:
+        for k, v in item.items():
+            if hasattr(v, "hex"):  # UUID type
+                item[k] = str(v)
+        return item
+
+    async def listar_method_skill_links(self, method_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_method_skill_links_sync, method_id)
+        except Exception as e:
+            logger.error(f"Error al listar links método-skill {method_id}: {e}")
+            return []
+
+    def _crear_method_skill_link_sync(
+        self, method_id: str, skill_id: str, priority: int, is_recommended: bool
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO teaching_method_skill_links
+                        (id, teaching_method_id, skill_id, priority, is_recommended)
+                    VALUES (:id, :mid, :sid, :priority, :is_rec)
+                    ON CONFLICT (teaching_method_id, skill_id) DO UPDATE
+                        SET priority = EXCLUDED.priority, is_recommended = EXCLUDED.is_recommended
+                    RETURNING id, teaching_method_id, skill_id, priority, is_recommended
+                """),
+                {
+                    "id": str(uuid.uuid4()), "mid": method_id, "sid": skill_id,
+                    "priority": priority, "is_rec": is_recommended,
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._stringify_uuids(dict(fila)) if fila else None
+
+    async def crear_method_skill_link(
+        self, method_id: str, skill_id: str, priority: int = 50, is_recommended: bool = False
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._crear_method_skill_link_sync, method_id, skill_id, priority, is_recommended)
+        except Exception as e:
+            logger.error(f"Error al crear link método-skill: {e}")
+            return None
+
+    def _actualizar_method_skill_link_sync(
+        self, link_id: str, priority: int, is_recommended: bool
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    UPDATE teaching_method_skill_links
+                    SET priority = :priority, is_recommended = :is_rec
+                    WHERE id = :id
+                    RETURNING id, teaching_method_id, skill_id, priority, is_recommended
+                """),
+                {"id": link_id, "priority": priority, "is_rec": is_recommended},
+            ).mappings().first()
+            sesion.commit()
+        return self._stringify_uuids(dict(fila)) if fila else None
+
+    async def actualizar_method_skill_link(
+        self, link_id: str, priority: int, is_recommended: bool
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._actualizar_method_skill_link_sync, link_id, priority, is_recommended)
+        except Exception as e:
+            logger.error(f"Error al actualizar link {link_id}: {e}")
+            return None
+
+    def _eliminar_method_skill_link_sync(self, link_id: str) -> bool:
+        with self._Session() as sesion:
+            sesion.execute(
+                text("DELETE FROM teaching_method_skill_links WHERE id = :id"),
+                {"id": link_id},
+            )
+            sesion.commit()
+        return True
+
+    async def eliminar_method_skill_link(self, link_id: str) -> bool:
+        try:
+            return await self._ejecutar(self._eliminar_method_skill_link_sync, link_id)
+        except Exception as e:
+            logger.error(f"Error al eliminar link {link_id}: {e}")
+            return False
+
+    def _listar_skills_compatibles_sync(
+        self, method_id: str, search: str = "", page: int = 1, page_size: int = 50
+    ) -> dict:
+        offset = (page - 1) * page_size
+        with self._Session() as sesion:
+            # Skills recomendadas
+            recs = sesion.execute(
+                text("""
+                    SELECT s.id, s.id_habilidad, s.nombre, s.categoria, s.subcategoria,
+                           s.nivel_cognitivo, s.verbo_principal, s.evidencias_sugeridas,
+                           l.priority, l.is_recommended
+                    FROM teaching_method_skill_links l
+                    JOIN skills_catalog s ON s.id = l.skill_id
+                    WHERE l.teaching_method_id = :mid AND s.estado = 'activa' AND l.is_recommended = true
+                    ORDER BY l.priority ASC, s.nombre ASC
+                """),
+                {"mid": method_id},
+            ).mappings().all()
+
+            # Skills compatibles (sin filter de is_recommended)
+            compat_q = """
+                SELECT s.id, s.id_habilidad, s.nombre, s.categoria, s.subcategoria,
+                       s.nivel_cognitivo, s.verbo_principal, s.evidencias_sugeridas,
+                       l.priority, l.is_recommended
+                FROM teaching_method_skill_links l
+                JOIN skills_catalog s ON s.id = l.skill_id
+                WHERE l.teaching_method_id = :mid AND s.estado = 'activa'
+            """
+            params: dict = {"mid": method_id}
+            if search.strip():
+                compat_q += " AND (LOWER(s.nombre) LIKE :search OR LOWER(s.id_habilidad) LIKE :search)"
+                params["search"] = f"%{search.strip().lower()}%"
+            compat_q += " ORDER BY l.is_recommended DESC, l.priority ASC, s.nombre ASC LIMIT :ps OFFSET :off"
+            params["ps"] = page_size
+            params["off"] = offset
+
+            compat = sesion.execute(text(compat_q), params).mappings().all()
+
+            # Count total compatible
+            count_q = """
+                SELECT COUNT(*) FROM teaching_method_skill_links l
+                JOIN skills_catalog s ON s.id = l.skill_id
+                WHERE l.teaching_method_id = :mid AND s.estado = 'activa'
+            """
+            count_params: dict = {"mid": method_id}
+            if search.strip():
+                count_q += " AND (LOWER(s.nombre) LIKE :search OR LOWER(s.id_habilidad) LIKE :search)"
+                count_params["search"] = f"%{search.strip().lower()}%"
+            total = sesion.execute(text(count_q), count_params).scalar() or 0
+
+            fallback_mode = len(recs) == 0 and total == 0
+
+        def _map(f):
+            item = self._stringify_uuids(dict(f))
+            item["id"] = str(item["id"])
+            return item
+
+        if fallback_mode:
+            # Sin links → devolver catálogo completo activo
+            with self._Session() as sesion:
+                all_skills_q = """
+                    SELECT id, id_habilidad, nombre, categoria, subcategoria,
+                           nivel_cognitivo, verbo_principal, evidencias_sugeridas
+                    FROM skills_catalog WHERE estado = 'activa'
+                """
+                params2: dict = {}
+                if search.strip():
+                    all_skills_q += " AND (LOWER(nombre) LIKE :search OR LOWER(id_habilidad) LIKE :search)"
+                    params2["search"] = f"%{search.strip().lower()}%"
+                all_skills_q += " ORDER BY categoria ASC, nombre ASC LIMIT :ps OFFSET :off"
+                params2["ps"] = page_size
+                params2["off"] = offset
+                all_skills = sesion.execute(text(all_skills_q), params2).mappings().all()
+                total_all = sesion.execute(
+                    text("SELECT COUNT(*) FROM skills_catalog WHERE estado = 'activa'")
+                ).scalar() or 0
+            return {
+                "recommended_skills": [],
+                "compatible_skills": [_map(f) for f in all_skills],
+                "total": total_all,
+                "fallback_mode": True,
+            }
+
+        return {
+            "recommended_skills": [_map(f) for f in recs],
+            "compatible_skills": [_map(f) for f in compat],
+            "total": total,
+            "fallback_mode": False,
+        }
+
+    async def listar_skills_compatibles(
+        self, method_id: str, search: str = "", page: int = 1, page_size: int = 50
+    ) -> dict:
+        try:
+            return await self._ejecutar(self._listar_skills_compatibles_sync, method_id, search, page, page_size)
+        except Exception as e:
+            logger.error(f"Error al listar skills compatibles para método {method_id}: {e}")
+            return {"recommended_skills": [], "compatible_skills": [], "total": 0, "fallback_mode": True}
+
+    # ══════════════════════════════════════════════════════════════
+    # SCOPES Y PERMISOS DE USUARIO
+    # ══════════════════════════════════════════════════════════════
+
+    def _listar_scopes_usuario_sync(self, user_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT id, user_id, scope_type, scope_id, active, assigned_by, created_at
+                    FROM user_scope_assignments
+                    WHERE user_id = :user_id AND active = true
+                    ORDER BY scope_type ASC, created_at ASC
+                """),
+                {"user_id": user_id},
+            ).mappings().all()
+        return [self._stringify_uuids(dict(f)) for f in filas]
+
+    async def listar_scopes_usuario(self, user_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_scopes_usuario_sync, user_id)
+        except Exception as e:
+            logger.error(f"Error al listar scopes del usuario {user_id}: {e}")
+            return []
+
+    def _asignar_scope_sync(
+        self, user_id: str, scope_type: str, scope_id: str, assigned_by: str
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO user_scope_assignments
+                        (id, user_id, scope_type, scope_id, active, assigned_by)
+                    VALUES (:id, :uid, :stype, :sid, true, :by)
+                    ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE
+                        SET active = true, assigned_by = EXCLUDED.assigned_by
+                    RETURNING id, user_id, scope_type, scope_id, active, assigned_by, created_at
+                """),
+                {
+                    "id": str(uuid.uuid4()), "uid": user_id,
+                    "stype": scope_type, "sid": scope_id, "by": assigned_by,
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._stringify_uuids(dict(fila)) if fila else None
+
+    async def asignar_scope_usuario(
+        self, user_id: str, scope_type: str, scope_id: str, assigned_by: str
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._asignar_scope_sync, user_id, scope_type, scope_id, assigned_by)
+        except Exception as e:
+            logger.error(f"Error al asignar scope: {e}")
+            return None
+
+    def _revocar_scope_sync(self, scope_id: str) -> bool:
+        with self._Session() as sesion:
+            sesion.execute(
+                text("UPDATE user_scope_assignments SET active = false WHERE id = :id"),
+                {"id": scope_id},
+            )
+            sesion.commit()
+        return True
+
+    async def revocar_scope_usuario(self, scope_id: str) -> bool:
+        try:
+            return await self._ejecutar(self._revocar_scope_sync, scope_id)
+        except Exception as e:
+            logger.error(f"Error al revocar scope {scope_id}: {e}")
+            return False
+
+    def _actualizar_rol_usuario_sync(self, user_id: str, role: str, changed_by: str) -> Optional[dict]:
+        ROLES_VALIDOS = {"admin", "director", "coordinador", "docente"}
+        if role not in ROLES_VALIDOS:
+            raise ValueError(f"Rol inválido: {role}")
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    UPDATE users SET role = :role WHERE id = :id
+                    RETURNING id, email, full_name, role, career_id, status
+                """),
+                {"role": role, "id": user_id},
+            ).mappings().first()
+            sesion.commit()
+        return self._mapear_usuario_fila(fila) if fila else None
+
+    async def actualizar_rol_usuario(self, user_id: str, role: str, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._actualizar_rol_usuario_sync, user_id, role, changed_by)
+        except ValueError as e:
+            raise
+        except Exception as e:
+            logger.error(f"Error al actualizar rol de usuario {user_id}: {e}")
+            return None
+
+    def _resolve_effective_permissions_sync(self, user_id: str, user_role: str) -> dict:
+        with self._Session() as sesion:
+            # Plantilla base del rol
+            template_rows = sesion.execute(
+                text("""
+                    SELECT permission_key FROM role_permission_templates WHERE role = :role
+                """),
+                {"role": user_role},
+            ).mappings().all()
+            base_perms = {r["permission_key"] for r in template_rows}
+
+            # Overrides del usuario
+            override_rows = sesion.execute(
+                text("""
+                    SELECT permission_key, effect
+                    FROM user_permission_overrides
+                    WHERE user_id = :uid
+                """),
+                {"uid": user_id},
+            ).mappings().all()
+
+        perms = set(base_perms)
+        for ov in override_rows:
+            if ov["effect"] == "allow":
+                perms.add(ov["permission_key"])
+            elif ov["effect"] == "deny":
+                perms.discard(ov["permission_key"])
+
+        return {
+            "permissions": sorted(perms),
+            "base_role": user_role,
+            "overrides": [{"key": r["permission_key"], "effect": r["effect"]} for r in override_rows],
+        }
+
+    async def resolve_effective_permissions(self, user_id: str, user_role: str) -> dict:
+        try:
+            return await self._ejecutar(self._resolve_effective_permissions_sync, user_id, user_role)
+        except Exception as e:
+            logger.error(f"Error al resolver permisos de {user_id}: {e}")
+            return {"permissions": [], "base_role": user_role, "overrides": []}
+
+    def _listar_overrides_usuario_sync(self, user_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT o.id, o.user_id, o.permission_key, o.effect,
+                           o.granted_by, o.created_at, u.full_name AS granted_by_name
+                    FROM user_permission_overrides o
+                    LEFT JOIN users u ON u.id = o.granted_by
+                    WHERE o.user_id = :uid
+                    ORDER BY o.permission_key ASC
+                """),
+                {"uid": user_id},
+            ).mappings().all()
+        return [self._stringify_uuids(dict(f)) for f in filas]
+
+    async def listar_overrides_usuario(self, user_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_overrides_usuario_sync, user_id)
+        except Exception as e:
+            logger.error(f"Error al listar overrides del usuario {user_id}: {e}")
+            return []
+
+    def _crear_override_sync(
+        self, user_id: str, permission_key: str, effect: str, granted_by: str
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO user_permission_overrides
+                        (id, user_id, permission_key, effect, granted_by)
+                    VALUES (:id, :uid, :key, :effect, :by)
+                    ON CONFLICT (user_id, permission_key) DO UPDATE
+                        SET effect = EXCLUDED.effect, granted_by = EXCLUDED.granted_by
+                    RETURNING id, user_id, permission_key, effect, granted_by, created_at
+                """),
+                {
+                    "id": str(uuid.uuid4()), "uid": user_id,
+                    "key": permission_key, "effect": effect, "by": granted_by,
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._stringify_uuids(dict(fila)) if fila else None
+
+    async def crear_override_usuario(
+        self, user_id: str, permission_key: str, effect: str, granted_by: str
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._crear_override_sync, user_id, permission_key, effect, granted_by)
+        except Exception as e:
+            logger.error(f"Error al crear override: {e}")
+            return None
+
+    def _eliminar_override_sync(self, override_id: str) -> bool:
+        with self._Session() as sesion:
+            sesion.execute(
+                text("DELETE FROM user_permission_overrides WHERE id = :id"),
+                {"id": override_id},
+            )
+            sesion.commit()
+        return True
+
+    async def eliminar_override_usuario(self, override_id: str) -> bool:
+        try:
+            return await self._ejecutar(self._eliminar_override_sync, override_id)
+        except Exception as e:
+            logger.error(f"Error al eliminar override {override_id}: {e}")
+            return False
+

@@ -3,23 +3,22 @@ import { ChevronDown, Loader2, Sparkles } from 'lucide-react';
 import { BASE_URL, getToken } from '../api/client';
 
 export interface MethodItem {
-  id: number;
+  id: string;
   name: string;
   description?: string;
   secuencia_didactica?: string;
 }
 
 interface MethodSuggest {
-  method_id: number;
+  method_id: string;
   method_name: string;
   reason: string;
 }
 
 interface MethodSelectorProps {
   courseId: string;
-  selectedCategories?: string[];
-  value: number | null;
-  onChange: (methodId: number, methodName: string, methodSequence?: string) => void;
+  value: string | null;
+  onChange: (methodId: string, methodName: string, methodSequence?: string) => void;
 }
 
 async function fetchMethods(): Promise<MethodItem[]> {
@@ -30,12 +29,8 @@ async function fetchMethods(): Promise<MethodItem[]> {
   return (json.data as MethodItem[]) || [];
 }
 
-async function fetchSuggest(courseId: string, categories: string[]): Promise<MethodSuggest | null> {
+async function fetchSuggest(courseId: string): Promise<MethodSuggest | null> {
   const params = new URLSearchParams({ course_id: courseId });
-  if (categories.length) {
-    params.set('categories', categories.join(','));
-  }
-
   const res = await fetch(`${BASE_URL}/api/methods/suggest?${params.toString()}`, {
     headers: { Authorization: `Bearer ${getToken() || ''}` },
   });
@@ -43,12 +38,7 @@ async function fetchSuggest(courseId: string, categories: string[]): Promise<Met
   return (json.data as MethodSuggest) || null;
 }
 
-export default function MethodSelector({
-  courseId,
-  selectedCategories = [],
-  value,
-  onChange,
-}: MethodSelectorProps) {
+export default function MethodSelector({ courseId, value, onChange }: MethodSelectorProps) {
   const [methods, setMethods] = useState<MethodItem[]>([]);
   const [suggest, setSuggest] = useState<MethodSuggest | null>(null);
   const [loadingMethods, setLoadingMethods] = useState(true);
@@ -64,22 +54,18 @@ export default function MethodSelector({
   useEffect(() => {
     if (!courseId) return;
     setLoadingSuggest(true);
-    fetchSuggest(courseId, selectedCategories)
+    fetchSuggest(courseId)
       .then((suggestion) => {
         setSuggest(suggestion);
         if (suggestion && value === null) {
-          const suggestedMethod = methods.find((method) => method.id === suggestion.method_id);
-          onChange(
-            suggestion.method_id,
-            suggestion.method_name,
-            suggestedMethod?.secuencia_didactica,
-          );
+          const suggestedMethod = methods.find((m) => m.id === suggestion.method_id);
+          onChange(suggestion.method_id, suggestion.method_name, suggestedMethod?.secuencia_didactica);
         }
       })
       .finally(() => setLoadingSuggest(false));
-  }, [courseId, selectedCategories, value, methods]);
+  }, [courseId, methods]);
 
-  const selectedMethod = methods.find((method) => method.id === value) || null;
+  const selectedMethod = methods.find((m) => m.id === value) || null;
 
   if (loadingMethods) {
     return (
@@ -98,7 +84,7 @@ export default function MethodSelector({
           type="text"
           className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
           placeholder="Ej: Aprendizaje Basado en Problemas"
-          onChange={(event) => onChange(0, event.target.value)}
+          onChange={(e) => onChange('', e.target.value)}
         />
       </div>
     );
@@ -121,11 +107,6 @@ export default function MethodSelector({
           </div>
           <p className="text-sm font-medium text-gray-800">{suggest.method_name}</p>
           <p className="mt-0.5 text-xs text-gray-600">{suggest.reason}</p>
-          {selectedCategories.length ? (
-            <p className="mt-2 text-[11px] text-gray-500">
-              Considerando habilidades: <strong>{selectedCategories.join(', ')}</strong>
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -135,16 +116,15 @@ export default function MethodSelector({
           <select
             className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             value={value ?? ''}
-            onChange={(event) => {
-              const id = parseInt(event.target.value, 10);
-              const selected = methods.find((method) => method.id === id);
+            onChange={(e) => {
+              const selected = methods.find((m) => m.id === e.target.value);
               if (selected) onChange(selected.id, selected.name, selected.secuencia_didactica);
             }}
           >
             <option value="">Selecciona un método...</option>
-            {methods.map((method) => (
-              <option key={method.id} value={method.id}>
-                {method.name}
+            {methods.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
               </option>
             ))}
           </select>
@@ -152,20 +132,22 @@ export default function MethodSelector({
         </div>
       </div>
 
-      {selectedMethod ? (
+      {selectedMethod && (
         <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
           <p className="text-sm font-semibold text-gray-800">{selectedMethod.name}</p>
-          {selectedMethod.description ? <p className="text-sm text-gray-600">{selectedMethod.description}</p> : null}
-          {selectedMethod.secuencia_didactica ? (
+          {selectedMethod.description && (
+            <p className="text-sm text-gray-600">{selectedMethod.description}</p>
+          )}
+          {selectedMethod.secuencia_didactica && (
             <div>
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Secuencia didáctica</p>
               <p className="rounded border border-gray-100 bg-white px-2 py-1.5 font-mono text-xs text-gray-600">
                 {selectedMethod.secuencia_didactica}
               </p>
             </div>
-          ) : null}
+          )}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

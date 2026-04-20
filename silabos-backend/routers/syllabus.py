@@ -483,25 +483,34 @@ async def generar_silabo_v2(
         if not curso:
             raise HTTPException(status_code=404, detail=f"Curso {datos.course_id} no encontrado")
 
-        # Obtener método pedagógico del catálogo
-        from routers.institutional_catalog import METODOS_TRONALES
+        # Obtener método pedagógico desde DB (no hardcode)
         metodo_dict = None
-        method_id = datos.teaching_method_id
+        method_uuid: str | None = datos.teaching_method_id
 
-        if method_id:
-            metodo_raw = next((m for m in METODOS_TRONALES if m["id"] == method_id), None)
+        if method_uuid:
+            metodo_raw = await supabase.obtener_teaching_method(method_uuid)
             if metodo_raw:
                 metodo_dict = {
-                    "name": metodo_raw["nombre"],
-                    "secuencia_didactica": metodo_raw["secuencia_didactica"],
+                    "name": metodo_raw.get("name", ""),
+                    "secuencia_didactica": metodo_raw.get("weekly_template", ""),
+                    "tecnicas_didacticas": metodo_raw.get("tecnicas_didacticas", []),
+                    "estrategias_evaluacion": metodo_raw.get("estrategias_evaluacion", ""),
+                    "instrumentos_evaluacion": metodo_raw.get("instrumentos_evaluacion", []),
                 }
-        else:
-            # IA elige automáticamente (primer método como fallback)
-            metodo_raw = METODOS_TRONALES[0]
-            metodo_dict = {
-                "name": metodo_raw["nombre"],
-                "secuencia_didactica": metodo_raw["secuencia_didactica"],
-            }
+
+        if not metodo_dict:
+            # Fallback: primer método activo de la BD
+            metodos_db = await supabase.listar_teaching_methods()
+            if metodos_db:
+                m0 = metodos_db[0]
+                method_uuid = m0.get("id")
+                metodo_dict = {
+                    "name": m0.get("name", ""),
+                    "secuencia_didactica": m0.get("weekly_template", ""),
+                    "tecnicas_didacticas": m0.get("tecnicas_didacticas", []),
+                    "estrategias_evaluacion": m0.get("estrategias_evaluacion", ""),
+                    "instrumentos_evaluacion": m0.get("instrumentos_evaluacion", []),
+                }
 
         # Construir datos para el prompt con info del curso desde BD
         datos_prompt = {
@@ -527,15 +536,17 @@ async def generar_silabo_v2(
         # Contexto curricular vacío por defecto
         contexto_curricular = ""
 
-        # Obtener skills del catálogo si el docente eligió categorías
-        skills_context = {"verbos": [], "instrumentos": []}
-        if datos.selected_skill_categories:
-            skills_context = await supabase.listar_skills_por_categorias(
-                datos.selected_skill_categories
-            )
+        # Obtener skills seleccionadas por el docente (IDs exactos) o fallback por categorías
+        skills_context = {"verbos": [], "instrumentos": [], "habilidades": []}
+        selected_ids = getattr(datos, "selected_skill_ids", [])
+        selected_cats = getattr(datos, "selected_skill_categories", [])
+        if selected_ids:
+            skills_context = await supabase.listar_skills_por_ids(selected_ids)
+            logger.info(f"Skills por IDs: {len(selected_ids)} seleccionadas")
+        elif selected_cats:
+            skills_context = await supabase.listar_skills_por_categorias(selected_cats)
             logger.info(
-                f"Skills inyectados: {len(skills_context.get('verbos', []))} verbos, "
-                f"{len(skills_context.get('instrumentos', []))} instrumentos"
+                f"Skills por categorías: {len(skills_context.get('verbos', []))} verbos"
             )
 
         # Llamar al generador con el método pedagógico
@@ -611,11 +622,12 @@ async def generar_silabo_v2(
         if refs_precargadas_v2:
             _mezclar_bibliografia(silabo, refs_precargadas_v2)
 
-        # Guardar en BD
+        # Guardar en BD (incluye teaching_method_id para trazabilidad)
         silabo_guardado = await supabase.guardar_silabo(
             silabo,
             user_id=user_id,
             status="draft",
+            teaching_method_id=method_uuid,
         )
         if not silabo_guardado.get("id"):
             raise HTTPException(status_code=500, detail="No se pudo guardar el sílabo generado")

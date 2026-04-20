@@ -18,6 +18,9 @@ import Review from './pages/Review';
 import ContextSelector from './pages/ContextSelector';
 import AdminUsers from './pages/AdminUsers';
 import AdminSumillas from './pages/AdminSumillas';
+import AdminTeachingMethods from './pages/AdminTeachingMethods';
+import AdminSkills from './pages/AdminSkills';
+import AdminCurriculum from './pages/AdminCurriculum';
 import { useAppContext } from './hooks/useAppContext';
 
 // Guard que exige contexto activo (programa seleccionado)
@@ -122,6 +125,30 @@ export default function App() {
           element={
             <ProtectedRoute roles={['admin']}>
               <AdminSumillas />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/methods"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminTeachingMethods />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/skills"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminSkills />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/curriculum"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminCurriculum />
             </ProtectedRoute>
           }
         />

@@ -451,8 +451,9 @@ export interface MethodSuggest {
 
 export interface SyllabusGenerateV2Input {
   course_id: string;
-  teaching_method_id: number | null;
+  teaching_method_id: string | null;
   semester: string;
+  selected_skill_ids?: string[];
   selected_skill_categories?: string[];
   grading_scheme?: Array<{
     evidencia: string;
@@ -461,4 +462,97 @@ export interface SyllabusGenerateV2Input {
     cronograma: string;
   }>;
   grading_requires_midterm_final?: boolean;
+}
+
+// ── Admin — Teaching Methods DB ────────────────────────────────────────────
+
+export interface TeachingMethodDB {
+  id: string;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  phases?: string[];
+  weekly_template?: string | null;
+  tecnicas_didacticas?: unknown[];
+  estrategias_evaluacion?: string | null;
+  instrumentos_evaluacion?: unknown[];
+  is_archived?: boolean;
+}
+
+// ── Admin — Skills Catalog DB ──────────────────────────────────────────────
+
+export interface SkillDB {
+  id: string;
+  id_habilidad?: string | null;
+  nombre: string;
+  descripcion?: string | null;
+  categoria: string;
+  subcategoria?: string | null;
+  nivel_cognitivo?: string | null;
+  verbo_principal?: string | null;
+  evidencias_sugeridas?: string | null;
+  instrumentos_sugeridos?: string | null;
+  estado?: string;
+}
+
+// ── Admin — Performances ───────────────────────────────────────────────────
+
+export interface PerformanceDB {
+  id: string;
+  course_id: string;
+  code?: string | null;
+  statement: string;
+  display_order?: number;
+  is_archived?: boolean;
+}
+
+// ── Admin — Method-Skill Links ─────────────────────────────────────────────
+
+export interface MethodSkillLink {
+  id: string;
+  method_id: string;
+  skill_id: string;
+  skill_nombre?: string | null;
+  skill_categoria?: string | null;
+  priority?: number;
+  is_recommended?: boolean;
+}
+
+// ── Admin — User Scope Assignments ─────────────────────────────────────────
+
+export interface UserScopeAssignment {
+  id: string;
+  user_id: string;
+  scope_type: 'career' | 'program';
+  scope_id: string;
+  scope_name?: string | null;
+  assigned_at?: string | null;
+}
+
+// ── Admin — Permission Overrides ───────────────────────────────────────────
+
+export interface PermissionOverride {
+  id: string;
+  user_id: string;
+  permission_key: string;
+  effect: 'allow' | 'deny';
+  granted_by?: string | null;
+  granted_at?: string | null;
+}
+
+// ── Wizard — Compatible Skills Response ────────────────────────────────────
+
+export interface CompatibleSkillsResponse {
+  recommended_skills: SkillDB[];
+  compatible_skills: SkillDB[];
+  total: number;
+  fallback_mode: boolean;
+}
+
+// ── Admin — Effective Permissions ──────────────────────────────────────────
+
+export interface EffectivePermissions {
+  permissions: Record<string, boolean>;
+  role: string;
+  scopes: UserScopeAssignment[];
 }

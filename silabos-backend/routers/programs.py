@@ -1,10 +1,11 @@
-# Router de programas, cursos y metodos pedagogicos
-# Sin auth - catalogo publico (solo lectura)
+# Router de programas, cursos y métodos pedagógicos
 # GET /api/programs?career_id={id}
 # GET /api/courses?program_id={id}
 # GET /api/courses/{course_id}
-# GET /api/methods
-# GET /api/methods/suggest?course_id={id}
+# GET /api/methods                        ← desde teaching_methods DB
+# GET /api/methods/{method_id}/skills     ← skills compatibles para el wizard
+# GET /api/skills/categories
+# GET /api/skills
 
 import logging
 
@@ -17,82 +18,80 @@ router = APIRouter(tags=["Programas y Cursos"])
 
 def _obtener_servicios(request: Request):
     from main import servicios
-
     return servicios
 
 
 @router.get("/programs")
 async def listar_programas(request: Request, career_id: str = Query(...)):
-    """Lista los programas academicos de una escuela/carrera."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
     if not supabase:
         raise HTTPException(status_code=503, detail="Base de datos no disponible")
-
     programas = await supabase.listar_programas(career_id)
     return {"success": True, "data": programas, "error": None}
 
 
 @router.get("/courses")
 async def listar_cursos(request: Request, program_id: str = Query(...)):
-    """
-    Lista los cursos de un programa.
-    Incluye cursos comunes (is_common=true) de toda la carrera.
-    """
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
     if not supabase:
         raise HTTPException(status_code=503, detail="Base de datos no disponible")
-
     cursos = await supabase.listar_cursos_programa(program_id)
     return {"success": True, "data": cursos, "error": None}
 
 
 @router.get("/courses/{course_id}")
 async def obtener_curso(course_id: str, request: Request):
-    """Obtiene el detalle completo de un curso."""
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
     if not supabase:
         raise HTTPException(status_code=503, detail="Base de datos no disponible")
-
     curso = await supabase.obtener_curso(course_id)
     if not curso:
         raise HTTPException(status_code=404, detail=f"Curso {course_id} no encontrado")
-
     return {"success": True, "data": curso, "error": None}
 
 
 @router.get("/methods")
-async def listar_metodos():
-    """
-    Lista los metodos pedagogicos disponibles.
-    Usa catalogo hardcodeado - tabla teaching_methods aun no poblada.
-    """
-    from routers.institutional_catalog import METODOS_TRONALES
-
-    metodos = [
-        {
-            "id": metodo["id"],
-            "name": metodo["nombre"],
-            "description": metodo["descripcion"],
-            "secuencia_didactica": metodo["secuencia_didactica"],
-        }
-        for metodo in METODOS_TRONALES
-    ]
+async def listar_metodos(request: Request):
+    """Lista métodos pedagógicos desde teaching_methods en DB."""
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+    metodos = await supabase.listar_teaching_methods(include_archived=False)
     return {"success": True, "data": metodos, "error": None}
 
 
-@router.get("/skills/categories")
-async def listar_skill_categories(request: Request):
+@router.get("/methods/{method_id}/skills")
+async def listar_skills_compatibles(
+    method_id: str,
+    request: Request,
+    q: str = Query(default="", description="Texto de búsqueda"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+):
     """
-    Lista las categorias de habilidades disponibles en skills_catalog.
+    Devuelve las habilidades compatibles con un método pedagógico para el wizard.
+    Responde con recommended_skills, compatible_skills, total y fallback_mode.
     """
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
     if not supabase:
         raise HTTPException(status_code=503, detail="Base de datos no disponible")
+    resultado = await supabase.listar_skills_compatibles(
+        method_id=method_id, search=q, page=page, page_size=page_size
+    )
+    return {"success": True, "data": resultado, "error": None}
 
+
+@router.get("/skills/categories")
+async def listar_skill_categories(request: Request):
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
     categories = await supabase.listar_skill_categories()
     return {"success": True, "data": categories, "error": None}
 
@@ -102,15 +101,11 @@ async def listar_skills(
     request: Request,
     categories: str = Query(default="", description="Categorias separadas por coma"),
 ):
-    """
-    Devuelve verbos e instrumentos para las categorias seleccionadas.
-    """
     servicios = _obtener_servicios(request)
     supabase = servicios.get("supabase")
     if not supabase:
         raise HTTPException(status_code=503, detail="Base de datos no disponible")
-
-    cats = [category.strip() for category in categories.split(",") if category.strip()] if categories else []
+    cats = [c.strip() for c in categories.split(",") if c.strip()] if categories else []
     skills_context = await supabase.listar_skills_por_categorias(cats)
     return {"success": True, "data": skills_context, "error": None}
 
@@ -119,76 +114,46 @@ async def listar_skills(
 async def sugerir_metodo(
     request: Request,
     course_id: str = Query(...),
-    categories: str = Query(default="", description="Categorias separadas por coma"),
+    categories: str = Query(default=""),
 ):
-    """
-    Sugiere el metodo pedagogico mas adecuado para un curso.
-    Usa OpenRouter via el servicio central para evitar gastar Gemini.
-    """
-    from routers.institutional_catalog import METODOS_TRONALES
-
+    """Sugiere el método más adecuado para un curso usando IA."""
     servicios = _obtener_servicios(request)
     gemini = servicios.get("gemini")
     supabase = servicios.get("supabase")
 
-    metodos_base = [
-        {
-            "id": metodo["id"],
-            "name": metodo["nombre"],
-            "description": metodo["descripcion"],
-        }
-        for metodo in METODOS_TRONALES
-    ]
+    metodos_db = await supabase.listar_teaching_methods() if supabase else []
+    metodos_base = [{"id": m["id"], "name": m["name"], "description": m.get("description", "")} for m in metodos_db]
 
     fallback = {
-        "method_id": metodos_base[0]["id"],
-        "method_name": metodos_base[0]["name"],
+        "method_id": metodos_base[0]["id"] if metodos_base else None,
+        "method_name": metodos_base[0]["name"] if metodos_base else "",
         "reason": "Sugerencia por defecto (IA no disponible)",
     }
 
-    if not supabase:
-        return {"success": True, "data": fallback, "error": None}
-    if not gemini:
+    if not supabase or not gemini or not metodos_base:
         return {"success": True, "data": fallback, "error": None}
 
     curso = await supabase.obtener_curso(course_id)
-    if not curso:
+    if not curso or not curso.get("sumilla"):
         return {"success": True, "data": fallback, "error": None}
 
-    sumilla = curso.get("sumilla", "")
-    if not sumilla:
-        return {"success": True, "data": fallback, "error": None}
-
-    skill_categories = [category.strip() for category in categories.split(",") if category.strip()] if categories else []
-    skill_context = ", ".join(skill_categories) if skill_categories else "Sin categorias explicitas"
+    skill_context = categories.replace(",", ", ") if categories else "Sin categorías explícitas"
 
     try:
         resultado_ia = await gemini.sugerir_metodo(
-            curso=curso,
-            metodos_base=metodos_base,
-            skill_context=skill_context,
+            curso=curso, metodos_base=metodos_base, skill_context=skill_context
         )
-        method_id = int(resultado_ia.get("method_id", metodos_base[0]["id"]))
-        reason = resultado_ia.get("reason", "Sugerido por IA")
-
-        metodo_encontrado = next(
-            (metodo for metodo in metodos_base if metodo["id"] == method_id),
-            metodos_base[0],
-        )
-
+        mid = resultado_ia.get("method_id")
+        metodo_encontrado = next((m for m in metodos_base if str(m["id"]) == str(mid)), metodos_base[0])
         return {
             "success": True,
             "data": {
                 "method_id": metodo_encontrado["id"],
                 "method_name": metodo_encontrado["name"],
-                "reason": reason,
+                "reason": resultado_ia.get("reason", "Sugerido por IA"),
             },
             "error": None,
         }
     except Exception as exc:
-        logger.warning(
-            "OpenRouter suggest fallo para curso %s: %s. Usando fallback.",
-            course_id,
-            exc,
-        )
+        logger.warning("Suggest IA falló para curso %s: %s", course_id, exc)
         return {"success": True, "data": fallback, "error": None}

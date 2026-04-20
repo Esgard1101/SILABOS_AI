@@ -282,3 +282,129 @@ class MethodSuggestResponse(BaseModel):
     method_id: int
     method_name: str
     reason: str
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Teaching Methods (desde DB)
+# ─────────────────────────────────────────────
+class TeachingMethodCreate(BaseModel):
+    name: str = Field(..., min_length=2)
+    code: str = Field(default="")
+    description: str = Field(default="")
+    phases: List[str] = Field(default=[])
+    weekly_template: str = Field(default="")
+    tecnicas_didacticas: List[Any] = Field(default=[])
+    estrategias_evaluacion: str = Field(default="")
+    instrumentos_evaluacion: List[Any] = Field(default=[])
+
+
+class TeachingMethodUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    phases: Optional[List[str]] = None
+    weekly_template: Optional[str] = None
+    tecnicas_didacticas: Optional[List[Any]] = None
+    estrategias_evaluacion: Optional[str] = None
+    instrumentos_evaluacion: Optional[List[Any]] = None
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Skills Admin
+# ─────────────────────────────────────────────
+class SkillCreate(BaseModel):
+    id_habilidad: str = Field(default="")
+    nombre: str = Field(..., min_length=2)
+    descripcion: str = Field(default="")
+    categoria: str = Field(..., min_length=2)
+    subcategoria: str = Field(default="")
+    nivel_cognitivo: str = Field(default="")
+    verbo_principal: str = Field(default="")
+    evidencias_sugeridas: str = Field(default="")
+    instrumentos_sugeridos: str = Field(default="")
+
+
+class SkillUpdate(BaseModel):
+    id_habilidad: Optional[str] = None
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    categoria: Optional[str] = None
+    subcategoria: Optional[str] = None
+    nivel_cognitivo: Optional[str] = None
+    verbo_principal: Optional[str] = None
+    evidencias_sugeridas: Optional[str] = None
+    instrumentos_sugeridos: Optional[str] = None
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Curriculum del Curso
+# ─────────────────────────────────────────────
+class CourseCurriculumUpdate(BaseModel):
+    sumilla: Optional[str] = None
+    competencia_egreso: Optional[str] = None
+    resultado_aprendizaje: Optional[str] = None
+    capacidad: Optional[str] = None
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Performances (desempeños)
+# ─────────────────────────────────────────────
+class PerformanceCreate(BaseModel):
+    statement: str = Field(..., min_length=5)
+
+
+class PerformanceUpdate(BaseModel):
+    statement: str = Field(..., min_length=5)
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Method-Skill Links
+# ─────────────────────────────────────────────
+class MethodSkillLinkCreate(BaseModel):
+    skill_id: str = Field(..., description="UUID de la skill en skills_catalog")
+    priority: int = Field(default=50, ge=1, le=100)
+    is_recommended: bool = Field(default=False)
+
+
+class MethodSkillLinkUpdate(BaseModel):
+    priority: int = Field(..., ge=1, le=100)
+    is_recommended: bool
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Scopes de Usuario
+# ─────────────────────────────────────────────
+class UserScopeCreate(BaseModel):
+    scope_type: str = Field(..., pattern="^(career|program)$")
+    scope_id: str = Field(..., description="UUID de la carrera o programa")
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Overrides de Permisos
+# ─────────────────────────────────────────────
+class UserPermissionOverrideCreate(BaseModel):
+    permission_key: str = Field(..., min_length=3)
+    effect: str = Field(..., pattern="^(allow|deny)$")
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Cambio de Rol
+# ─────────────────────────────────────────────
+class UserRoleUpdate(BaseModel):
+    role: str = Field(..., pattern="^(admin|director|coordinador|docente)$")
+
+
+# ─────────────────────────────────────────────
+# ITERACIÓN 1 — Wizard Skills Request Update
+# ─────────────────────────────────────────────
+class SyllabusGenerateV2Request(BaseModel):
+    course_id: str = Field(..., description="UUID del curso")
+    teaching_method_id: Optional[str] = Field(
+        default=None, description="UUID del método pedagógico. None → IA sugiere"
+    )
+    semester: str = Field(default="2025-I")
+    selected_skill_ids: List[str] = Field(
+        default=[], description="UUIDs de habilidades confirmadas por el docente"
+    )
+    grading_scheme: Optional[List[GradingRowInput]] = None
+    grading_requires_midterm_final: bool = Field(default=False)
