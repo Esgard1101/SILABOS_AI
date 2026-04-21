@@ -51,7 +51,10 @@ WHERE lower(email) IN (
   'director@silabos.ai',
   'coordinador@silabos.ai',
   'docente.inicial@silabos.ai',
-  'docente.mate@silabos.ai'
+  'docente.mate@silabos.ai',
+  'docente.primaria@silabos.ai',
+  'docente.naturales@silabos.ai',
+  'docente.lengua@silabos.ai'
 )
 ORDER BY email;
 ```

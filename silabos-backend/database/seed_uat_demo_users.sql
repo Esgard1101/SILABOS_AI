@@ -9,6 +9,8 @@
 -- - admin@silabos.ai:
 --     * se inserta si no existe
 --     * si ya existe, conserva su password actual
+-- - director@silabos.ai:
+--     * queda con rol admin para el deploy/demo final
 -- - director/coordinador/docentes demo:
 --     * se insertan o actualizan
 --     * quedan con password demo comun
@@ -21,11 +23,17 @@ DECLARE
     v_career_edu_id UUID;
     v_program_inicial_id UUID;
     v_program_mate_id UUID;
+    v_program_primaria_id UUID;
+    v_program_naturales_id UUID;
+    v_program_lengua_id UUID;
     v_admin_id UUID;
     v_director_id UUID;
     v_coordinador_id UUID;
     v_docente_inicial_id UUID;
     v_docente_mate_id UUID;
+    v_docente_primaria_id UUID;
+    v_docente_naturales_id UUID;
+    v_docente_lengua_id UUID;
 BEGIN
     -- Carrera base para scopes de director y usuarios UAT.
     SELECT id
@@ -76,6 +84,47 @@ BEGIN
 
     IF v_program_mate_id IS NULL THEN
         RAISE EXCEPTION 'No se encontro el programa Matematica y Computacion.';
+    END IF;
+
+    -- Programa Educacion Primaria.
+    SELECT id
+    INTO v_program_primaria_id
+    FROM programs
+    WHERE career_id = v_career_edu_id
+      AND name ILIKE '%Primaria%'
+    ORDER BY name ASC
+    LIMIT 1;
+
+    IF v_program_primaria_id IS NULL THEN
+        RAISE EXCEPTION 'No se encontro el programa Educacion Primaria.';
+    END IF;
+
+    -- Programa Ciencias Naturales.
+    SELECT id
+    INTO v_program_naturales_id
+    FROM programs
+    WHERE career_id = v_career_edu_id
+      AND name ILIKE '%Natur%'
+    ORDER BY name ASC
+    LIMIT 1;
+
+    IF v_program_naturales_id IS NULL THEN
+        RAISE EXCEPTION 'No se encontro el programa Ciencias Naturales.';
+    END IF;
+
+    -- Programa Lengua y Literatura.
+    SELECT id
+    INTO v_program_lengua_id
+    FROM programs
+    WHERE career_id = v_career_edu_id
+      AND (name ILIKE '%Lengua%' OR name ILIKE '%Literat%')
+    ORDER BY
+        CASE WHEN name ILIKE '%Lengua%' AND name ILIKE '%Literat%' THEN 0 ELSE 1 END,
+        name ASC
+    LIMIT 1;
+
+    IF v_program_lengua_id IS NULL THEN
+        RAISE EXCEPTION 'No se encontro el programa Lengua y Literatura.';
     END IF;
 
     -- 1) Admin global.
@@ -133,8 +182,8 @@ BEGIN
         'director@silabos.ai',
         v_demo_hash,
         'Director de Escuela',
-        'director',
-        v_career_edu_id,
+        'admin',
+        NULL,
         'active',
         'local',
         v_admin_id,
@@ -146,7 +195,7 @@ BEGIN
         password_hash = EXCLUDED.password_hash,
         full_name = EXCLUDED.full_name,
         role = EXCLUDED.role,
-        career_id = EXCLUDED.career_id,
+        career_id = NULL,
         status = 'active',
         auth_provider = 'local',
         google_sub = NULL,
@@ -294,11 +343,149 @@ BEGIN
     WHERE lower(email) = lower('docente.mate@silabos.ai')
     LIMIT 1;
 
+    -- 6) Docente Primaria.
+    INSERT INTO users (
+        id,
+        email,
+        password_hash,
+        full_name,
+        role,
+        career_id,
+        status,
+        auth_provider,
+        approved_by,
+        approved_at,
+        created_at
+    )
+    VALUES (
+        gen_random_uuid(),
+        'docente.primaria@silabos.ai',
+        v_demo_hash,
+        'Docente Educacion Primaria',
+        'docente',
+        v_career_edu_id,
+        'active',
+        'local',
+        v_admin_id,
+        NOW(),
+        NOW()
+    )
+    ON CONFLICT (email) DO UPDATE
+    SET
+        password_hash = EXCLUDED.password_hash,
+        full_name = EXCLUDED.full_name,
+        role = EXCLUDED.role,
+        career_id = EXCLUDED.career_id,
+        status = 'active',
+        auth_provider = 'local',
+        google_sub = NULL,
+        approved_by = v_admin_id,
+        approved_at = NOW();
+
+    SELECT id
+    INTO v_docente_primaria_id
+    FROM users
+    WHERE lower(email) = lower('docente.primaria@silabos.ai')
+    LIMIT 1;
+
+    -- 7) Docente Ciencias Naturales.
+    INSERT INTO users (
+        id,
+        email,
+        password_hash,
+        full_name,
+        role,
+        career_id,
+        status,
+        auth_provider,
+        approved_by,
+        approved_at,
+        created_at
+    )
+    VALUES (
+        gen_random_uuid(),
+        'docente.naturales@silabos.ai',
+        v_demo_hash,
+        'Docente Ciencias Naturales',
+        'docente',
+        v_career_edu_id,
+        'active',
+        'local',
+        v_admin_id,
+        NOW(),
+        NOW()
+    )
+    ON CONFLICT (email) DO UPDATE
+    SET
+        password_hash = EXCLUDED.password_hash,
+        full_name = EXCLUDED.full_name,
+        role = EXCLUDED.role,
+        career_id = EXCLUDED.career_id,
+        status = 'active',
+        auth_provider = 'local',
+        google_sub = NULL,
+        approved_by = v_admin_id,
+        approved_at = NOW();
+
+    SELECT id
+    INTO v_docente_naturales_id
+    FROM users
+    WHERE lower(email) = lower('docente.naturales@silabos.ai')
+    LIMIT 1;
+
+    -- 8) Docente Lengua y Literatura.
+    INSERT INTO users (
+        id,
+        email,
+        password_hash,
+        full_name,
+        role,
+        career_id,
+        status,
+        auth_provider,
+        approved_by,
+        approved_at,
+        created_at
+    )
+    VALUES (
+        gen_random_uuid(),
+        'docente.lengua@silabos.ai',
+        v_demo_hash,
+        'Docente Lengua y Literatura',
+        'docente',
+        v_career_edu_id,
+        'active',
+        'local',
+        v_admin_id,
+        NOW(),
+        NOW()
+    )
+    ON CONFLICT (email) DO UPDATE
+    SET
+        password_hash = EXCLUDED.password_hash,
+        full_name = EXCLUDED.full_name,
+        role = EXCLUDED.role,
+        career_id = EXCLUDED.career_id,
+        status = 'active',
+        auth_provider = 'local',
+        google_sub = NULL,
+        approved_by = v_admin_id,
+        approved_at = NOW();
+
+    SELECT id
+    INTO v_docente_lengua_id
+    FROM users
+    WHERE lower(email) = lower('docente.lengua@silabos.ai')
+    LIMIT 1;
+
     -- Deja scopes exactos para las cuentas demo.
     UPDATE user_scope_assignments SET active = false WHERE user_id = v_director_id;
     UPDATE user_scope_assignments SET active = false WHERE user_id = v_coordinador_id;
     UPDATE user_scope_assignments SET active = false WHERE user_id = v_docente_inicial_id;
     UPDATE user_scope_assignments SET active = false WHERE user_id = v_docente_mate_id;
+    UPDATE user_scope_assignments SET active = false WHERE user_id = v_docente_primaria_id;
+    UPDATE user_scope_assignments SET active = false WHERE user_id = v_docente_naturales_id;
+    UPDATE user_scope_assignments SET active = false WHERE user_id = v_docente_lengua_id;
 
     INSERT INTO user_scope_assignments (
         id, user_id, scope_type, scope_id, active, assigned_by, created_at
@@ -335,6 +522,33 @@ BEGIN
     )
     ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE
     SET active = true, assigned_by = EXCLUDED.assigned_by;
+
+    INSERT INTO user_scope_assignments (
+        id, user_id, scope_type, scope_id, active, assigned_by, created_at
+    )
+    VALUES (
+        gen_random_uuid(), v_docente_primaria_id, 'program', v_program_primaria_id, true, v_admin_id, NOW()
+    )
+    ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE
+    SET active = true, assigned_by = EXCLUDED.assigned_by;
+
+    INSERT INTO user_scope_assignments (
+        id, user_id, scope_type, scope_id, active, assigned_by, created_at
+    )
+    VALUES (
+        gen_random_uuid(), v_docente_naturales_id, 'program', v_program_naturales_id, true, v_admin_id, NOW()
+    )
+    ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE
+    SET active = true, assigned_by = EXCLUDED.assigned_by;
+
+    INSERT INTO user_scope_assignments (
+        id, user_id, scope_type, scope_id, active, assigned_by, created_at
+    )
+    VALUES (
+        gen_random_uuid(), v_docente_lengua_id, 'program', v_program_lengua_id, true, v_admin_id, NOW()
+    )
+    ON CONFLICT (user_id, scope_type, scope_id) DO UPDATE
+    SET active = true, assigned_by = EXCLUDED.assigned_by;
 END $$;
 
 -- ============================================================
@@ -353,7 +567,10 @@ WHERE lower(email) IN (
     'director@silabos.ai',
     'coordinador@silabos.ai',
     'docente.inicial@silabos.ai',
-    'docente.mate@silabos.ai'
+    'docente.mate@silabos.ai',
+    'docente.primaria@silabos.ai',
+    'docente.naturales@silabos.ai',
+    'docente.lengua@silabos.ai'
 )
 ORDER BY email ASC;
 
@@ -370,7 +587,10 @@ WHERE lower(u.email) IN (
     'director@silabos.ai',
     'coordinador@silabos.ai',
     'docente.inicial@silabos.ai',
-    'docente.mate@silabos.ai'
+    'docente.mate@silabos.ai',
+    'docente.primaria@silabos.ai',
+    'docente.naturales@silabos.ai',
+    'docente.lengua@silabos.ai'
 )
 ORDER BY u.email ASC, usa.scope_type ASC, scope_name ASC;
 
@@ -380,7 +600,7 @@ ORDER BY u.email ASC, usa.scope_type ASC, scope_name ASC;
 --
 -- UPDATE users
 -- SET
---     password_hash = crypt('Silabos2026!', gen_salt('bf', 10)),
+--     password_hash = '$2b$12$.j6HP4MT98KH.K0HDB6tNuQUFTuXgNGOdwnMDhnlSapunPg2bBoFK',
 --     status = 'active'
 -- WHERE lower(email) = lower('admin@silabos.ai');
 -- ============================================================
