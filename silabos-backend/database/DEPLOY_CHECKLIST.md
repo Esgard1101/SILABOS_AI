@@ -13,6 +13,8 @@
 Abrir Adminer → base de datos del proyecto → pestaña **"Comando SQL"**  
 Pegar y ejecutar el contenido completo de `migration_iter1.sql`.
 
+Luego ejecutar `seed_uat_demo_users.sql` para dejar listas las cuentas demo/UAT del deploy.
+
 ### Verificación post-SQL
 
 ```sql
@@ -39,6 +41,20 @@ SELECT role, permission_key FROM role_permission_templates ORDER BY role, permis
 ```
 
 Debe tener 11 filas (6 admin + 3 director + 2 coordinador).
+
+```sql
+-- Confirmar cuentas demo/UAT
+SELECT email, role, status
+FROM users
+WHERE lower(email) IN (
+  'admin@silabos.ai',
+  'director@silabos.ai',
+  'coordinador@silabos.ai',
+  'docente.inicial@silabos.ai',
+  'docente.mate@silabos.ai'
+)
+ORDER BY email;
+```
 
 ```sql
 -- Confirmar columnas de archivado
