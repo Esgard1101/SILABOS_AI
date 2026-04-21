@@ -21,6 +21,7 @@ import AdminSumillas from './pages/AdminSumillas';
 import AdminTeachingMethods from './pages/AdminTeachingMethods';
 import AdminSkills from './pages/AdminSkills';
 import AdminCurriculum from './pages/AdminCurriculum';
+import Landing from './pages/Landing';
 import { useAppContext } from './hooks/useAppContext';
 
 // Guard que exige contexto activo (programa seleccionado)
@@ -46,14 +47,7 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/" element={<Landing />} />
         <Route
           path="/dashboard"
           element={
@@ -152,7 +146,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

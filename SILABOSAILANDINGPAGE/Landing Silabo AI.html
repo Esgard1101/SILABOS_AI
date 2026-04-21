@@ -1,0 +1,1091 @@
+<!DOCTYPE html><html lang="es"><head>
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sílabo.AI · FACHSE-UNPRG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@500;600;700;800&amp;family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0b1b35;
+    --ink-2:#132a54;
+    --muted:#55637a;
+    --muted-2:#7a8599;
+    --line:#e3e9f3;
+    --line-2:#eef2f9;
+    --bg:#ffffff;
+    --bg-soft:#f5f8fd;
+    --bg-softer:#fbfcfe;
+    --blue:#1668d8;        /* primary */
+    --blue-deep:#0a3a88;   /* dark */
+    --blue-sky:#5aa6ef;    /* light accent */
+    --blue-tint:#e6f0fb;
+    --blue-wash:#eaf3fe;
+    --yellow:#f4c233;      /* UNPRG accent, used sparingly */
+    --radius:14px;
+    --radius-lg:22px;
+    --shadow-sm:0 1px 2px rgba(11,27,53,.05), 0 1px 1px rgba(11,27,53,.03);
+    --shadow-md:0 10px 30px -12px rgba(11,27,53,.18), 0 2px 6px rgba(11,27,53,.06);
+    --shadow-lg:0 30px 60px -24px rgba(11,27,53,.28), 0 6px 18px rgba(11,27,53,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:'Inter', system-ui, -apple-system, sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  h1,h2,h3,h4{font-family:'Manrope', 'Inter', sans-serif; letter-spacing:-0.02em; color:var(--ink); margin:0}
+  h1{font-weight:800}
+  h2{font-weight:700}
+  h3{font-weight:700}
+  p{margin:0; color:var(--muted)}
+  a{color:inherit; text-decoration:none}
+  .container{max-width:1240px; margin:0 auto; padding:0 28px}
+
+  /* ========== NAV ========== */
+  .nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(255,255,255,.85);
+    backdrop-filter:saturate(180%) blur(12px);
+    -webkit-backdrop-filter:saturate(180%) blur(12px);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-row{
+    display:flex; align-items:center; gap:24px;
+    height:104px;
+  }
+  .brand{display:flex; align-items:center; gap:14px; min-width:0}
+  .brand-logos{display:flex; align-items:center; gap:10px}
+  .brand-logos img{height:72px; width:auto; display:block}
+  .brand-divider{width:1px; height:44px; background:var(--line)}
+  .brand-fachse-wrap{
+    display:flex; align-items:center; gap:12px;
+    padding-left:18px; margin-left:8px;
+    border-left:1px solid var(--line);
+  }
+  .brand-fachse-wrap .brand-fachse{height:70px; width:auto; display:block}
+  .brand-fachse-txt{line-height:1.15}
+  .brand-fachse-txt .l1{font-family:'Manrope'; font-weight:700; font-size:13px; color:var(--ink)}
+  .brand-fachse-txt .l2{font-size:11.5px; color:var(--muted); margin-top:1px}
+  .brand-fachse-txt .l3{font-family:'Manrope'; font-weight:700; font-size:12px; color:var(--blue-deep); margin-top:2px; letter-spacing:.02em}
+  @media (max-width: 1080px){
+    .brand-fachse-txt{display:none}
+  }
+  @media (max-width: 860px){
+    .brand-fachse-wrap{display:none}
+  }
+  .brand-name{
+    display:flex; flex-direction:column; line-height:1.15;
+  }
+  .brand-name .t1{font-family:'Manrope'; font-weight:800; font-size:22px; letter-spacing:-0.01em}
+  .brand-name .t1 span{color:var(--blue)}
+  .brand-name .t2{font-size:11px; color:var(--muted-2); text-transform:uppercase; letter-spacing:0.12em; margin-top:2px}
+  .nav-links{display:flex; align-items:center; gap:4px; margin-left:auto}
+  .nav-links a{
+    padding:9px 14px; border-radius:10px; font-size:14px; font-weight:500; color:#31405c;
+  }
+  .nav-links a:hover{background:var(--bg-soft); color:var(--ink)}
+  .nav-links a.active{color:var(--blue)}
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; justify-content:center;
+    font-weight:600; font-size:14px; padding:11px 18px; border-radius:10px;
+    border:1px solid transparent; cursor:pointer; transition:all .18s ease; white-space:nowrap;
+    font-family:inherit;
+  }
+  .btn-primary{background:var(--blue); color:#fff; box-shadow:0 6px 14px -6px rgba(22,104,216,.55)}
+  .btn-primary:hover{background:#0f57bd; transform:translateY(-1px)}
+  .btn-ghost{background:transparent; color:var(--ink); border-color:var(--line)}
+  .btn-ghost:hover{border-color:#c7d4e9; background:var(--bg-soft)}
+  .btn-lg{padding:14px 22px; font-size:15px}
+
+  /* ========== HERO ========== */
+  .hero{
+    position:relative; overflow:visible;
+    padding:72px 0 120px;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(22,104,216,.10), transparent 60%),
+      radial-gradient(800px 500px at -10% 30%, rgba(90,166,239,.10), transparent 60%),
+      linear-gradient(180deg, #fbfcfe 0%, #ffffff 100%);
+  }
+  .hero-dots{
+    position:absolute; top:80px; left:24px;
+    width:140px; height:140px;
+    background-image: radial-gradient(var(--blue-sky) 1.2px, transparent 1.6px);
+    background-size:14px 14px; opacity:.35; pointer-events:none;
+  }
+  .hero-grid{
+    display:grid; grid-template-columns: 1.15fr .95fr; gap:56px; align-items:center;
+  }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:10px;
+    padding:6px 12px 6px 8px; border-radius:999px;
+    background:#fff; border:1px solid var(--line);
+    font-size:12px; font-weight:600; color:#27426f; letter-spacing:.02em;
+    box-shadow:var(--shadow-sm);
+  }
+  .eyebrow .dot{
+    width:18px; height:18px; border-radius:6px; background:linear-gradient(135deg,var(--blue),var(--blue-deep));
+    color:#fff; font-size:10px; display:inline-flex; align-items:center; justify-content:center; font-weight:800;
+  }
+  .hero h1.hero-title{
+    font-family:'Playfair Display','Manrope',serif;
+    font-weight:700;
+    font-size:64px; line-height:1.05; margin:0 0 14px;
+    letter-spacing:-0.025em;
+    text-wrap:balance;
+    color:var(--blue-deep);
+  }
+  .hero h1.hero-title em{
+    font-style:italic; color:var(--blue);
+    background:none;
+    font-weight:700;
+  }
+  .hero .hero-sub{
+    font-family:'Manrope', sans-serif; font-weight:600;
+    font-size:18px; color:#27426f; margin-bottom:20px;
+    letter-spacing:-0.005em;
+  }
+  .hero .lede{
+    font-size:18px; line-height:1.55; color:#3c4a66; max-width:560px;
+    text-wrap:pretty;
+  }
+  .hero-cta{display:flex; gap:12px; margin-top:28px; flex-wrap:wrap}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:32px; max-width:560px}
+  .chip{
+    font-size:12.5px; font-weight:500; color:#2b3c5d;
+    background:#fff; border:1px solid var(--line);
+    padding:7px 12px; border-radius:999px;
+    display:inline-flex; align-items:center; gap:7px;
+  }
+  .chip svg{width:13px; height:13px; color:var(--blue)}
+
+  /* Hero visual — illustration + floating flow chip */
+  .hero-visual{
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    min-height:620px;
+    padding-bottom:80px;
+  }
+  .hv-illo{
+    width:100%; max-width:460px; height:auto; display:block;
+    filter: drop-shadow(0 30px 40px rgba(10,58,136,.18)) drop-shadow(0 8px 12px rgba(10,58,136,.08));
+    animation: float 6s ease-in-out infinite;
+  }
+  @keyframes float{
+    0%,100%{transform:translateY(0)}
+    50%{transform:translateY(-10px)}
+  }
+  .hv-bg-glow{
+    position:absolute; inset:0;
+    background:
+      radial-gradient(400px 300px at 50% 55%, rgba(90,166,239,.22), transparent 70%),
+      radial-gradient(300px 220px at 70% 35%, rgba(22,104,216,.15), transparent 70%);
+    pointer-events:none; z-index:0;
+  }
+  .hv-illo{position:relative; z-index:1}
+  .hv-chip{
+    position:absolute; z-index:2;
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:12px 14px;
+    box-shadow: 0 18px 40px -18px rgba(10,58,136,.35), 0 4px 12px rgba(10,58,136,.08);
+    display:flex; align-items:center; gap:10px;
+    font-size:12.5px; font-weight:600; color:var(--ink);
+    font-family:'Manrope';
+  }
+  .hv-chip .ic{
+    width:30px; height:30px; border-radius:8px;
+    background:var(--blue-tint); color:var(--blue-deep);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .hv-chip .ic svg{width:16px; height:16px}
+  .hv-chip .sub{display:block; font-weight:500; font-size:11px; color:var(--muted); margin-top:1px; font-family:'Inter'}
+  .hv-chip.c1{top:8%; left:-6%; animation: float 7s ease-in-out infinite .5s}
+  .hv-chip.c2{top:38%; right:-4%; animation: float 6.5s ease-in-out infinite 1s}
+  .hv-chip.c3{bottom:26%; left:0%; animation: float 8s ease-in-out infinite 1.5s}
+
+  /* Director card — minimal, flush to right edge (like base image) */
+  .director-float{
+    position:absolute; z-index:3;
+    right:-40px; bottom:-30px;
+    width:340px;
+    background:#fff; border:1px solid var(--line);
+    border-radius:16px 0 0 16px;
+    border-right:none;
+    padding:22px 26px 22px 28px;
+    box-shadow: -20px 30px 60px -24px rgba(10,58,136,.32), -6px 10px 24px rgba(10,58,136,.08);
+    transition: transform .4s cubic-bezier(.2,.9,.25,1.2), box-shadow .3s ease;
+    position:absolute;
+  }
+  .director-float::before{
+    content:""; position:absolute; left:0; top:20px; bottom:20px; width:3px;
+    background:linear-gradient(180deg, var(--blue) 0%, var(--blue-deep) 100%);
+    border-radius:0 3px 3px 0;
+  }
+  .director-float:hover{
+    transform: translateX(-6px);
+    box-shadow: -26px 36px 70px -20px rgba(10,58,136,.4), -10px 14px 28px rgba(10,58,136,.12);
+  }
+  .df-name{
+    font-family:'Playfair Display','Manrope',serif;
+    font-weight:700; font-size:22px; color:var(--ink);
+    line-height:1.15; letter-spacing:-0.01em;
+  }
+  .df-role{
+    font-size:13.5px; color:var(--muted); line-height:1.5; margin-top:8px;
+  }
+
+  @media (max-width:1280px){
+    .director-float{right:-28px}
+  }
+  @media (max-width:1080px){
+    .director-float{right:0; bottom:-24px; width:300px; padding:18px 22px 18px 24px; border-radius:16px; border-right:1px solid var(--line)}
+    .director-float::before{left:0; top:16px; bottom:16px}
+    .df-name{font-size:19px}
+  }
+  @media (max-width:860px){
+    .director-float{position:relative; right:auto; bottom:auto; margin:28px auto 0; width:100%; max-width:420px}
+  }
+
+  /* Legacy flow card (kept but unused) */
+  .hero-card{
+    position:relative; aspect-ratio: 5/5;
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-lg);
+    padding:22px;
+    display:flex; flex-direction:column;
+  }
+  .hv-head{display:flex; align-items:center; gap:8px; margin-bottom:14px}
+  .hv-head .dots{display:flex; gap:6px}
+  .hv-head .dots span{width:10px; height:10px; border-radius:50%; background:#e6ebf3}
+  .hv-head .dots span:first-child{background:#ffbfbf}
+  .hv-head .dots span:nth-child(2){background:#ffe3a3}
+  .hv-head .dots span:nth-child(3){background:#b9e3b6}
+  .hv-head .title{
+    font-size:12px; color:var(--muted-2); font-family:'JetBrains Mono', monospace; margin-left:8px;
+  }
+  .hv-body{flex:1; display:flex; flex-direction:column; gap:10px}
+  .hv-step{
+    display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:12px;
+    padding:12px 14px; border:1px solid var(--line); border-radius:12px;
+    background:var(--bg-softer);
+    position:relative;
+  }
+  .hv-step .num{
+    width:30px; height:30px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--blue-tint); color:var(--blue-deep); font-weight:700; font-size:13px;
+  }
+  .hv-step .lbl{font-size:13px; font-weight:600; color:var(--ink)}
+  .hv-step .sub{font-size:11.5px; color:var(--muted)}
+  .hv-step .lbls{display:flex; flex-direction:column; gap:2px}
+  .hv-step .tag{
+    font-size:10.5px; padding:4px 8px; border-radius:999px; font-weight:600;
+    background:#eaf3fe; color:var(--blue-deep); font-family:'JetBrains Mono', monospace; letter-spacing:.02em;
+  }
+  .hv-step.active{border-color:#c6dcf7; background:#f4f8fe; box-shadow:0 1px 0 rgba(22,104,216,.08)}
+  .hv-step.active .num{background:var(--blue); color:#fff}
+  .hv-conn{
+    margin-left:29px; width:1px; height:6px; background:#d8e1f1;
+  }
+  .hv-foot{
+    margin-top:14px; display:flex; align-items:center; justify-content:space-between;
+    padding-top:12px; border-top:1px dashed var(--line);
+    font-size:11.5px; color:var(--muted-2); font-family:'JetBrains Mono', monospace;
+  }
+  .hv-foot .pulse{display:inline-flex; align-items:center; gap:6px}
+  .hv-foot .pulse i{width:7px; height:7px; border-radius:50%; background:#22c55e; box-shadow:0 0 0 0 rgba(34,197,94,.55); animation:pulse 2s infinite}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}
+    70%{box-shadow:0 0 0 10px rgba(34,197,94,0)}
+    100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}
+  }
+
+  /* ========== HERO RIBBON (Innovación curricular...) ========== */
+  .hero-ribbon{
+    position:relative; z-index:2;
+    display:inline-block;
+    margin-bottom:20px;
+    transform: rotate(-1.5deg);
+    animation: float 7s ease-in-out infinite .8s;
+  }
+  .hr-text{
+    display:inline-block;
+    position:relative;
+    background:linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+    color:#fff;
+    font-family:'Playfair Display','Manrope',serif;
+    font-style:italic; font-weight:700;
+    font-size:17px; letter-spacing:-0.005em;
+    padding:12px 26px;
+    box-shadow: 0 14px 28px -10px rgba(10,58,136,.45), 0 4px 10px rgba(10,58,136,.18);
+    text-wrap:balance;
+    max-width:320px;
+    line-height:1.3;
+    white-space:normal;
+  }
+  .hr-text::before{
+    content:""; position:absolute; left:-12px; top:0; bottom:0; width:16px;
+    background:inherit; background:linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+    clip-path: polygon(60% 0, 100% 0, 100% 100%, 60% 100%, 0 50%);
+  }
+  .hr-text::after{
+    content:""; position:absolute; right:-12px; top:0; bottom:0; width:16px;
+    background:linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+    clip-path: polygon(0 0, 40% 0, 100% 50%, 40% 100%, 0 100%);
+  }
+
+  /* ========== DIRECTOR CARD (flush to right edge, no photo) ========== */
+  .director-float{
+    position:absolute; z-index:3;
+    right:-40px; bottom:-30px;
+    width:340px;
+    background:#fff; border:1px solid var(--line);
+    border-radius:16px 0 0 16px;
+    border-right:none;
+    padding:22px 26px 22px 28px;
+    box-shadow: -20px 30px 60px -24px rgba(10,58,136,.32), -6px 10px 24px rgba(10,58,136,.08);
+    transition: transform .4s cubic-bezier(.2,.9,.25,1.2), box-shadow .3s ease;
+  }
+  .director-float::before{
+    content:""; position:absolute; left:0; top:20px; bottom:20px; width:3px;
+    background:linear-gradient(180deg, var(--blue) 0%, var(--blue-deep) 100%);
+    border-radius:0 3px 3px 0;
+  }
+  .director-float:hover{
+    transform: translateX(-6px);
+    box-shadow: -26px 36px 70px -20px rgba(10,58,136,.4), -10px 14px 28px rgba(10,58,136,.12);
+  }
+  .df-name{
+    font-family:'Playfair Display','Manrope',serif;
+    font-weight:700; font-size:22px; color:var(--ink);
+    line-height:1.15; letter-spacing:-0.01em;
+  }
+  .df-role{
+    font-size:13.5px; color:var(--muted); line-height:1.5; margin-top:8px;
+  }
+  @media (max-width:1280px){
+    .director-float{right:-28px}
+  }
+  @media (max-width:1080px){
+    .hr-text{font-size:15px; padding:10px 22px; max-width:280px}
+    .director-float{right:0; bottom:-24px; width:300px; padding:18px 22px 18px 24px; border-radius:16px; border-right:1px solid var(--line)}
+    .director-float::before{left:0; top:16px; bottom:16px}
+    .df-name{font-size:19px}
+  }
+  @media (max-width:860px){
+    .hero-ribbon{transform:rotate(-1deg)}
+    .director-float{position:relative; right:auto; bottom:auto; margin:28px auto 0; width:100%; max-width:420px}
+  }
+
+  /* ========== SECTION SHARED ========== */
+  section{padding:96px 0}
+  .sec-head{max-width:760px; margin:0 auto 56px; text-align:center}
+  .sec-head.left{text-align:left; margin-left:0}
+  .kicker{
+    font-size:12px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--blue); margin-bottom:14px; display:inline-block;
+  }
+  .sec-head h2{font-size:40px; line-height:1.1; text-wrap:balance}
+  .sec-head p{font-size:17px; margin-top:14px; text-wrap:pretty; color:#3c4a66}
+
+  /* ========== VALUE STRIP ========== */
+  .value{
+    background:linear-gradient(180deg, #f6f9fd 0%, #eff5fc 100%);
+    border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+    padding:72px 0;
+  }
+  .value-grid{display:grid; grid-template-columns:1.1fr .9fr; gap:48px; align-items:center}
+  .value h2{font-size:40px; line-height:1.1; text-wrap:balance}
+  .value p{font-size:17px; margin-top:16px; color:#3c4a66; text-wrap:pretty}
+  .value-stats{display:grid; grid-template-columns:repeat(2,1fr); gap:14px}
+  .stat{
+    background:#fff; border:1px solid var(--line); border-radius:14px; padding:20px;
+  }
+  .stat .k{font-family:'Manrope'; font-size:13px; font-weight:700; color:var(--blue-deep); text-transform:uppercase; letter-spacing:.08em}
+  .stat .v{font-family:'Manrope'; font-size:26px; font-weight:800; color:var(--ink); margin:6px 0}
+  .stat .d{font-size:13px; color:var(--muted)}
+
+  /* ========== FLOW ========== */
+  .flow-steps{
+    display:grid; grid-template-columns:repeat(5, 1fr); gap:16px;
+  }
+  .step{
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:24px 22px 26px; position:relative; transition:all .2s ease;
+  }
+  .step:hover{transform:translateY(-3px); box-shadow:var(--shadow-md); border-color:#c9dcf4}
+  .step-num{
+    font-family:'Manrope'; font-size:13px; font-weight:700; color:var(--blue);
+    display:inline-flex; align-items:center; gap:8px; margin-bottom:16px;
+  }
+  .step-num::before{
+    content:""; width:28px; height:1px; background:var(--blue); display:inline-block;
+  }
+  .step-icon{
+    width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    background:var(--blue-tint); color:var(--blue-deep); margin-bottom:16px;
+  }
+  .step-icon svg{width:22px; height:22px}
+  .step h3{font-size:17px; margin-bottom:8px; letter-spacing:-0.01em}
+  .step p{font-size:14px; line-height:1.55}
+
+  /* ========== MODULES ========== */
+  .modules{background:#0b1b35; color:#fff}
+  .modules h2, .modules .sec-head h2{color:#fff}
+  .modules .kicker{color:var(--blue-sky)}
+  .modules .sec-head p{color:#a9b6cf}
+  .mod-grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:16px;
+  }
+  .mod{
+    background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:var(--radius-lg);
+    padding:28px;
+    transition:all .2s ease;
+  }
+  .mod:hover{background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.14); transform:translateY(-2px)}
+  .mod-icon{
+    width:40px; height:40px; border-radius:10px;
+    background:linear-gradient(135deg, rgba(90,166,239,.2), rgba(22,104,216,.2));
+    display:flex; align-items:center; justify-content:center;
+    color:#a8ccf5; margin-bottom:18px;
+    border:1px solid rgba(168,204,245,.15);
+  }
+  .mod-icon svg{width:20px; height:20px}
+  .mod h3{color:#fff; font-size:17px; margin-bottom:8px}
+  .mod p{color:#a9b6cf; font-size:14px; line-height:1.55}
+
+  /* ========== QUALITY + INNOVATION split ========== */
+  .split{
+    display:grid; grid-template-columns:1fr 1fr; gap:24px;
+  }
+  .split-card{
+    border-radius:var(--radius-lg); padding:44px;
+    border:1px solid var(--line); background:#fff;
+    position:relative; overflow:hidden;
+  }
+  .split-card.blue{
+    background:linear-gradient(135deg, #1668d8 0%, #0a3a88 100%); color:#fff; border-color:transparent;
+  }
+  .split-card.blue h2, .split-card.blue .kicker{color:#fff}
+  .split-card.blue p{color:#c9d9ef}
+  .split-card h2{font-size:28px; line-height:1.15; margin-bottom:14px}
+  .split-card p{font-size:15px; line-height:1.6; color:#3c4a66; text-wrap:pretty}
+  .split-card .kicker{color:var(--blue)}
+  .split-bullets{margin-top:20px; display:flex; flex-direction:column; gap:10px}
+  .split-bullets li{display:flex; gap:10px; align-items:flex-start; font-size:14px; color:#3c4a66}
+  .split-card.blue .split-bullets li{color:#dbe6f6}
+  .split-bullets li::before{
+    content:""; width:6px; height:6px; border-radius:50%; background:var(--blue); margin-top:8px; flex-shrink:0;
+  }
+  .split-card.blue .split-bullets li::before{background:#f4c233}
+  .split-deco{
+    position:absolute; right:-40px; top:-40px; width:220px; height:220px;
+    border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,.08) 0%, transparent 70%);
+  }
+
+  /* ========== INSTITUTIONAL ========== */
+  .inst{background:var(--bg-soft)}
+  .inst-grid{display:grid; grid-template-columns: .85fr 1.15fr; gap:56px; align-items:center}
+  .director-card{
+    background:#fff; border:1px solid var(--line); border-radius:24px;
+    padding:8px; box-shadow:var(--shadow-lg);
+    overflow:hidden;
+    position:relative;
+  }
+  .director-card::before{
+    content:""; position:absolute; inset:0; border-radius:24px; padding:1px;
+    background:linear-gradient(135deg, rgba(22,104,216,.35), transparent 40%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    pointer-events:none;
+  }
+  .director-photo{
+    aspect-ratio: 4/5; width:100%; border-radius:18px;
+    background:#e6ecf5 center/cover no-repeat;
+    background-image:url('assets/director.png');
+    position:relative;
+  }
+  .director-badge{
+    position:absolute; left:14px; bottom:14px;
+    background:rgba(255,255,255,.94);
+    backdrop-filter:blur(8px);
+    padding:8px 12px; border-radius:10px;
+    font-size:11px; font-weight:600; color:var(--blue-deep);
+    display:flex; align-items:center; gap:8px;
+    border:1px solid rgba(255,255,255,.8);
+    box-shadow:var(--shadow-sm);
+  }
+  .director-badge i{width:6px; height:6px; border-radius:50%; background:var(--blue)}
+  .director-meta{padding:16px 14px 12px}
+  .director-meta .name{font-family:'Manrope'; font-weight:800; font-size:18px; color:var(--ink)}
+  .director-meta .role{font-size:13px; color:var(--muted); margin-top:2px}
+  .inst-content .kicker{color:var(--blue)}
+  .inst-content h2{font-size:36px; line-height:1.1; margin-bottom:16px; text-wrap:balance}
+  .inst-content p{font-size:16px; line-height:1.6; color:#3c4a66; text-wrap:pretty}
+  .quote{
+    margin-top:24px; padding:22px 24px; border-left:3px solid var(--blue);
+    background:#fff; border-radius:0 12px 12px 0;
+    font-family:'Manrope'; font-size:16px; font-weight:500; color:#25365a;
+    line-height:1.5;
+    box-shadow:var(--shadow-sm);
+  }
+  .quote .attr{display:block; margin-top:10px; font-family:'Inter'; font-size:12.5px; font-weight:500; color:var(--muted); letter-spacing:.02em}
+  .inst-logos{display:flex; align-items:center; gap:18px; margin-top:28px; padding-top:24px; border-top:1px solid var(--line)}
+  .inst-logos img{height:48px; width:auto; opacity:.9}
+  .inst-logos .txt{font-size:12px; color:var(--muted-2); line-height:1.4}
+
+  /* ========== FAQ ========== */
+  .faq-grid{display:grid; grid-template-columns:1fr 1.3fr; gap:56px; align-items:flex-start}
+  .faq-grid .sec-head{margin:0; text-align:left; max-width:none}
+  .faq-grid .sec-head h2{font-size:36px}
+  .faq-list{display:flex; flex-direction:column; gap:12px}
+  .faq-item{
+    border:1px solid var(--line); border-radius:14px; background:#fff;
+    overflow:hidden; transition:all .2s ease;
+  }
+  .faq-item[open]{border-color:#c9dcf4; box-shadow:var(--shadow-sm)}
+  .faq-item summary{
+    list-style:none; cursor:pointer;
+    padding:20px 22px; display:flex; align-items:center; justify-content:space-between; gap:16px;
+    font-family:'Manrope'; font-weight:600; font-size:15.5px; color:var(--ink);
+  }
+  .faq-item summary::-webkit-details-marker{display:none}
+  .faq-item summary::after{
+    content:""; width:12px; height:12px; border-right:2px solid var(--blue); border-bottom:2px solid var(--blue);
+    transform:rotate(45deg); transition:transform .2s ease; flex-shrink:0; margin-right:6px;
+  }
+  .faq-item[open] summary::after{transform:rotate(-135deg); margin-top:4px}
+  .faq-item .a{padding:0 22px 22px; color:var(--muted); font-size:14.5px; line-height:1.6}
+
+  /* ========== CTA ========== */
+  .cta{
+    background:
+      radial-gradient(600px 300px at 80% 20%, rgba(90,166,239,.18), transparent 70%),
+      linear-gradient(135deg, #0a3a88 0%, #1668d8 100%);
+    color:#fff; border-radius:28px;
+    padding:72px 64px; position:relative; overflow:hidden;
+    margin:0 28px;
+  }
+  .cta-wrap{max-width:1240px; margin:0 auto 96px}
+  .cta::before{
+    content:""; position:absolute; inset:0;
+    background-image: radial-gradient(rgba(255,255,255,.12) 1px, transparent 1.6px);
+    background-size:20px 20px;
+    opacity:.5; pointer-events:none;
+    mask-image:linear-gradient(180deg, transparent 0%, #000 40%, transparent 100%);
+  }
+  .cta-inner{position:relative; display:grid; grid-template-columns:1.3fr .7fr; gap:48px; align-items:center}
+  .cta h2{color:#fff; font-size:40px; line-height:1.1; text-wrap:balance}
+  .cta p{color:#d6e4f8; font-size:17px; margin-top:14px; max-width:580px}
+  .cta .btn-primary{background:#fff; color:var(--blue-deep)}
+  .cta .btn-primary:hover{background:#f4c233; color:#0b1b35}
+  .cta .btn-ghost{color:#fff; border-color:rgba(255,255,255,.3)}
+  .cta .btn-ghost:hover{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.5)}
+  .cta-actions{display:flex; gap:12px; flex-wrap:wrap; justify-content:flex-end}
+
+  /* ========== FOOTER ========== */
+  footer{
+    background:#0a1424; color:#9aa7bf; padding:56px 0 28px;
+    font-size:13.5px;
+  }
+  .foot-top{display:grid; grid-template-columns:1.2fr .8fr .8fr; gap:40px; padding-bottom:32px; border-bottom:1px solid rgba(255,255,255,.08)}
+  .foot-brand{display:flex; align-items:center; gap:14px; margin-bottom:14px}
+  .foot-brand img{height:40px; width:auto}
+  .foot-brand .nm{font-family:'Manrope'; font-weight:800; color:#fff; font-size:17px}
+  .foot-brand .nm span{color:var(--blue-sky)}
+  .foot-col h4{color:#fff; font-family:'Manrope'; font-size:13px; text-transform:uppercase; letter-spacing:.1em; margin-bottom:14px; font-weight:700}
+  .foot-col ul{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:9px}
+  .foot-col a{color:#9aa7bf; font-size:13.5px}
+  .foot-col a:hover{color:#fff}
+  .foot-bottom{
+    padding-top:22px; display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap;
+  }
+  .foot-credit{font-size:12.5px; color:#6d7a93}
+  .foot-credit b{color:#cfd8e8; font-weight:600}
+  .social{display:flex; gap:6px; align-items:center}
+  .social a{
+    width:32px; height:32px; border-radius:8px;
+    display:inline-flex; align-items:center; justify-content:center;
+    color:#6d7a93; border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.02);
+    transition:all .2s ease;
+  }
+  .social a:hover{color:#fff; background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2)}
+  .social svg{width:14px; height:14px}
+
+  /* ========== RESPONSIVE ========== */
+  @media (max-width: 1080px){
+    .hero h1.hero-title{font-size:50px}
+    .hero .hero-sub{font-size:16px}
+    .flow-steps{grid-template-columns:repeat(2, 1fr)}
+    .mod-grid{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width: 860px){
+    .nav-links{display:none}
+    .hero{padding:56px 0 72px}
+    .hero-grid{grid-template-columns:1fr; gap:40px}
+    .hero h1.hero-title{font-size:38px}
+    .hero .hero-sub{font-size:15px}
+    section{padding:72px 0}
+    .sec-head h2{font-size:30px}
+    .value-grid, .inst-grid, .faq-grid, .cta-inner{grid-template-columns:1fr; gap:32px}
+    .split{grid-template-columns:1fr}
+    .flow-steps{grid-template-columns:1fr}
+    .mod-grid{grid-template-columns:1fr}
+    .foot-top{grid-template-columns:1fr; gap:28px}
+    .cta{padding:48px 28px}
+    .cta-actions{justify-content:flex-start}
+    .cta h2{font-size:30px}
+  }
+</style>
+</head>
+<body style="cursor: crosshair;" data-cc-id="cc-33">
+
+<!-- ================= NAV ================= -->
+<header class="nav" data-cc-id="cc-1">
+  <div class="container nav-row" data-cc-id="cc-2">
+    <div class="brand">
+      <div class="brand-logos">
+        <img src="assets/logo-unprg.png" alt="UNPRG" data-cc-id="cc-3">
+      </div>
+      <div class="brand-name">
+        <div class="t1">Sílabo<span>.AI</span></div>
+        <div class="t2">FACHSE · UNPRG</div>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a href="#como-funciona" class="active">Cómo funciona</a>
+      <a href="#modulos">Beneficios</a>
+      <a href="#faq">Preguntas frecuentes</a>
+    </nav>
+
+    <a href="#ingresar" class="btn btn-primary">
+      Ingresar
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+    </a>
+
+    <div class="brand-fachse-wrap" data-cc-id="cc-40">
+      <img src="assets/logo-fachse.png" alt="FACHSE" class="brand-fachse">
+      <div class="brand-fachse-txt" data-cc-id="cc-44">
+        <div class="l1" data-cc-id="cc-46">Facultad de Ciencias</div>
+        <div class="l2" data-cc-id="cc-45">Histórico Sociales y Educación</div>
+        <div class="l3" data-cc-id="cc-41">(FACHSE)</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= HERO ================= -->
+<section class="hero" data-cc-id="cc-4">
+  <div class="hero-dots"></div>
+  <div class="container hero-grid" data-cc-id="cc-11">
+    <div data-cc-id="cc-8">
+      <!-- Ribbon tagline encima del título -->
+      <div class="hero-ribbon" aria-hidden="true">
+        <span class="hr-text">Innovación curricular para una docencia de calidad.</span>
+      </div>
+      <h1 class="hero-title" data-cc-id="cc-5" style="">Sistema de Gestión <em data-cc-id="cc-6">Inteligente de Sílabos</em> — UNPRG</h1>
+      <p class="lede" data-cc-id="cc-9" style="" contenteditable="true">
+        Plataforma académica impulsada por la Dirección de la Escuela Profesional de Educación para transformar la elaboración de sílabos, fortalecer la coherencia curricular y elevar la calidad formativa con apoyo de inteligencia artificial.
+      </p>
+
+      <div class="hero-cta" data-cc-id="cc-43">
+        <a href="#ingresar" class="btn btn-primary btn-lg">
+          Ingresar al sistema
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+        </a>
+        <a href="#como-funciona" class="btn btn-ghost btn-lg" data-cc-id="cc-10">Ver cómo funciona</a>
+      </div>
+
+      <div class="chips" aria-label="Características">
+        <span class="chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h16"></path></svg>
+          Contexto por programa
+        </span>
+        <span class="chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 4v16"></path></svg>
+          Curso con datos oficiales
+        </span>
+        <span class="chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2z"></path></svg>
+          Bibliografía asistida
+        </span>
+        <span class="chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+          Sugerencia metodológica
+        </span>
+        <span class="chip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M6 16l8-8 4 4-8 8H6v-4z"></path></svg>
+          Edición docente
+        </span>
+      </div>
+    </div>
+
+    <!-- hero visual: illustration + floating chips -->
+    <div class="hero-visual" aria-hidden="true" data-cc-id="cc-12">
+      <div class="hv-bg-glow"></div>
+
+      <div class="hv-chip c1" data-cc-id="cc-42">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 4v16"></path></svg></div>
+        <div>Contexto activo<span class="sub">FACHSE · 2026-I</span></div>
+      </div>
+
+      <img src="assets/hero-brain-book.png" alt="Inteligencia artificial + conocimiento" class="hv-illo" data-cc-id="cc-13">
+
+      <div class="hv-chip c2">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></div>
+        <div>Método sugerido<span class="sub">Edición docente</span></div>
+      </div>
+
+      <div class="hv-chip c3" data-cc-id="cc-14">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2z"></path></svg></div>
+        <div>Bibliografía asistida<span class="sub">PDF · Markdown</span></div>
+      </div>
+
+      <!-- Ribbon tagline: Innovación curricular -->
+      <div class="hero-ribbon" aria-hidden="true">
+        <span class="hr-text">Innovación curricular para una docencia de calidad.</span>
+      </div>
+
+      <!-- Director card: minimal, flush right (like base image) -->
+      <div class="director-float" aria-label="Director de la Escuela Profesional de Educación" data-cc-id="cc-15">
+        <div class="df-name" data-cc-id="cc-16">Dr. Carlos Vásquez Crisanto</div>
+        <div class="df-role" data-cc-id="cc-17">Director de la Escuela Profesional de Educación</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= VALUE ================= -->
+<section class="value" data-cc-id="cc-18">
+  <div class="container value-grid">
+    <div>
+      <span class="kicker">Valor inmediato</span>
+      <h2>El sílabo no empieza desde cero.</h2>
+      <p>
+        La plataforma organiza el trabajo por contexto académico, recupera la información oficial del curso
+        y guía al docente paso a paso para lograr mayor coherencia curricular, menos retrabajo y mejor
+        trazabilidad por semestre.
+      </p>
+    </div>
+    <div class="value-stats">
+      <div class="stat">
+        <div class="k">Contexto</div>
+        <div class="v">Programa + semestre</div>
+        <div class="d">Trabajo organizado por periodo académico activo.</div>
+      </div>
+      <div class="stat">
+        <div class="k">Base oficial</div>
+        <div class="v">Datos del curso</div>
+        <div class="d">Sumilla, competencias y resultados ya precargados.</div>
+      </div>
+      <div class="stat">
+        <div class="k">Apoyo IA</div>
+        <div class="v">Sugerencia metodológica</div>
+        <div class="d">Orientación pedagógica según la naturaleza del curso.</div>
+      </div>
+      <div class="stat">
+        <div class="k">Control</div>
+        <div class="v">Decisión docente</div>
+        <div class="d">El contenido generado es siempre revisable y editable.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FLOW ================= -->
+<section id="como-funciona" data-cc-id="cc-19">
+  <div class="container">
+    <div class="sec-head">
+      <span class="kicker">Cómo funciona</span>
+      <h2>Así funciona el flujo docente</h2>
+      <p>Cinco pasos claros desde la selección del contexto académico hasta la generación del sílabo editable.</p>
+    </div>
+
+    <div class="flow-steps">
+      <article class="step">
+        <div class="step-num">Paso 01</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"></path><path d="M3 12l9 4 9-4M3 17l9 4 9-4"></path></svg>
+        </div>
+        <h3>Selecciona tu contexto académico</h3>
+        <p>Elige facultad, escuela, programa y semestre para trabajar dentro del marco correspondiente.</p>
+      </article>
+
+      <article class="step">
+        <div class="step-num">Paso 02</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M8 7h8M8 11h8M8 15h5"></path></svg>
+        </div>
+        <h3>Elige el curso del programa activo</h3>
+        <p>El sistema muestra sumilla, créditos, ciclo, competencia de egreso y resultado de aprendizaje.</p>
+      </article>
+
+      <article class="step">
+        <div class="step-num">Paso 03</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5M9 13l2 2 4-4"></path></svg>
+        </div>
+        <h3>Complementa la bibliografía</h3>
+        <p>Apóyate en NotebookLM y sube un archivo en PDF o Markdown para enriquecer las fuentes. Paso opcional.</p>
+      </article>
+
+      <article class="step">
+        <div class="step-num">Paso 04</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"></path></svg>
+        </div>
+        <h3>Revisa la sugerencia metodológica</h3>
+        <p>La IA propone un método pedagógico según la naturaleza del curso, pero el docente mantiene la decisión final.</p>
+      </article>
+
+      <article class="step">
+        <div class="step-num">Paso 05</div>
+        <div class="step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M6 16l8-8 4 4-8 8H6v-4z"></path></svg>
+        </div>
+        <h3>Genera y edita tu sílabo</h3>
+        <p>Se crea una base alineada al esquema institucional para revisión, ajuste y publicación.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MODULES ================= -->
+<section class="modules" id="modulos">
+  <div class="container">
+    <div class="sec-head">
+      <span class="kicker">Capacidades</span>
+      <h2>Una plataforma pensada para la elaboración académica real</h2>
+      <p>Cinco módulos que estructuran el trabajo docente desde el contexto hasta la publicación.</p>
+    </div>
+
+    <div class="mod-grid">
+      <div class="mod">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 4v16"></path></svg>
+        </div>
+        <h3>Contexto académico activo</h3>
+        <p>Cada periodo de trabajo se organiza por programa y semestre, evitando mezcla de datos entre ciclos.</p>
+      </div>
+
+      <div class="mod">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4v6c0 5-4 8-9 10-5-2-9-5-9-10V6z"></path><path d="M9 12l2 2 4-4"></path></svg>
+        </div>
+        <h3>Información del curso en solo lectura</h3>
+        <p>La base institucional aporta los datos clave para la elaboración, sin riesgo de alterar el catálogo.</p>
+      </div>
+
+      <div class="mod">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2z"></path></svg>
+        </div>
+        <h3>Bibliografía asistida</h3>
+        <p>El docente puede enriquecer el sílabo con fuentes procesadas desde sus propios materiales en PDF o Markdown.</p>
+      </div>
+
+      <div class="mod">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l3-3 3 3 6-6 6 6"></path><path d="M3 19h18"></path></svg>
+        </div>
+        <h3>Metodología sugerida</h3>
+        <p>La plataforma orienta la selección pedagógica según el tipo y naturaleza del curso del plan de estudios.</p>
+      </div>
+
+      <div class="mod">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"></path></svg>
+        </div>
+        <h3>Edición y seguimiento</h3>
+        <p>El resultado generado puede revisarse, ajustarse y gestionarse dentro del sistema con trazabilidad completa.</p>
+      </div>
+
+      <div class="mod">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>
+        </div>
+        <h3>Alineación institucional</h3>
+        <p>El sílabo se produce bajo el esquema oficial de la FACHSE, manteniendo coherencia curricular por defecto.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= QUALITY + INNOVATION ================= -->
+<section>
+  <div class="container">
+    <div class="split">
+      <div class="split-card">
+        <span class="kicker">Calidad</span>
+        <h2>Calidad académica desde la construcción del sílabo.</h2>
+        <p>
+          La plataforma fortalece la coherencia entre sumilla, resultados de aprendizaje, metodología,
+          evaluación y planificación del curso, alineando la elaboración del sílabo con el marco institucional.
+        </p>
+        <ul class="split-bullets">
+          <li>Coherencia curricular entre componentes del sílabo.</li>
+          <li>Trazabilidad del resultado por docente, curso y semestre.</li>
+          <li>Estructura alineada al esquema oficial de la FACHSE.</li>
+        </ul>
+      </div>
+
+      <div class="split-card blue">
+        <div class="split-deco"></div>
+        <span class="kicker">Innovación</span>
+        <h2>Innovación con criterio docente.</h2>
+        <p>
+          La inteligencia artificial acompaña la elaboración, sugiere rutas metodológicas y ayuda a
+          organizar insumos, pero la decisión académica final permanece en manos del docente.
+        </p>
+        <ul class="split-bullets">
+          <li>Sugerencia metodológica por naturaleza del curso.</li>
+          <li>Bibliografía enriquecida desde materiales propios.</li>
+          <li>El docente ajusta, aprueba y publica el resultado.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= INSTITUTIONAL STRIP (no director photo) ================= -->
+<section class="inst" style="padding:72px 0">
+  <div class="container" style="display:flex; align-items:center; justify-content:space-between; gap:40px; flex-wrap:wrap">
+    <div style="display:flex; align-items:center; gap:22px">
+      <img src="assets/logo-unprg.png" alt="UNPRG" style="height:82px; width:auto">
+      <img src="assets/logo-fachse.png" alt="FACHSE" style="height:82px; width:auto">
+      <div>
+        <div style="font-family:'Manrope'; font-weight:800; font-size:15px; color:var(--ink); line-height:1.25">Universidad Nacional Pedro Ruiz Gallo</div>
+        <div style="font-size:13px; color:var(--muted); line-height:1.4; margin-top:2px">Facultad de Ciencias Histórico Sociales y Educación<br>Escuela Profesional de Educación</div>
+      </div>
+    </div>
+    <div style="max-width:520px">
+      <span class="kicker">Respaldo institucional</span>
+      <p style="font-size:15px; color:#3c4a66; line-height:1.6; margin-top:10px; text-wrap:pretty">
+        Sílabo.AI forma parte del esfuerzo por modernizar la elaboración académica,
+        mejorar la consistencia curricular y brindar herramientas de apoyo a la docencia
+        en la FACHSE-UNPRG.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section id="faq" style="background:var(--bg-softer)">
+  <div class="container faq-grid">
+    <div class="sec-head left">
+      <span class="kicker">FAQ</span>
+      <h2>Preguntas frecuentes</h2>
+      <p>Dudas típicas del docente sobre el alcance del sistema y el margen de decisión académica.</p>
+    </div>
+
+    <div class="faq-list">
+      <details class="faq-item" open="">
+        <summary>¿El docente puede modificar el resultado generado?</summary>
+        <div class="a">Sí. La plataforma asiste el proceso, pero el contenido puede revisarse y ajustarse antes de su publicación definitiva.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿La bibliografía es obligatoria?</summary>
+        <div class="a">No. Es un paso opcional que permite enriquecer el resultado con fuentes adicionales cargadas por el docente.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿El método pedagógico queda fijo?</summary>
+        <div class="a">No. El sistema sugiere una opción, pero el docente puede cambiarla según su criterio académico.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿El trabajo se organiza por programa y semestre?</summary>
+        <div class="a">Sí. El contexto académico define el entorno de trabajo de cada periodo y mantiene los datos separados por ciclo.</div>
+      </details>
+      <details class="faq-item">
+        <summary>¿Qué formatos acepta para complementar bibliografía?</summary>
+        <div class="a">Archivos en PDF o Markdown, procesables a través de herramientas como NotebookLM dentro del flujo asistido.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FINAL CTA ================= -->
+<div class="cta-wrap" id="ingresar">
+  <div class="cta" data-cc-id="cc-38">
+    <div class="cta-inner">
+      <div>
+        <h2>Una elaboración de sílabos más coherente, ágil y contextualizada.</h2>
+        <p data-cc-id="cc-39">Ingresa al sistema y gestiona tu trabajo académico dentro de un flujo guiado, alineado al programa y al semestre vigente.</p>
+      </div>
+      <div class="cta-actions">
+        <a href="#" class="btn btn-primary btn-lg">
+          Ingresar al sistema
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+        </a>
+        <a href="#como-funciona" class="btn btn-ghost btn-lg">Ver flujo</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= FOOTER ================= -->
+<footer data-cc-id="cc-20">
+  <div class="container" data-cc-id="cc-21">
+    <div class="foot-top" data-cc-id="cc-22">
+      <div>
+        <div class="foot-brand" data-cc-id="cc-29">
+          <img src="assets/logo-unprg.png" alt="UNPRG" style="height:56px">
+          <img src="assets/logo-fachse.png" alt="FACHSE" style="height:56px" data-cc-id="cc-31">
+          <div class="nm" data-cc-id="cc-30">Sílabo<span data-cc-id="cc-32">.AI</span></div>
+        </div>
+        <p style="color:#8896ae; max-width:360px; line-height:1.55">
+          Plataforma de apoyo a la elaboración de sílabos de la Escuela Profesional de Educación,
+          FACHSE — Universidad Nacional Pedro Ruiz Gallo.
+        </p>
+      </div>
+
+      <div class="foot-col">
+        <h4 data-cc-id="cc-34">Producto</h4>
+        <ul data-cc-id="cc-36">
+          <li data-cc-id="cc-35"><a href="#como-funciona">Cómo funciona</a></li>
+          <li data-cc-id="cc-37"><a href="#modulos" data-cc-id="cc-28">Beneficios</a></li>
+          <li data-cc-id="cc-27"><a href="#faq">Preguntas frecuentes</a></li>
+          <li data-cc-id="cc-26"><a href="#ingresar">Ingresar</a></li>
+        </ul>
+      </div>
+
+      <div class="foot-col">
+        <h4>Institución</h4>
+        <ul>
+          <li><a href="#">UNPRG — Lambayeque</a></li>
+          <li><a href="#">FACHSE</a></li>
+          <li><a href="#">Escuela Profesional de Educación</a></li>
+          <li><a href="mailto:contacto@silaboai.unprg.edu.pe">Contacto</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot-bottom" data-cc-id="cc-23">
+      <div class="foot-credit">
+        © 2026 Sílabo.AI · Desarrollado por <b>Esgardo Mechan Yaipen</b>
+      </div>
+      <div class="social" aria-label="Redes del desarrollador">
+        <a href="#" aria-label="GitHub" title="GitHub" data-cc-id="cc-25">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.93c.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.76 2.69 1.25 3.35.96.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.21-1.49 3.18-1.18 3.18-1.18.62 1.58.23 2.75.11 3.04.73.8 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.26 5.67.41.35.78 1.05.78 2.12 0 1.53-.01 2.77-.01 3.14 0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path></svg>
+        </a>
+        <a href="#" aria-label="LinkedIn" title="LinkedIn" data-cc-id="cc-24">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5C4.98 4.88 3.87 6 2.5 6S0 4.88 0 3.5 1.12 1 2.5 1s2.48 1.12 2.48 2.5zM.2 8.5h4.6V23H.2V8.5zm7.6 0h4.4v2h.06c.61-1.15 2.1-2.37 4.32-2.37 4.62 0 5.47 3.04 5.47 7v7.87h-4.58v-6.98c0-1.66-.03-3.8-2.31-3.8-2.31 0-2.66 1.81-2.66 3.68V23H7.8V8.5z"></path></svg>
+        </a>
+        <a href="#" aria-label="Instagram" title="Instagram">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="2.5" width="19" height="19" rx="5"></rect><circle cx="12" cy="12" r="4.2"></circle><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor"></circle></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+
+</body></html>
