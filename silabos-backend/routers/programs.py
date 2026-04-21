@@ -2,6 +2,7 @@
 # GET /api/programs?career_id={id}
 # GET /api/courses?program_id={id}
 # GET /api/courses/{course_id}
+# GET /api/courses/{course_id}/performances  ← desempeños oficiales (público)
 # GET /api/methods                        ← desde teaching_methods DB
 # GET /api/methods/{method_id}/skills     ← skills compatibles para el wizard
 # GET /api/skills/categories
@@ -51,6 +52,17 @@ async def obtener_curso(course_id: str, request: Request):
     if not curso:
         raise HTTPException(status_code=404, detail=f"Curso {course_id} no encontrado")
     return {"success": True, "data": curso, "error": None}
+
+
+@router.get("/courses/{course_id}/performances")
+async def listar_performances_publico(course_id: str, request: Request):
+    """Desempeños oficiales activos de un curso (acceso público para el wizard)."""
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+    items = await supabase.listar_performances_curso(course_id, include_archived=False)
+    return {"success": True, "data": {"items": items}, "error": None}
 
 
 @router.get("/methods")

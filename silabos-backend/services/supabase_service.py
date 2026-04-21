@@ -1360,6 +1360,7 @@ class SupabaseService:
         user_id: Optional[str] = None,
         status: str = "draft",
         teaching_method_id: Optional[str] = None,
+        methodology_json: Optional[dict] = None,
     ) -> dict:
         meta = self._extraer_meta_silabo(silabo_dict, status)
         syllabus_id = str(uuid.uuid4())
@@ -1371,7 +1372,7 @@ class SupabaseService:
                         (
                             id, course_id, user_id, semester,
                             teacher_name, status, payload_json,
-                            teaching_method_id,
+                            teaching_method_id, methodology_json,
                             created_at, updated_at
                         )
                     VALUES
@@ -1380,12 +1381,13 @@ class SupabaseService:
                             :teacher_name, :status,
                             CAST(:payload_json AS JSONB),
                             :teaching_method_id,
+                            CAST(:methodology_json AS JSONB),
                             now(), now()
                         )
                     RETURNING
                         id, course_id, user_id, semester,
                         teacher_name, status, payload_json,
-                        teaching_method_id, created_at, updated_at
+                        teaching_method_id, methodology_json, created_at, updated_at
                 """),
                 {
                     "id": syllabus_id,
@@ -1396,6 +1398,7 @@ class SupabaseService:
                     "status": meta["status"],
                     "payload_json": json.dumps(silabo_dict, ensure_ascii=False),
                     "teaching_method_id": teaching_method_id,
+                    "methodology_json": json.dumps(methodology_json, ensure_ascii=False) if methodology_json else None,
                 },
             )
             sesion.commit()
@@ -1410,6 +1413,7 @@ class SupabaseService:
         user_id: Optional[str] = None,
         status: str = "draft",
         teaching_method_id: Optional[str] = None,
+        methodology_json: Optional[dict] = None,
     ) -> dict:
         try:
             return await self._ejecutar(
@@ -1418,6 +1422,7 @@ class SupabaseService:
                 user_id,
                 status,
                 teaching_method_id,
+                methodology_json,
             )
         except Exception as e:
             logger.error(f"Error al guardar sÃ­labo: {e}")
@@ -1836,6 +1841,29 @@ class SupabaseService:
             logger.error(f"Error al listar skills por IDs: {e}")
             return {"verbos": [], "instrumentos": [], "habilidades": []}
 
+    def _listar_skills_raw_por_ids_sync(self, skill_ids: list) -> list:
+        if not skill_ids:
+            return []
+        placeholders = ", ".join([f":sid{i}" for i in range(len(skill_ids))])
+        params = {f"sid{i}": sid for i, sid in enumerate(skill_ids)}
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT id, nombre, categoria, subcategoria, nivel_cognitivo, verbo_principal
+                    FROM skills_catalog
+                    WHERE id IN ({placeholders})
+                """),
+                params,
+            ).mappings().all()
+        return [dict(f) for f in filas]
+
+    async def listar_skills_raw_por_ids(self, skill_ids: list) -> list:
+        try:
+            return await self._ejecutar(self._listar_skills_raw_por_ids_sync, skill_ids)
+        except Exception as e:
+            logger.error(f"Error al listar skills raw por IDs: {e}")
+            return []
+
     async def listar_skills_por_categorias(self, categories: list) -> dict:
         try:
             return await self._ejecutar(self._listar_skills_por_categorias_sync, categories)
@@ -1899,14 +1927,29 @@ class SupabaseService:
         with self._Session() as sesion:
             fila = sesion.execute(
                 text("""
-                    SELECT id, name, code, credits, cycle, is_common, scope,
-                           program_id, sumilla, competencia_egreso, resultado_aprendizaje, capacidad
-                    FROM courses
-                    WHERE id = :course_id
+                    SELECT c.id, c.name, c.code, c.credits, c.cycle, c.is_common, c.scope,
+                           c.program_id, c.sumilla, c.competencia_egreso, c.resultado_aprendizaje, c.capacidad,
+                           p.name AS program_name,
+                           cr.id AS career_id,
+                           cr.name AS career_name,
+                           f.id AS faculty_id,
+                           f.name AS faculty_name
+                    FROM courses c
+                    LEFT JOIN programs p ON p.id = c.program_id
+                    LEFT JOIN careers cr ON cr.id = p.career_id
+                    LEFT JOIN faculties f ON f.id = cr.faculty_id
+                    WHERE c.id = :course_id
                 """),
                 {"course_id": course_id},
             ).mappings().first()
-        return dict(fila) if fila else None
+        if not fila:
+            return None
+
+        item = dict(fila)
+        for campo in ("id", "program_id", "career_id", "faculty_id"):
+            if item.get(campo) is not None:
+                item[campo] = str(item[campo])
+        return item
 
     async def obtener_curso(self, course_id: str) -> Optional[dict]:
         try:
@@ -3295,4 +3338,511 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error al eliminar override {override_id}: {e}")
             return False
+
+    # ──────────────────────────────────────────────
+    # WIZARD PROGRESIVO v3
+    # ──────────────────────────────────────────────
+
+    def _empty_workflow(self) -> dict:
+        """Estado inicial vacío del workflow por bloque."""
+        return {
+            "bibliography": {"status": "empty", "dirty": False},
+            "purpose":      {"status": "empty", "dirty": False},
+            "content":      {"status": "empty", "dirty": False},
+            "method":       {"status": "empty", "dirty": False},
+            "grading":      {"status": "empty", "dirty": False},
+        }
+
+    def _empty_progressive_payload(
+        self,
+        course_id: str,
+        semester: str,
+        program_id: Optional[str],
+        teacher_name: str = "",
+        teacher_email: str = "",
+    ) -> dict:
+        return {
+            "_meta": {
+                "wizard_version": "v3-progressive",
+                "current_step": "bibliography",
+                "requires_academic_validation": False,
+                "academic_validation_status": "not_required",
+            },
+            "_workflow": self._empty_workflow(),
+            "course_snapshot": {"course_id": course_id},
+            "bibliography": {"doc_ids": [], "references": []},
+            "purpose": {
+                "curriculum_snapshot": {},
+                "performances": [],
+                "performances_origin": "none",
+                "teacher_notes": "",
+                "approval_state": "empty",
+            },
+            "content": {
+                "selected_skill_ids": [],
+                "knowledge_items": [],
+                "attitudes": [],
+                "source": "none",
+                "teacher_notes": "",
+                "approval_state": "empty",
+            },
+            "method": {
+                "suggested_method_id": None,
+                "suggestion_reason": "",
+                "selected_method_id": None,
+                "selected_method_name": "",
+                "compatibility_snapshot": {},
+                "teacher_notes": "",
+                "approval_state": "empty",
+            },
+            "grading": {
+                "template_origin": "none",
+                "rows": [],
+                "total_percent": 0,
+                "teacher_notes": "",
+                "approval_state": "empty",
+            },
+            "final_syllabus": None,
+            # legacy fields needed by meta extractor
+            "datos_generales": {
+                "course_id": course_id,
+                "semestre": semester,
+                "docente": teacher_name,
+                "docente_email": teacher_email,
+            },
+        }
+
+    def _crear_o_obtener_draft_progresivo_sync(
+        self,
+        course_id: str,
+        semester: str,
+        user_id: str,
+        program_id: Optional[str] = None,
+        teacher_name: str = "",
+        teacher_email: str = "",
+    ) -> dict:
+        with self._Session() as sesion:
+            # Look for existing open progressive draft
+            existing = sesion.execute(
+                text("""
+                    SELECT id, course_id, user_id, semester, teacher_name, status, payload_json,
+                           wizard_version, current_step, requires_academic_validation,
+                           academic_validation_status, program_id, created_at, updated_at
+                    FROM syllabi
+                    WHERE course_id = :course_id
+                      AND semester = :semester
+                      AND user_id = :user_id
+                      AND wizard_version = 'v3-progressive'
+                      AND status = 'draft'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """),
+                {"course_id": course_id, "semester": semester, "user_id": user_id},
+            ).mappings().first()
+
+            if existing:
+                return self._mapear_silabo_fila(existing) or {}
+
+            # Create new progressive draft
+            draft_id = str(uuid.uuid4())
+            payload = self._empty_progressive_payload(
+                course_id,
+                semester,
+                program_id,
+                teacher_name=teacher_name,
+                teacher_email=teacher_email,
+            )
+            sesion.execute(
+                text("""
+                    INSERT INTO syllabi (
+                        id, course_id, user_id, semester, teacher_name, status,
+                        payload_json, wizard_version, current_step, program_id,
+                        requires_academic_validation, academic_validation_status,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :course_id, :user_id, :semester, :teacher_name, 'draft',
+                        CAST(:payload_json AS JSONB), 'v3-progressive', 'bibliography',
+                        :program_id, false, 'not_required', now(), now()
+                    )
+                """),
+                {
+                    "id": draft_id,
+                    "course_id": course_id,
+                    "user_id": user_id,
+                    "semester": semester,
+                    "teacher_name": teacher_name,
+                    "payload_json": json.dumps(payload, ensure_ascii=False),
+                    "program_id": program_id,
+                },
+            )
+            sesion.commit()
+
+            fila = sesion.execute(
+                text("""
+                    SELECT id, course_id, user_id, semester, teacher_name, status, payload_json,
+                           wizard_version, current_step, requires_academic_validation,
+                           academic_validation_status, program_id, created_at, updated_at
+                    FROM syllabi WHERE id = :id
+                """),
+                {"id": draft_id},
+            ).mappings().first()
+
+        return self._mapear_silabo_fila(fila) or {}
+
+    async def crear_o_obtener_draft_progresivo(
+        self,
+        course_id: str,
+        semester: str,
+        user_id: str,
+        program_id: Optional[str] = None,
+        teacher_name: str = "",
+        teacher_email: str = "",
+    ) -> dict:
+        try:
+            return await self._ejecutar(
+                self._crear_o_obtener_draft_progresivo_sync,
+                course_id, semester, user_id, program_id, teacher_name, teacher_email,
+            )
+        except Exception as e:
+            logger.error(f"Error al crear/obtener draft progresivo: {e}")
+            return {}
+
+    def _guardar_step_block_sync(
+        self,
+        syllabus_id: str,
+        step_key: str,
+        block_data: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            row = sesion.execute(
+                text("SELECT payload_json, wizard_version FROM syllabi WHERE id = :id"),
+                {"id": syllabus_id},
+            ).mappings().first()
+
+            if not row:
+                return None
+
+            payload = row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+
+            # Merge block data
+            if step_key not in payload:
+                payload[step_key] = {}
+            payload[step_key].update(block_data)
+
+            # Update workflow state
+            if "_workflow" not in payload:
+                payload["_workflow"] = self._empty_workflow()
+            current_block_status = payload["_workflow"].get(step_key, {}).get("status", "empty")
+            # Don't downgrade approved → edited
+            if current_block_status != "approved":
+                payload["_workflow"][step_key] = {"status": "edited", "dirty": False}
+
+            # Update current step tracking
+            if "_meta" not in payload:
+                payload["_meta"] = {}
+            payload["_meta"]["current_step"] = step_key
+
+            # Check if academic validation is required
+            if step_key == "purpose":
+                origin = payload.get("purpose", {}).get("performances_origin", "")
+                requires = origin in ("ai_suggested", "teacher_edited_from_ai")
+                payload["_meta"]["requires_academic_validation"] = requires
+                payload["_meta"]["academic_validation_status"] = "pending" if requires else "not_required"
+
+            sesion.execute(
+                text("""
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload_json AS JSONB),
+                        current_step = :step_key,
+                        requires_academic_validation = :requires_academic_validation,
+                        academic_validation_status = :academic_validation_status,
+                        autosaved_at = now(),
+                        updated_at = now()
+                    WHERE id = :id
+                """),
+                {
+                    "id": syllabus_id,
+                    "payload_json": json.dumps(payload, ensure_ascii=False),
+                    "step_key": step_key,
+                    "requires_academic_validation": bool(
+                        payload.get("_meta", {}).get("requires_academic_validation", False)
+                    ),
+                    "academic_validation_status": payload.get("_meta", {}).get(
+                        "academic_validation_status",
+                        "not_required",
+                    ),
+                },
+            )
+            sesion.commit()
+
+        return {"syllabus_id": syllabus_id, "step_key": step_key, "saved": True}
+
+    async def guardar_step_block(
+        self,
+        syllabus_id: str,
+        step_key: str,
+        block_data: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._guardar_step_block_sync,
+                syllabus_id, step_key, block_data, user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar step block {step_key} en {syllabus_id}: {e}")
+            return None
+
+    def _marcar_envio_validacion_academica_sync(self, syllabus_id: str) -> bool:
+        with self._Session() as sesion:
+            row = sesion.execute(
+                text("SELECT payload_json FROM syllabi WHERE id = :id"),
+                {"id": syllabus_id},
+            ).mappings().first()
+            if not row:
+                return False
+
+            payload = row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+
+            payload.setdefault("_meta", {})
+            payload["_meta"]["requires_academic_validation"] = True
+            payload["_meta"]["academic_validation_status"] = "pending"
+
+            resultado = sesion.execute(
+                text("""
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload_json AS JSONB),
+                        status = 'review',
+                        requires_academic_validation = true,
+                        academic_validation_status = 'pending',
+                        submitted_for_validation_at = now(),
+                        updated_at = now()
+                    WHERE id = :id::uuid
+                """),
+                {
+                    "id": syllabus_id,
+                    "payload_json": json.dumps(payload, ensure_ascii=False),
+                },
+            )
+            sesion.commit()
+            return resultado.rowcount > 0
+
+    async def marcar_envio_validacion_academica(self, syllabus_id: str) -> bool:
+        try:
+            return await self._ejecutar(
+                self._marcar_envio_validacion_academica_sync,
+                syllabus_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al enviar a validacion academica {syllabus_id}: {e}")
+            return False
+
+    def _guardar_ai_suggestion_sync(
+        self,
+        syllabus_id: str,
+        step_key: str,
+        input_json: dict,
+        output_json: dict,
+        user_id: Optional[str] = None,
+    ) -> None:
+        import hashlib
+        request_hash = hashlib.sha256(
+            json.dumps(input_json, sort_keys=True).encode()
+        ).hexdigest()[:64]
+
+        with self._Session() as sesion:
+            sesion.execute(
+                text("""
+                    INSERT INTO syllabus_ai_suggestions
+                        (id, syllabus_id, step_key, request_hash, input_json, output_json, created_by, created_at)
+                    VALUES
+                        (gen_random_uuid(), :sid, :step, :hash, CAST(:inp AS JSONB), CAST(:out AS JSONB), :uid, now())
+                """),
+                {
+                    "sid": syllabus_id,
+                    "step": step_key,
+                    "hash": request_hash,
+                    "inp": json.dumps(input_json, ensure_ascii=False),
+                    "out": json.dumps(output_json, ensure_ascii=False),
+                    "uid": user_id,
+                },
+            )
+            sesion.commit()
+
+    async def guardar_ai_suggestion(
+        self,
+        syllabus_id: str,
+        step_key: str,
+        input_json: dict,
+        output_json: dict,
+        user_id: Optional[str] = None,
+    ) -> None:
+        try:
+            await self._ejecutar(
+                self._guardar_ai_suggestion_sync,
+                syllabus_id, step_key, input_json, output_json, user_id,
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo guardar sugerencia IA ({step_key}): {e}")
+
+    def _obtener_draft_progresivo_sync(
+        self,
+        syllabus_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        query = """
+            SELECT id, course_id, user_id, semester, status, payload_json,
+                   wizard_version, current_step, requires_academic_validation,
+                   academic_validation_status, program_id, created_at, updated_at
+            FROM syllabi WHERE id = :id
+        """
+        params: dict = {"id": syllabus_id}
+        if user_id:
+            query += " AND (user_id = :uid OR user_id IS NULL)"
+            params["uid"] = user_id
+
+        with self._Session() as sesion:
+            fila = sesion.execute(text(query), params).mappings().first()
+
+        return self._mapear_silabo_fila(fila) if fila else None
+
+    async def obtener_draft_progresivo(
+        self,
+        syllabus_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._obtener_draft_progresivo_sync, syllabus_id, user_id
+            )
+        except Exception as e:
+            logger.error(f"Error al obtener draft progresivo {syllabus_id}: {e}")
+            return None
+
+    def _ensamblar_final_sync(
+        self,
+        syllabus_id: str,
+        final_payload: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            row = sesion.execute(
+                text("SELECT payload_json FROM syllabi WHERE id = :id"),
+                {"id": syllabus_id},
+            ).mappings().first()
+
+            if not row:
+                return None
+
+            payload = row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+
+            payload["final_syllabus"] = final_payload
+            for key, value in final_payload.items():
+                if key in {"bibliography", "purpose", "content", "method", "grading"}:
+                    continue
+                payload[key] = value
+            if "_meta" not in payload:
+                payload["_meta"] = {}
+            payload["_meta"]["assembled_at"] = datetime.now(timezone.utc).isoformat()
+
+            datos_generales = final_payload.get("datos_generales", {}) or {}
+            methodology_json = final_payload.get("methodology_json")
+
+            sesion.execute(
+                text("""
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload_json AS JSONB),
+                        course_id = :course_id,
+                        semester = :semester,
+                        teacher_name = :teacher_name,
+                        teaching_method_id = :teaching_method_id,
+                        methodology_json = CAST(:methodology_json AS JSONB),
+                        updated_at = now()
+                    WHERE id = :id
+                """),
+                {
+                    "id": syllabus_id,
+                    "payload_json": json.dumps(payload, ensure_ascii=False),
+                    "course_id": datos_generales.get("course_id") or None,
+                    "semester": datos_generales.get("semestre", ""),
+                    "teacher_name": datos_generales.get("docente", ""),
+                    "teaching_method_id": final_payload.get("method_id"),
+                    "methodology_json": json.dumps(methodology_json, ensure_ascii=False)
+                    if methodology_json is not None
+                    else None,
+                },
+            )
+            sesion.commit()
+
+        return self._mapear_silabo_fila(
+            sesion.execute(
+                text("SELECT * FROM syllabi WHERE id = :id"),
+                {"id": syllabus_id},
+            ).mappings().first()
+        ) if False else {"id": syllabus_id, "assembled": True}
+
+    async def ensamblar_final(
+        self,
+        syllabus_id: str,
+        final_payload: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._ensamblar_final_sync, syllabus_id, final_payload, user_id
+            )
+        except Exception as e:
+            logger.error(f"Error al ensamblar draft final {syllabus_id}: {e}")
+            return None
+
+    def _listar_evidencias_metodo_sync(self, method_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT e.id, e.code, e.name, e.description,
+                           l.priority, l.is_recommended
+                    FROM teaching_method_evidence_links l
+                    JOIN evaluation_evidence_catalog e ON e.id = l.evidence_id
+                    WHERE l.teaching_method_id = :mid AND e.active = true
+                    ORDER BY l.is_recommended DESC, l.priority ASC
+                """),
+                {"mid": method_id},
+            ).mappings().all()
+        return [self._stringify_uuids(dict(f)) for f in filas]
+
+    async def listar_evidencias_metodo(self, method_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_evidencias_metodo_sync, method_id)
+        except Exception as e:
+            logger.error(f"Error al listar evidencias método {method_id}: {e}")
+            return []
+
+    def _listar_instrumentos_metodo_sync(self, method_id: str) -> list:
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT i.id, i.code, i.name, i.description,
+                           l.priority, l.is_recommended
+                    FROM teaching_method_instrument_links l
+                    JOIN evaluation_instruments_catalog i ON i.id = l.instrument_id
+                    WHERE l.teaching_method_id = :mid AND i.active = true
+                    ORDER BY l.is_recommended DESC, l.priority ASC
+                """),
+                {"mid": method_id},
+            ).mappings().all()
+        return [self._stringify_uuids(dict(f)) for f in filas]
+
+    async def listar_instrumentos_metodo(self, method_id: str) -> list:
+        try:
+            return await self._ejecutar(self._listar_instrumentos_metodo_sync, method_id)
+        except Exception as e:
+            logger.error(f"Error al listar instrumentos método {method_id}: {e}")
+            return []
 

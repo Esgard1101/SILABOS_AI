@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Clock, Loader2, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { AdminCourseItem, CourseDetail, PerformanceDB } from '../api/types';
+import { AdminCourseItem, CourseDetail, CurriculumHistoryItem, PerformanceDB } from '../api/types';
 import NavSidebar from '../components/NavSidebar';
 import Toast, { useToast } from '../components/Toast';
 
@@ -36,6 +36,11 @@ export default function AdminCurriculum() {
   const [editingPerfId, setEditingPerfId] = useState<string | null>(null);
   const [editingPerfText, setEditingPerfText] = useState('');
   const [savingPerfId, setSavingPerfId] = useState<string | null>(null);
+
+  // Curriculum history
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyItems, setHistoryItems] = useState<CurriculumHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const searchCourses = async (q: string) => {
     if (q.trim().length < 2) { setCourses([]); return; }
@@ -91,18 +96,34 @@ export default function AdminCurriculum() {
     }
   };
 
+  const loadHistory = async (courseId: string) => {
+    setLoadingHistory(true);
+    try {
+      const res = await api.getCourseCurriculumHistory(courseId);
+      setHistoryItems(res.data?.items || []);
+    } catch {
+      showToast('Error al cargar historial', 'error');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const toggleCourse = async (courseId: string) => {
     if (expandedCourseId === courseId) {
       setExpandedCourseId(null);
       setCourseDetail(null);
       setCurriculumEdit(null);
       setPerformances([]);
+      setShowHistory(false);
+      setHistoryItems([]);
       return;
     }
     setExpandedCourseId(courseId);
     setPerformances([]);
     setNewStatement('');
     setEditingPerfId(null);
+    setShowHistory(false);
+    setHistoryItems([]);
     await Promise.all([loadCourseDetail(courseId), loadPerformances(courseId)]);
   };
 
@@ -111,6 +132,7 @@ export default function AdminCurriculum() {
     setSavingCurriculum(true);
     try {
       await api.updateCourseCurriculum(expandedCourseId, curriculumEdit);
+      setHistoryItems([]);
       showToast('Currículum actualizado', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Error al guardar currículum', 'error');
@@ -298,7 +320,20 @@ export default function AdminCurriculum() {
                               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm bg-white"
                             />
                           </div>
-                          <div className="flex justify-end">
+                          <div className="flex items-center justify-between">
+                            <button
+                              onClick={async () => {
+                                const next = !showHistory;
+                                setShowHistory(next);
+                                if (next && historyItems.length === 0 && expandedCourseId) {
+                                  await loadHistory(expandedCourseId);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-orange-600"
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                              {showHistory ? 'Ocultar historial' : 'Ver historial de cambios'}
+                            </button>
                             <button
                               onClick={handleSaveCurriculum}
                               disabled={savingCurriculum}
@@ -308,6 +343,71 @@ export default function AdminCurriculum() {
                               {savingCurriculum ? 'Guardando…' : 'Guardar currículum'}
                             </button>
                           </div>
+
+                          {showHistory && (
+                            <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
+                              <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+                                <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  Historial de cambios curriculares
+                                </h4>
+                              </div>
+                              {loadingHistory ? (
+                                <div className="flex items-center gap-2 p-4 text-sm text-gray-500">
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Cargando…
+                                </div>
+                              ) : historyItems.length === 0 ? (
+                                <p className="text-sm text-gray-400 p-4">Sin cambios registrados.</p>
+                              ) : (
+                                <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                                  {historyItems.map((h) => {
+                                    const before = h.payload_before as Record<string, string> | null;
+                                    const after = h.payload_after as Record<string, string> | null;
+                                    const changed = after
+                                      ? Object.keys(after).filter(
+                                          (k) => after[k] !== before?.[k] && after[k] != null,
+                                        )
+                                      : [];
+                                    return (
+                                      <div key={h.id} className="px-4 py-3 text-xs">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <span className="font-semibold text-gray-700">
+                                            {h.changed_by_name || 'Sistema'}
+                                          </span>
+                                          <span className="text-gray-400">
+                                            {new Date(h.changed_at).toLocaleString('es-PE', {
+                                              day: '2-digit', month: 'short', year: 'numeric',
+                                              hour: '2-digit', minute: '2-digit',
+                                            })}
+                                          </span>
+                                        </div>
+                                        {changed.length > 0 ? (
+                                          <ul className="space-y-1">
+                                            {changed.map((k) => (
+                                              <li key={k} className="text-gray-600">
+                                                <span className="font-medium text-gray-700">{k}:</span>{' '}
+                                                {before?.[k] ? (
+                                                  <span className="line-through text-red-400 mr-1">
+                                                    {String(before[k]).slice(0, 60)}{String(before[k]).length > 60 ? '…' : ''}
+                                                  </span>
+                                                ) : null}
+                                                <span className="text-green-700">
+                                                  {String(after![k]).slice(0, 80)}{String(after![k]).length > 80 ? '…' : ''}
+                                                </span>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        ) : (
+                                          <span className="text-gray-400 italic">Sin diferencias detectadas</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Performances */}

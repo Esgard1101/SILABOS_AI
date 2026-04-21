@@ -88,6 +88,7 @@ def construir_prompt_silabo(
     skills_context: dict = None,
     grading_scheme: list = None,
     grading_requires_midterm_final: bool = False,
+    performances: list = None,
 ) -> str:
     """
     Construye el prompt en Markdown para generar un silabo universitario peruano.
@@ -201,6 +202,20 @@ NO inventes una secuencia diferente al metodo indicado.
         )
         bloque_skills = "\n".join(partes) + "\n"
 
+    # Bloque de desempeños oficiales (si los hay en BD)
+    bloque_performances = ""
+    if performances:
+        lineas_perf = ["## Desempeños Oficiales del Curso (USAR TEXTUAL, no modificar)"]
+        lineas_perf.append(
+            "Estos desempeños fueron definidos curricularmente. "
+            "Úsalos como base para el campo 'logro' de cada unidad temática en el mismo orden."
+        )
+        for p in performances:
+            code = p.get("code", "")
+            stmt = p.get("statement", "")
+            lineas_perf.append(f"- **{code}**: {stmt}" if code else f"- {stmt}")
+        bloque_performances = "\n".join(lineas_perf) + "\n"
+
     # Bloque de contexto del curso desde BD
     bloque_sumilla = ""
     sumilla = datos_curso.get("sumilla", "")
@@ -232,7 +247,7 @@ Generas silabos alineados al sistema educativo superior del Peru (Anexo C UNPRG)
 **Creditos:** {datos_curso.get("creditos")} | **Horas teoria:** {datos_curso.get("horas_teoria")} | **Horas practica:** {datos_curso.get("horas_practica")}
 **Semestre:** {datos_curso.get("semestre")} | **Docente:** {datos_curso.get("docente")}
 **Modalidad:** {datos_curso.get("modalidad")} | **Enfoque:** {enfoque}
-{bloque_sumilla}{bloque_metodo}{bloque_skills}{bloque_calificacion}{bloque_curricular}
+{bloque_sumilla}{bloque_performances}{bloque_metodo}{bloque_skills}{bloque_calificacion}{bloque_curricular}
 # ENFOQUE DIDACTICO
 {descripcion_enfoque}
 
@@ -240,11 +255,13 @@ Generas silabos alineados al sistema educativo superior del Peru (Anexo C UNPRG)
 PASO PREVIO - Analisis interno (no incluir en JSON):
 1. Lee la sumilla y resultado_aprendizaje para identificar los 4 bloques de contenido principales
 2. Para cada unidad tematica (1 a 4) deriva UN desempeno principal:
-   - Unidades 1-2: usa verbos de nivel Comprender o Aplicar del catalogo de habilidades
-   - Unidades 3-4: usa verbos de nivel Analizar, Evaluar o Crear del catalogo de habilidades
-   - Formato del desempeno: "Verbo accion + objeto disciplinar + condicion o contexto"
-   - Ejemplo correcto: "Analiza documentos curriculares identificando competencias del perfil de egreso"
-   - Ejemplo incorrecto: "Conoce los documentos curriculares"
+   - SI se proporcionaron "Desempeños Oficiales del Curso": usarlos directamente en el mismo orden para el campo "logro" de cada unidad. NO los reescribas ni parafrasees.
+   - SI NO hay desempeños oficiales: derivar desempeños desde sumilla usando estos criterios:
+     - Unidades 1-2: usa verbos de nivel Comprender o Aplicar del catalogo de habilidades
+     - Unidades 3-4: usa verbos de nivel Analizar, Evaluar o Crear del catalogo de habilidades
+     - Formato del desempeno: "Verbo accion + objeto disciplinar + condicion o contexto"
+     - Ejemplo correcto: "Analiza documentos curriculares identificando competencias del perfil de egreso"
+     - Ejemplo incorrecto: "Conoce los documentos curriculares"
 3. Por cada desempeno, elige la evidencia_sugerida mas pertinente del catalogo de habilidades
    para usarla en habilidades_requeridas y en sistema_evaluacion
 

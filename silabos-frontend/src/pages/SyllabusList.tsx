@@ -42,17 +42,21 @@ import {
 type VersionMap = Record<string, SyllabusVersion[]>;
 type LoadingMap = Record<string, boolean>;
 
+const REVIEW_MODULE_MESSAGE =
+  'Módulo de revisión académica en desarrollo. Estará disponible próximamente.';
+
 function getResponseErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
 function mapSyllabusItem(raw: Partial<SyllabusListItem> | SyllabusData): SyllabusListItem {
   const data = raw as SyllabusData;
+  const payload = getSyllabusPayload(raw);
 
   return {
     id: raw.id || data._id || '',
-    semester: raw.semester || data.datos_generales?.semestre || '',
-    teacher_name: raw.teacher_name || data.datos_generales?.docente || '',
+    semester: raw.semester || payload?.datos_generales?.semestre || data.datos_generales?.semestre || '',
+    teacher_name: raw.teacher_name || payload?.datos_generales?.docente || data.datos_generales?.docente || '',
     status: resolveSyllabusStatus(raw),
     created_at: raw.created_at || '',
     updated_at: raw.updated_at || raw.created_at || '',
@@ -69,10 +73,10 @@ function getSyllabusDataFromResponse(response: APIResponse): SyllabusData | null
   const payload = data.payload_json;
 
   if (payload && typeof payload === 'object') {
-    return payload as SyllabusData;
+    return getSyllabusPayload({ payload_json: payload as SyllabusData }) as SyllabusData | null;
   }
 
-  return data as unknown as SyllabusData;
+  return getSyllabusPayload(data as unknown as SyllabusData);
 }
 
 async function downloadExport(
@@ -192,6 +196,11 @@ export default function SyllabusList() {
     requestAction: () => Promise<APIResponse>,
     successMessage: string,
   ) => {
+    if (nextStatus === 'review') {
+      showToast(REVIEW_MODULE_MESSAGE, 'info');
+      return;
+    }
+
     setActionLoadingId(syllabusId);
 
     try {

@@ -6,6 +6,28 @@ const STATUS_OVERRIDES_KEY = 'syllabusStatusOverrides';
 type StatusOverrideMap = Record<string, SyllabusStatus>;
 type SyllabusLike = Partial<SyllabusListItem> | SyllabusData | null | undefined;
 
+function mergeFinalSyllabusPayload(payload: SyllabusData | null): SyllabusData | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const finalPayloadCandidate = (payload as SyllabusData & { final_syllabus?: unknown }).final_syllabus;
+  if (!finalPayloadCandidate || typeof finalPayloadCandidate !== 'object') {
+    return payload;
+  }
+
+  const finalPayload = finalPayloadCandidate as SyllabusData;
+  return {
+    ...payload,
+    ...finalPayload,
+    datos_generales: finalPayload.datos_generales || payload.datos_generales,
+    sistema_evaluacion: finalPayload.sistema_evaluacion || payload.sistema_evaluacion,
+    unidades_tematicas: finalPayload.unidades_tematicas || payload.unidades_tematicas,
+    cronograma_semanal: finalPayload.cronograma_semanal || payload.cronograma_semanal,
+    bibliografia: finalPayload.bibliografia || payload.bibliografia,
+  };
+}
+
 function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = sessionStorage.getItem(key);
@@ -63,6 +85,10 @@ export function resolveSyllabusStatus(
     return rawStatus;
   }
 
+  if (rawStatus === 'pending_academic_validation') {
+    return 'review';
+  }
+
   return fallback;
 }
 
@@ -74,10 +100,10 @@ export function getSyllabusPayload(
   }
 
   if (syllabus.payload_json && typeof syllabus.payload_json === 'object') {
-    return syllabus.payload_json;
+    return mergeFinalSyllabusPayload(syllabus.payload_json as SyllabusData);
   }
 
-  return syllabus as SyllabusData;
+  return mergeFinalSyllabusPayload(syllabus as SyllabusData);
 }
 
 export function getCourseName(syllabus: SyllabusLike): string {

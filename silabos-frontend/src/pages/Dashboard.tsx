@@ -17,6 +17,7 @@ import NavSidebar from '../components/NavSidebar';
 import Toast, { useToast } from '../components/Toast';
 import { useAuth } from '../hooks/useAuth';
 import { useAppContext } from '../hooks/useAppContext';
+import { getCourseName, getSemesterName } from '../utils/syllabusStorage';
 
 function formatDate(value?: string | null) {
   if (!value) return 'Sin fecha';
@@ -335,8 +336,7 @@ export default function Dashboard() {
             ) : (
               <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 {recentSyllabi.map((s) => {
-                  const courseName =
-                    s.payload_json?.datos_generales?.nombre_curso || 'Sílabo sin nombre';
+                  const courseName = getCourseName(s) || 'Sílabo sin nombre';
                   const status = s.status || 'draft';
                   return (
                     <button
@@ -357,7 +357,7 @@ export default function Dashboard() {
                       <h4 className="font-bold text-slate-800 text-sm line-clamp-2 mb-1">
                         {courseName}
                       </h4>
-                      <p className="text-xs text-slate-500">{s.semester || '—'}</p>
+                      <p className="text-xs text-slate-500">{getSemesterName(s)}</p>
                       <p className="text-xs text-slate-400 mt-2">
                         Actualizado: {formatDate(s.updated_at)}
                       </p>

@@ -9,6 +9,7 @@ import {
   CompatibleSkillsResponse,
   CourseSumillaHistoryItem,
   CourseSumillaHistoryResponse,
+  CurriculumHistoryItem,
   CourseDetail,
   CourseListItem,
   DocumentListResponse,
@@ -400,6 +401,11 @@ export const api = {
       `/api/courses/${encodeURIComponent(courseId)}`,
     ),
 
+  getCoursePerformances: (courseId: string) =>
+    request<APIResponse<{ items: PerformanceDB[] }>>(
+      `/api/courses/${encodeURIComponent(courseId)}/performances`,
+    ),
+
   getPedagogicMethods: () =>
     request<{ success: boolean; data: MethodItem[]; error: string | null }>('/api/methods'),
 
@@ -607,7 +613,7 @@ export const api = {
     }),
 
   getCourseCurriculumHistory: (courseId: string) =>
-    request<APIResponse<{ items: CourseSumillaHistoryItem[] }>>(
+    request<APIResponse<{ items: CurriculumHistoryItem[] }>>(
       `/api/admin/courses/${encodeURIComponent(courseId)}/curriculum-history`,
     ),
 
@@ -703,4 +709,76 @@ export const api = {
       `/api/methods/${encodeURIComponent(methodId)}/skills${q ? `?${q}` : ''}`,
     );
   },
+
+  // ── Wizard Progresivo v3 ──────────────────────────────────────────────────
+
+  createOrGetProgressiveDraft: (courseId: string, semester: string, programId?: string | null) =>
+    request<APIResponse<import('./types').ProgressiveDraft>>('/api/syllabi/progressive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ course_id: courseId, semester, program_id: programId ?? null }),
+    }),
+
+  getProgressiveDraft: (syllabusId: string) =>
+    request<APIResponse<import('./types').ProgressiveDraft>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive`,
+    ),
+
+  saveProgressiveStep: (syllabusId: string, stepKey: string, blockData: Record<string, unknown>) =>
+    request<APIResponse>(`/api/syllabi/${encodeURIComponent(syllabusId)}/steps/${stepKey}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ block_data: blockData }),
+    }),
+
+  suggestPerformances: (syllabusId: string) =>
+    request<APIResponse<{ performances: import('./types').SuggestedPerformance[]; origin: string }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/purpose/suggest-performances`,
+      { method: 'POST' },
+      60000,
+    ),
+
+  suggestContent: (syllabusId: string) =>
+    request<APIResponse<import('./types').ContentSuggestion>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/content/suggest`,
+      { method: 'POST' },
+      60000,
+    ),
+
+  suggestMethodProgressive: (syllabusId: string) =>
+    request<APIResponse<import('./types').MethodSuggest>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/method/suggest`,
+      { method: 'POST' },
+      60000,
+    ),
+
+  suggestGrading: (syllabusId: string) =>
+    request<APIResponse<import('./types').GradingSuggestion>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/grading/suggest`,
+      { method: 'POST' },
+      60000,
+    ),
+
+  assembleFinal: (syllabusId: string) =>
+    request<APIResponse<{ syllabus_id: string; assembled: boolean; requires_academic_validation: boolean; final_syllabus: Record<string, unknown> }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/assemble-final`,
+      { method: 'POST' },
+      30000,
+    ),
+
+  submitAcademicValidation: (syllabusId: string) =>
+    request<APIResponse>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/submit-academic-validation`,
+      { method: 'POST' },
+    ),
+
+  getMethodEvidences: (methodId: string) =>
+    request<APIResponse<{ items: import('./types').EvidenceCatalogItem[] }>>(
+      `/api/methods/${encodeURIComponent(methodId)}/evidences`,
+    ),
+
+  getMethodInstruments: (methodId: string) =>
+    request<APIResponse<{ items: import('./types').InstrumentCatalogItem[] }>>(
+      `/api/methods/${encodeURIComponent(methodId)}/instruments`,
+    ),
 };

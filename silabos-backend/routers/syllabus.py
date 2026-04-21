@@ -6,6 +6,7 @@
 
 import json
 import logging
+import os
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -512,6 +513,11 @@ async def generar_silabo_v2(
                     "instrumentos_evaluacion": m0.get("instrumentos_evaluacion", []),
                 }
 
+        # Resolver desempeños: oficiales de BD o fallback IA
+        performances_db = await supabase.listar_performances_curso(datos.course_id)
+        performances_origin = "official" if performances_db else "ai_fallback"
+        performances_for_prompt = performances_db if performances_db else []
+
         # Construir datos para el prompt con info del curso desde BD
         datos_prompt = {
             "nombre_curso": curso.get("name", ""),
@@ -561,6 +567,7 @@ async def generar_silabo_v2(
             skills_context=skills_context,
             grading_scheme=grading_list,
             grading_requires_midterm_final=datos.grading_requires_midterm_final,
+            performances=performances_for_prompt,
         )
 
         silabo = await gemini.generar_silabo_desde_prompt(prompt)
@@ -622,12 +629,47 @@ async def generar_silabo_v2(
         if refs_precargadas_v2:
             _mezclar_bibliografia(silabo, refs_precargadas_v2)
 
-        # Guardar en BD (incluye teaching_method_id para trazabilidad)
+        # ── Snapshot de trazabilidad v2 (_meta) ──────────────────────────────
+        # Construir lista de skills seleccionadas para el snapshot
+        skills_snapshot = []
+        if selected_ids:
+            try:
+                raw_skills = await supabase.listar_skills_raw_por_ids(selected_ids)
+            except Exception:
+                raw_skills = []
+            skills_snapshot = [
+                {
+                    "id": str(s.get("id", "")),
+                    "nombre": s.get("nombre", ""),
+                    "categoria": s.get("categoria", ""),
+                    "verbo_principal": s.get("verbo_principal", ""),
+                }
+                for s in raw_skills
+            ]
+
+        method_snapshot = None
+        if metodo_dict and method_uuid:
+            method_snapshot = {"id": method_uuid, **metodo_dict}
+
+        silabo["_meta"] = {
+            "version": "v2",
+            "performances_origin": performances_origin,
+            "performances_used": [
+                {"code": p.get("code", ""), "statement": p.get("statement", "")}
+                for p in performances_for_prompt
+            ],
+            "selected_skills_snapshot": skills_snapshot,
+            "method_snapshot": method_snapshot,
+        }
+
+        # Guardar en BD (incluye teaching_method_id + methodology_json para trazabilidad)
+        methodology_json = method_snapshot
         silabo_guardado = await supabase.guardar_silabo(
             silabo,
             user_id=user_id,
             status="draft",
             teaching_method_id=method_uuid,
+            methodology_json=methodology_json,
         )
         if not silabo_guardado.get("id"):
             raise HTTPException(status_code=500, detail="No se pudo guardar el sílabo generado")
@@ -819,37 +861,10 @@ async def enviar_revision(
     request: Request,
     current_user: dict = Depends(get_current_user_record),
 ):
-    """Cambia el status a 'review' (enviar a revisión)."""
-    servicios = _obtener_servicios(request)
-    supabase = servicios.get("supabase")
-    if not supabase:
-        raise HTTPException(503, "DB no disponible")
-
-    # Fetch without user_id filter so legacy rows (user_id IS NULL) are found
-    registro = await supabase.obtener_silabo(syllabus_id)
-    if not registro:
-        raise HTTPException(404, "Sílabo no encontrado")
-
-    # Ownership check for docentes; NULL user_id = legacy row → allow submitter
-    scope_user_id = _get_scope_user_id(current_user)
-    if scope_user_id is not None:
-        row_user_id = registro.get("user_id")
-        if row_user_id is not None and str(row_user_id) != str(scope_user_id):
-            raise HTTPException(403, "No tienes permiso para enviar este sílabo a revisión")
-
-    # Guard: only editable statuses can transition to review
-    current_status = registro.get("status", "draft")
-    if current_status not in ("draft", "generated", "returned"):
-        raise HTTPException(400, f"No se puede enviar a revisión desde el estado '{current_status}'")
-
-    ok = await supabase.actualizar_status(syllabus_id, "review")
-    if not ok:
-        raise HTTPException(500, "Error al actualizar el estado del sílabo")
-
-    return APIResponse(
-        success=True,
-        data={"status": "review"},
-        error=None,
+    """Módulo legacy de envío a revisión temporalmente deshabilitado."""
+    raise HTTPException(
+        status_code=503,
+        detail="Módulo de revisión académica en desarrollo. Estará disponible próximamente.",
     )
 
 

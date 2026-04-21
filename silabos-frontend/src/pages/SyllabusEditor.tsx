@@ -25,12 +25,15 @@ import {
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import { CourseDetail, CriterioEvaluacion, SyllabusData, SyllabusStatus, ValidationObservation, ValidationResult } from '../api/types';
+import { CourseDetail, CriterioEvaluacion, EvaluacionMatrizRow, SyllabusData, SyllabusStatus, ValidationObservation, ValidationResult } from '../api/types';
 import BibliographyGuide from '../components/BibliographyGuide';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
 import { useAppContext } from '../hooks/useAppContext';
 import { useAuth } from '../hooks/useAuth';
+
+const REVIEW_MODULE_MESSAGE =
+  'Módulo de revisión académica en desarrollo. Estará disponible próximamente.';
 
 interface ContentRow {
   desempeno: string;
@@ -59,12 +62,39 @@ function EditableField({
   value,
   onChange,
   placeholder,
+  multiline = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  multiline?: boolean;
 }) {
   const isEmpty = !value || value === '—';
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    if (multiline && ref.current) {
+      ref.current.style.height = 'auto';
+      ref.current.style.height = `${ref.current.scrollHeight}px`;
+    }
+  }, [value, multiline]);
+
+  const sharedClass = `w-full bg-transparent focus:outline-none focus:border-orange-500 text-sm leading-relaxed ${
+    isEmpty ? 'text-slate-400 border-dashed border-slate-300' : 'text-slate-900 border-transparent'
+  }`;
+
+  if (multiline) {
+    return (
+      <textarea
+        ref={ref}
+        rows={1}
+        value={isEmpty ? '' : value}
+        onChange={(e) => onChange(e.target.value || '—')}
+        placeholder={placeholder || 'Completar...'}
+        className={`${sharedClass} resize-none overflow-hidden border-b py-0.5`}
+      />
+    );
+  }
 
   return (
     <input
@@ -72,11 +102,7 @@ function EditableField({
       value={isEmpty ? '' : value}
       onChange={(e) => onChange(e.target.value || '—')}
       placeholder={placeholder || 'Completar...'}
-      className={`w-full border-b text-sm py-0.5 bg-transparent focus:outline-none focus:border-orange-500 ${
-        isEmpty
-          ? 'border-dashed border-slate-300 text-slate-400'
-          : 'border-transparent text-slate-900'
-      }`}
+      className={`${sharedClass} border-b py-0.5`}
     />
   );
 }
@@ -139,10 +165,20 @@ function normalizeSyllabusRecord(record: SyllabusData | null): SyllabusData | nu
     return null;
   }
 
-  const payload =
+  const rawPayload =
     record.payload_json && typeof record.payload_json === 'object'
       ? (record.payload_json as SyllabusData)
       : record;
+  const finalPayloadCandidate = (rawPayload as SyllabusData & { final_syllabus?: unknown }).final_syllabus;
+  const payload =
+    finalPayloadCandidate && typeof finalPayloadCandidate === 'object'
+      ? {
+          ...rawPayload,
+          ...(finalPayloadCandidate as SyllabusData),
+          datos_generales:
+            (finalPayloadCandidate as SyllabusData).datos_generales || rawPayload.datos_generales,
+        }
+      : rawPayload;
 
   return {
     ...payload,
@@ -250,7 +286,16 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
   });
 }
 
-function buildEvaluationRows(unitSections: UnitSection[]): EvaluationRow[] {
+function buildEvaluationRows(unitSections: UnitSection[], matriz?: EvaluacionMatrizRow[]): EvaluationRow[] {
+  if (matriz && matriz.length > 0) {
+    return matriz.map((item) => ({
+      desempeno: item.desempeno || '—',
+      habilidades: Array.isArray(item.habilidades) ? (item.habilidades.join('\n') || '—') : (item.habilidades || '—'),
+      evidencias: item.evidencias || '—',
+      instrumentos: item.instrumentos || '—',
+    }));
+  }
+
   return unitSections.map((section) => ({
     desempeno: section.rows[0]?.desempeno || '—',
     habilidades: section.habilidades,
@@ -514,7 +559,15 @@ export default function SyllabusEditor() {
 
   const desempenos = useMemo(() => (syllabus ? normalizeDesempenos(syllabus) : ['D1. —']), [syllabus]);
   const unitSections = useMemo(() => (syllabus ? buildUnitSections(syllabus, desempenos) : []), [desempenos, syllabus]);
-  const evaluationRows = useMemo(() => buildEvaluationRows(unitSections), [unitSections]);
+  const [editableUnits, setEditableUnits] = useState<UnitSection[]>([]);
+
+  useEffect(() => {
+    setEditableUnits(unitSections);
+  }, [unitSections]);
+  const evaluationRows = useMemo(
+    () => buildEvaluationRows(unitSections, syllabus?.evaluacion_matriz),
+    [unitSections, syllabus?.evaluacion_matriz],
+  );
   const gradingRows = useMemo(
     () => buildGradingRows(syllabus?.sistema_evaluacion?.criterios),
     [syllabus?.sistema_evaluacion?.criterios],
@@ -577,6 +630,47 @@ export default function SyllabusEditor() {
           }
         : prev,
     );
+  };
+
+  const updateUnitCell = (
+    unitIdx: number,
+    rowIdx: number,
+    field: keyof ContentRow,
+    value: string,
+  ) => {
+    setEditableUnits((prev) => {
+      const next = prev.map((unit, ui) => {
+        if (ui !== unitIdx) return unit;
+        return {
+          ...unit,
+          rows: unit.rows.map((row, ri) => (ri !== rowIdx ? row : { ...row, [field]: value })),
+        };
+      });
+
+      // Persist to sessionStorage so handleSaveDraft picks up edits
+      const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || '{}');
+      const cronograma = current.cronograma_semanal || [];
+      // Rebuild cronograma_semanal from editable units
+      const updatedCronograma = next.flatMap((unit) =>
+        unit.rows.map((row) => ({
+          semana: parseInt(row.semana.replace(/\D/g, '')) || 0,
+          tema: row.conocimientos,
+          actividad: row.actividades,
+          producto: row.evidencias,
+        })),
+      );
+      // Only update if rows are schedule-based (have numeric semana)
+      const hasSchedule = updatedCronograma.some((r) => r.semana > 0);
+      sessionStorage.setItem(
+        'currentSyllabus',
+        JSON.stringify({
+          ...current,
+          cronograma_semanal: hasSchedule ? updatedCronograma : cronograma,
+        }),
+      );
+
+      return next;
+    });
   };
 
   const handleShare = async () => {
@@ -654,13 +748,7 @@ export default function SyllabusEditor() {
       return;
     }
 
-    try {
-      await api.submitForReview(syllabusId);
-      showToast('Sílabo enviado a revisión ✓', 'success');
-      updateStoredSyllabusStatus('review');
-    } catch {
-      showToast('No se pudo enviar a revisión', 'error');
-    }
+    showToast(REVIEW_MODULE_MESSAGE, 'info');
   };
 
   const handlePublish = async () => {
@@ -917,15 +1005,23 @@ export default function SyllabusEditor() {
           <section id="programa-contenidos" className="mb-8 scroll-mt-24">
             <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VI. Programa de Contenidos</h3>
             <div className="space-y-6">
-              {unitSections.map((section) => (
+              {editableUnits.map((section, unitIdx) => (
                 <div key={section.id}>
                   <h4 className="font-bold text-sm mb-2">{section.title}</h4>
-                  <table className="w-full border border-slate-300 border-collapse text-xs">
+                  <table className="w-full border border-slate-300 border-collapse text-xs table-fixed">
+                    <colgroup>
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '18%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '18%' }} />
+                      <col style={{ width: '15%' }} />
+                    </colgroup>
                     <thead>
                       <tr className="bg-slate-50">
                         <th className="border border-slate-300 p-2 text-left">Desempeños</th>
                         <th className="border border-slate-300 p-2 text-left">Habilidades requeridas</th>
-                        <th className="border border-slate-300 p-2 text-left">Semana (Fecha)</th>
+                        <th className="border border-slate-300 p-2 text-left">Semana</th>
                         <th className="border border-slate-300 p-2 text-left">Conocimientos</th>
                         <th className="border border-slate-300 p-2 text-left">Actividades</th>
                         <th className="border border-slate-300 p-2 text-left">Evidencias de Aprendizaje</th>
@@ -947,10 +1043,38 @@ export default function SyllabusEditor() {
                               {section.habilidades}
                             </td>
                           )}
-                          <td className="border border-slate-300 p-2">{row.semana}</td>
-                          <td className="border border-slate-300 p-2">{row.conocimientos}</td>
-                          <td className="border border-slate-300 p-2">{row.actividades}</td>
-                          <td className="border border-slate-300 p-2">{row.evidencias}</td>
+                          <td className="border border-slate-300 p-2 align-top">
+                            <EditableField
+                              value={row.semana}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'semana', v)}
+                              placeholder="Semana..."
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-2 align-top">
+                            <EditableField
+                              value={row.conocimientos}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'conocimientos', v)}
+                              placeholder="Conocimientos..."
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-2 align-top">
+                            <EditableField
+                              value={row.actividades}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'actividades', v)}
+                              placeholder="Actividades..."
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-2 align-top">
+                            <EditableField
+                              value={row.evidencias}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'evidencias', v)}
+                              placeholder="Evidencias..."
+                              multiline
+                            />
+                          </td>
                         </tr>
                       ))}
                     </tbody>

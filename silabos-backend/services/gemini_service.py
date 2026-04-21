@@ -698,6 +698,196 @@ Responde UNICAMENTE con informacion de los documentos proporcionados.
             logger.error("Error en chat con documentos: %s", exc)
             return f"Error al procesar la consulta: {exc}"
 
+    async def sugerir_desempenos(self, curso: dict, bibliografia: list[str] | None = None) -> list[dict]:
+        """Genera desempeños sugeridos basados en la sumilla, competencia y capacidad del curso."""
+        biblio_ctx = ""
+        if bibliografia:
+            biblio_ctx = "\nREFERENCIAS BIBLIOGRÁFICAS DISPONIBLES:\n" + "\n".join(f"- {r}" for r in bibliografia[:5])
+
+        prompt = f"""Eres un experto en diseño curricular universitario peruano.
+Genera entre 3 y 5 desempeños de aprendizaje para el curso indicado, derivados de la sumilla, competencia y capacidad.
+
+REGLAS:
+- Cada desempeño inicia con un VERBO en infinitivo (Bloom revisado)
+- Son observables y medibles
+- Se derivan del propósito del curso (competencia + capacidad)
+- No inventes contenido ajeno a la sumilla
+- Responde ÚNICAMENTE con JSON válido, sin markdown
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:500]}
+COMPETENCIA DE EGRESO: {str(curso.get("competencia_egreso", ""))[:300]}
+RESULTADO DE APRENDIZAJE: {str(curso.get("resultado_aprendizaje", ""))[:300]}
+CAPACIDAD: {str(curso.get("capacidad", ""))[:200]}
+{biblio_ctx}
+
+Responde con este formato exacto:
+[
+  {{"code": "D1", "statement": "Verbo + objeto + condición..."}},
+  {{"code": "D2", "statement": "Verbo + objeto + condición..."}}
+]"""
+
+        resultado = await self.generate_json("suggest_performances", prompt)
+        if isinstance(resultado, list):
+            return resultado
+        return []
+
+    async def sugerir_contenido(
+        self,
+        curso: dict,
+        desempenos: list[dict],
+        bibliografia: list[str] | None = None,
+    ) -> dict:
+        """Sugiere conocimientos, habilidades (por desempeño) y actitudes derivados del propósito."""
+        desempenos_lista = desempenos[:6]
+        desempenos_texto = "\n".join(
+            f"- [{d.get('code', f'D{i+1}')}] {d.get('statement', '')}"
+            for i, d in enumerate(desempenos_lista)
+        )
+        biblio_ctx = ""
+        if bibliografia:
+            biblio_ctx = "\nREFERENCIAS:\n" + "\n".join(f"- {r}" for r in bibliografia[:4])
+
+        prompt = f"""Eres un experto en diseño curricular universitario peruano.
+Dado el propósito del curso (desempeños), deriva los tres componentes del CONTENIDO FORMATIVO.
+
+REGLA CENTRAL: cada desempeño debe vincularse con habilidades específicas que el estudiante desarrollará para lograrlo.
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:400]}
+DESEMPEÑOS (con códigos):
+{desempenos_texto}
+{biblio_ctx}
+
+Genera exactamente este JSON (sin markdown ni texto adicional):
+{{
+  "habilidades_por_desempeno": [
+    {{"desempeno_code": "D1", "habilidades": ["Habilidad específica 1a", "Habilidad específica 1b"]}},
+    {{"desempeno_code": "D2", "habilidades": ["Habilidad específica 2a"]}}
+  ],
+  "conocimientos": ["Conocimiento 1", "Conocimiento 2", "Conocimiento 3", "Conocimiento 4"],
+  "actitudes": ["Actitud 1", "Actitud 2", "Actitud 3"]
+}}
+
+REGLAS OBLIGATORIAS:
+- habilidades_por_desempeno: genera EXACTAMENTE un objeto por cada desempeño recibido
+- Por cada desempeño: entre 1 y 3 habilidades ESPECÍFICAS derivadas de ese desempeño
+- Cada habilidad inicia con un VERBO cognitivo de Bloom (analizar, diseñar, aplicar, evaluar, crear, comparar, resolver, etc.)
+- Las habilidades son observables y medibles, no genéricas
+- conocimientos: 4-6 temas conceptuales específicos del área del curso
+- actitudes: 3-4 disposiciones valorativas o éticas relevantes
+- Responde SOLO el JSON, sin explicaciones"""
+
+        resultado = await self.generate_json("suggest_content", prompt)
+        if isinstance(resultado, dict):
+            # Build flat habilidades_sugeridas from structured list for backwards compat
+            hpd = resultado.get("habilidades_por_desempeno", [])
+            flat = [h for item in hpd for h in item.get("habilidades", [])]
+            resultado["habilidades_sugeridas"] = flat
+            return resultado
+        return {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": [], "habilidades_por_desempeno": []}
+
+    async def sugerir_calificacion(
+        self,
+        metodo: dict,
+        curso: dict,
+        desempenos: list[dict] | None = None,
+    ) -> list[dict]:
+        """Sugiere tabla de calificación compatible con el método pedagógico seleccionado."""
+        desempenos_texto = ""
+        if desempenos:
+            desempenos_texto = "\nDESEMPEÑOS:\n" + "\n".join(
+                f"- {d.get('statement', '')}" for d in desempenos[:3]
+            )
+
+        prompt = f"""Eres un experto en evaluación educativa universitaria peruana.
+Propón una tabla de calificación (sistema de evaluación) compatible con el método pedagógico indicado.
+
+MÉTODO PEDAGÓGICO: {metodo.get("name", "")}
+CURSO: {curso.get("name", "")}
+{desempenos_texto}
+
+REGLAS:
+- La suma de porcentajes debe ser exactamente 100
+- Incluir entre 3 y 5 evidencias de evaluación
+- Cada evidencia debe ser coherente con el método pedagógico
+- Las siglas deben ser cortas (2-4 caracteres)
+- Responde SOLO JSON válido, sin markdown
+
+Formato exacto:
+[
+  {{"evidencia": "Nombre de la evidencia", "sigla": "SG", "porcentaje": 40, "cronograma": "Permanente"}},
+  {{"evidencia": "Producto 1", "sigla": "P1", "porcentaje": 20, "cronograma": "Semana 8"}},
+  {{"evidencia": "Producto 2", "sigla": "P2", "porcentaje": 40, "cronograma": "Semana 15"}}
+]"""
+
+        resultado = await self.generate_json("suggest_grading", prompt)
+        if isinstance(resultado, list):
+            return resultado
+        return []
+
+    async def sugerir_instrumentos_por_desempeno(
+        self,
+        desempenos: list[dict],
+        habilidades_por_desempeno: list[dict],
+        grading_rows: list[dict],
+        method_name: str,
+        course_name: str,
+        sumilla: str = "",
+    ) -> list[dict]:
+        """Genera instrumentos de evaluación específicos al curso por cada desempeño.
+        Retorna [{desempeno_code, instrumentos: [str]}].
+        """
+        hab_map = {item["desempeno_code"]: item.get("habilidades", []) for item in habilidades_por_desempeno}
+        evidencias_disponibles = [r.get("evidencia", "") for r in grading_rows if r.get("evidencia")]
+
+        desempenos_detalle = "\n".join(
+            f'- [{d.get("codigo", f"D{i+1}")}] {d.get("descripcion", "")}'
+            f'\n  Habilidades: {", ".join(hab_map.get(d.get("codigo", f"D{i+1}"), []) or ["no especificadas"])}'
+            for i, d in enumerate(desempenos[:6])
+        )
+
+        prompt = f"""Eres un experto en evaluación educativa universitaria peruana.
+Diseña instrumentos de evaluación ESPECÍFICOS para el contexto del curso.
+Los instrumentos deben ser concretos y nombrar qué evalúan, NO genéricos.
+
+CURSO: {course_name}
+SUMILLA: {sumilla[:300] if sumilla else "No disponible"}
+MÉTODO: {method_name}
+EVIDENCIAS DE EVALUACIÓN: {", ".join(evidencias_disponibles) or "Tareas, Productos, Examen"}
+
+DESEMPEÑOS Y HABILIDADES:
+{desempenos_detalle}
+
+INSTRUMENTOS PERMITIDOS (solo usar estos tipos, pero nombrarlos específicamente al curso):
+- Rúbrica analítica [ej: "Rúbrica analítica de diseño de wireframe"]
+- Lista de cotejo [ej: "Lista de cotejo de estructura HTML5"]
+- Escala de valoración [ej: "Escala de valoración de argumentación científica"]
+- Guía de observación [ej: "Guía de observación de práctica de laboratorio"]
+- Prueba objetiva [ej: "Prueba objetiva de fundamentos de microeconomía"]
+- Prueba de ensayo [ej: "Prueba de ensayo argumentativo"]
+- Rúbrica de desempeño [ej: "Rúbrica de desempeño de exposición oral"]
+- Ficha de autoevaluación [ej: "Ficha de autoevaluación del proceso de investigación"]
+- Ficha de coevaluación [ej: "Ficha de coevaluación de trabajo cooperativo"]
+
+REGLAS:
+- Asigna 2-3 instrumentos por desempeño
+- Nombres concretos que mencionen el contenido del curso
+- El primer instrumento siempre debe ser la Rúbrica analítica (primario)
+- Los siguientes deben complementar según el tipo de desempeño
+- Responde SOLO JSON válido sin markdown
+
+Formato exacto:
+[
+  {{"desempeno_code": "D1", "instrumentos": ["Rúbrica analítica de...", "Lista de cotejo de..."]}},
+  {{"desempeno_code": "D2", "instrumentos": ["Rúbrica analítica de...", "Guía de observación de..."]}}
+]"""
+
+        resultado = await self.generate_json("suggest_instruments", prompt)
+        if isinstance(resultado, list) and resultado and isinstance(resultado[0], dict):
+            return resultado
+        return []
+
     async def verificar_conexion(self) -> bool:
         try:
             await self._call_gemini("health_gemini", "ping", TaskConfig("gemini", 0.0, 16))

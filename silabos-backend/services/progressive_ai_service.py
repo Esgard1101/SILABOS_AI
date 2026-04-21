@@ -1,0 +1,243 @@
+import json
+import logging
+import os
+import re
+from typing import Any
+
+from google import genai
+from google.genai import types
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+
+_client: genai.Client | None = None
+_service: "ProgressiveAIService | None" = None
+
+
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        _client = genai.Client()
+    return _client
+
+
+def _extract_json(text: str) -> str:
+    text = re.sub(r"```(?:json)?\s*", "", text or "")
+    text = re.sub(r"```", "", text)
+    text = text.strip()
+    starts = [(text.find("["), "["), (text.find("{"), "{")]
+    starts = [(idx, ch) for idx, ch in starts if idx != -1]
+    if starts:
+        first_idx, first_char = min(starts, key=lambda item: item[0])
+        end_char = "]" if first_char == "[" else "}"
+        end_idx = text.rfind(end_char)
+        if end_idx != -1 and end_idx > first_idx:
+            return text[first_idx : end_idx + 1]
+    return text
+
+
+def _parse_json_text(text: str) -> Any:
+    cleaned = _extract_json(text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        starts = [idx for idx in (cleaned.find("["), cleaned.find("{")) if idx != -1]
+        if not starts:
+            raise
+        start_idx = min(starts)
+        obj, _end = decoder.raw_decode(cleaned[start_idx:])
+        return obj
+
+
+class ProgressiveAIService:
+    """
+    Servicio IA especifico para el wizard progresivo.
+
+    Usa GEMINI_MODEL por defecto y permite overrides opcionales por step:
+    - PROGRESSIVE_PURPOSE_MODEL
+    - PROGRESSIVE_CONTENT_MODEL
+    - PROGRESSIVE_GRADING_MODEL
+
+    Ninguno es obligatorio.
+    """
+
+    def __init__(self) -> None:
+        self.client = _get_client()
+        self.default_model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+        self.purpose_model = (
+            os.getenv("PROGRESSIVE_PURPOSE_MODEL", "").strip() or self.default_model
+        )
+        self.content_model = (
+            os.getenv("PROGRESSIVE_CONTENT_MODEL", "").strip() or self.default_model
+        )
+        self.grading_model = (
+            os.getenv("PROGRESSIVE_GRADING_MODEL", "").strip() or self.default_model
+        )
+
+    async def _generate_json(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float,
+        max_output_tokens: int,
+    ) -> Any:
+        response = self.client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                response_mime_type="application/json",
+            ),
+        )
+        raw_text = response.text or ""
+        try:
+            return _parse_json_text(raw_text)
+        except json.JSONDecodeError:
+            logger.warning("No se pudo parsear JSON del step progresivo | raw=%r", raw_text[:800])
+            raise
+
+    async def sugerir_desempenos(
+        self,
+        curso: dict,
+        bibliografia: list[str] | None = None,
+    ) -> list[dict]:
+        biblio_ctx = ""
+        if bibliografia:
+            biblio_ctx = (
+                "\nREFERENCIAS BIBLIOGRAFICAS DISPONIBLES:\n"
+                + "\n".join(f"- {r}" for r in bibliografia[:5])
+            )
+
+        prompt = f"""Eres un experto en diseno curricular universitario peruano.
+Genera entre 3 y 5 desempenos de aprendizaje para el curso indicado, derivados de la sumilla, competencia y capacidad.
+
+REGLAS:
+- Cada desempeno inicia con un verbo en infinitivo.
+- Deben ser observables y medibles.
+- Deben derivarse del proposito del curso.
+- No inventes contenido ajeno a la sumilla.
+- Responde UNICAMENTE con JSON valido, sin markdown.
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:500]}
+COMPETENCIA DE EGRESO: {str(curso.get("competencia_egreso", ""))[:300]}
+RESULTADO DE APRENDIZAJE: {str(curso.get("resultado_aprendizaje", ""))[:300]}
+CAPACIDAD: {str(curso.get("capacidad", ""))[:250]}
+{biblio_ctx}
+
+Responde exactamente este formato:
+[
+  {{"code": "D1", "statement": "Verbo + objeto + condicion"}},
+  {{"code": "D2", "statement": "Verbo + objeto + condicion"}}
+]"""
+
+        payload = await self._generate_json(
+            model=self.purpose_model,
+            prompt=prompt,
+            temperature=0.2,
+            max_output_tokens=2048,
+        )
+        return payload if isinstance(payload, list) else []
+
+    async def sugerir_contenido(
+        self,
+        curso: dict,
+        desempenos: list[dict],
+        bibliografia: list[str] | None = None,
+    ) -> dict:
+        desempenos_texto = "\n".join(
+            f"- {d.get('statement', d.get('code', ''))}" for d in desempenos[:5]
+        )
+        biblio_ctx = ""
+        if bibliografia:
+            biblio_ctx = "\nREFERENCIAS:\n" + "\n".join(f"- {r}" for r in bibliografia[:4])
+
+        prompt = f"""Eres un experto en diseno curricular universitario peruano.
+Dado el proposito del curso, deriva los tres componentes del contenido formativo.
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:450]}
+DESEMPENOS:
+{desempenos_texto}
+{biblio_ctx}
+
+Responde exactamente este JSON:
+{{
+  "conocimientos": ["Tema 1", "Tema 2", "Tema 3", "Tema 4"],
+  "actitudes": ["Actitud 1", "Actitud 2", "Actitud 3"],
+  "habilidades_sugeridas": ["Habilidad 1", "Habilidad 2"]
+}}
+
+REGLAS:
+- conocimientos: 4 a 6 temas especificos
+- actitudes: 3 a 4 disposiciones valorativas
+- habilidades_sugeridas: 2 a 4 habilidades clave
+- Responde SOLO JSON, sin texto adicional"""
+
+        payload = await self._generate_json(
+            model=self.content_model,
+            prompt=prompt,
+            temperature=0.2,
+            max_output_tokens=2048,
+        )
+        if isinstance(payload, dict):
+            return payload
+        return {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": []}
+
+    async def sugerir_calificacion(
+        self,
+        metodo: dict,
+        curso: dict,
+        desempenos: list[dict] | None = None,
+    ) -> list[dict]:
+        desempenos_texto = ""
+        if desempenos:
+            desempenos_texto = "\nDESEMPENOS:\n" + "\n".join(
+                f"- {d.get('statement', '')}" for d in desempenos[:3]
+            )
+
+        prompt = f"""Eres un experto en evaluacion educativa universitaria peruana.
+Propone una tabla de calificacion compatible con el metodo pedagogico indicado.
+
+METODO PEDAGOGICO: {metodo.get("name", "")}
+CURSO: {curso.get("name", "")}
+{desempenos_texto}
+
+REGLAS:
+- La suma de porcentajes debe ser exactamente 100.
+- Incluir entre 3 y 5 evidencias.
+- Cada evidencia debe ser coherente con el metodo pedagogico.
+- Las siglas deben ser cortas.
+- Responde SOLO JSON valido.
+
+Formato exacto:
+[
+  {{"evidencia": "Tareas", "sigla": "TA", "porcentaje": 40, "cronograma": "Permanente"}},
+  {{"evidencia": "Producto 1", "sigla": "P1", "porcentaje": 30, "cronograma": "Semana 8"}},
+  {{"evidencia": "Producto 2", "sigla": "P2", "porcentaje": 30, "cronograma": "Semana 15"}}
+]"""
+
+        payload = await self._generate_json(
+            model=self.grading_model,
+            prompt=prompt,
+            temperature=0.2,
+            max_output_tokens=2048,
+        )
+        return payload if isinstance(payload, list) else []
+
+
+def get_progressive_ai_service() -> ProgressiveAIService:
+    global _service
+    if _service is None:
+        _service = ProgressiveAIService()
+        logger.info(
+            "ProgressiveAIService inicializado | purpose=%s | content=%s | grading=%s",
+            _service.purpose_model,
+            _service.content_model,
+            _service.grading_model,
+        )
+    return _service

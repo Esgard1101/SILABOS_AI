@@ -84,7 +84,11 @@ CREATE TABLE IF NOT EXISTS teaching_method_skill_links (
 );
 CREATE INDEX IF NOT EXISTS idx_method_skill_links_method ON teaching_method_skill_links(teaching_method_id);
 
--- 8. Tablas de historial
+-- 8. methodology_json en syllabi (snapshot del método usado al generar)
+ALTER TABLE syllabi
+    ADD COLUMN IF NOT EXISTS methodology_json JSONB;
+
+-- 9. Tablas de historial
 CREATE TABLE IF NOT EXISTS teaching_methods_history (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     teaching_method_id  UUID NOT NULL,
@@ -131,5 +135,6 @@ CREATE TABLE IF NOT EXISTS performances_history (
 CREATE INDEX IF NOT EXISTS idx_perf_history_course ON performances_history(course_id, changed_at DESC);
 
 -- ============================================================
--- FIN DE MIGRACIÓN — verificar con: \dt en psql o listar tablas en Adminer
+-- FIN DE MIGRACIÓN (9 operaciones)
+-- Verificar con: \dt en psql o listar tablas en Adminer
 -- ============================================================

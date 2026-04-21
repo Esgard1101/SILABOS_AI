@@ -235,10 +235,18 @@ export interface SyllabusData {
   unidades_tematicas?: UnidadTematica[];
   cronograma_semanal?: SemanaItem[];
   sistema_evaluacion?: SistemaEvaluacion;
+  evaluacion_matriz?: EvaluacionMatrizRow[];
   bibliografia?: FuenteBibliografica[];
   metodologia?: string;
   tutoria?: string;
   [key: string]: unknown;
+}
+
+export interface EvaluacionMatrizRow {
+  desempeno: string;
+  habilidades: string[];
+  evidencias: string;
+  instrumentos: string;
 }
 
 export interface DocumentItem {
@@ -549,10 +557,158 @@ export interface CompatibleSkillsResponse {
   fallback_mode: boolean;
 }
 
+// ── Admin — Curriculum History ─────────────────────────────────────────────
+
+export interface CurriculumHistoryItem {
+  id: string;
+  course_id: string;
+  action: string;
+  payload_before?: Record<string, unknown> | null;
+  payload_after?: Record<string, unknown> | null;
+  changed_at: string;
+  changed_by_name?: string | null;
+}
+
 // ── Admin — Effective Permissions ──────────────────────────────────────────
 
 export interface EffectivePermissions {
   permissions: Record<string, boolean>;
   role: string;
   scopes: UserScopeAssignment[];
+  override_list?: PermissionOverride[];
+}
+
+// ── Wizard Progresivo v3 ────────────────────────────────────────────────────
+
+export type StepBlockStatus = 'empty' | 'suggested' | 'edited' | 'approved' | 'dirty';
+
+export interface WorkflowBlockState {
+  status: StepBlockStatus;
+  dirty: boolean;
+}
+
+export type WorkflowState = Record<string, WorkflowBlockState>;
+
+export interface SuggestedPerformance {
+  code: string;
+  statement: string;
+  origin: 'official' | 'ai_suggested' | 'teacher_edited_from_ai';
+}
+
+export interface PurposeBlock {
+  curriculum_snapshot: Record<string, unknown>;
+  performances: SuggestedPerformance[];
+  performances_origin: 'official' | 'ai_suggested' | 'teacher_edited_from_ai' | 'none';
+  teacher_notes: string;
+  approval_state: StepBlockStatus;
+}
+
+export interface ContentBlock {
+  habilidades_sugeridas: string[];
+  habilidades_por_desempeno: HabilidadPorDesempeno[];
+  selected_skill_ids: string[];
+  knowledge_items: string[];
+  attitudes: string[];
+  source: 'none' | 'ai_suggested' | 'manual' | 'confirmed' | 'editing';
+  content_mode: 'idle' | 'proposal' | 'editing' | 'confirmed';
+  teacher_notes: string;
+  approval_state: StepBlockStatus;
+}
+
+export interface MethodBlock {
+  suggested_method_id: string | null;
+  suggestion_reason: string;
+  selected_method_id: string | null;
+  selected_method_name: string;
+  compatibility_snapshot: Record<string, unknown>;
+  teacher_notes: string;
+  approval_state: StepBlockStatus;
+}
+
+export interface GradingRow {
+  evidencia: string;
+  sigla: string;
+  porcentaje: number;
+  cronograma: string;
+}
+
+export interface GradingBlock {
+  template_origin: 'none' | 'method_template' | 'ai_suggested' | 'manual';
+  rows: GradingRow[];
+  total_percent: number;
+  teacher_notes: string;
+  approval_state: StepBlockStatus;
+}
+
+export interface BiblioBlock {
+  doc_ids: string[];
+  references: string[];
+  sources_consulted?: string[];
+}
+
+export interface ProgressiveDraftMeta {
+  wizard_version: string;
+  current_step: string;
+  requires_academic_validation: boolean;
+  academic_validation_status: 'not_required' | 'pending' | 'approved' | 'returned';
+}
+
+export interface ProgressiveDraft {
+  id: string;
+  course_id: string;
+  semester: string;
+  status: string;
+  wizard_version: string;
+  current_step: string;
+  requires_academic_validation: boolean;
+  academic_validation_status: string;
+  program_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  payload_json: {
+    _meta: ProgressiveDraftMeta;
+    _workflow: WorkflowState;
+    course_snapshot: Record<string, unknown>;
+    bibliography: BiblioBlock;
+    purpose: PurposeBlock;
+    content: ContentBlock;
+    method: MethodBlock;
+    grading: GradingBlock;
+    final_syllabus?: Record<string, unknown> | null;
+  };
+}
+
+export interface EvidenceCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  priority?: number;
+  is_recommended?: boolean;
+}
+
+export interface InstrumentCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  priority?: number;
+  is_recommended?: boolean;
+}
+
+export interface HabilidadPorDesempeno {
+  desempeno_code: string;
+  habilidades: string[];
+}
+
+export interface ContentSuggestion {
+  conocimientos: string[];
+  actitudes: string[];
+  habilidades_sugeridas: string[];
+  habilidades_por_desempeno: HabilidadPorDesempeno[];
+}
+
+export interface GradingSuggestion {
+  rows: GradingRow[];
+  origin: 'method_template' | 'ai_suggested';
 }

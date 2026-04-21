@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { AdminUserItem, EffectivePermissions, UserScopeAssignment } from '../api/types';
+import { AdminUserItem, EffectivePermissions, PermissionOverride, UserScopeAssignment } from '../api/types';
 import NavSidebar from '../components/NavSidebar';
 import Toast, { useToast } from '../components/Toast';
 
@@ -140,7 +140,7 @@ function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
     );
   }
 
-  const overrides = perms ? Object.entries(perms.permissions).filter(([, v]) => !v) : [];
+  const overrideList = perms?.override_list ?? [];
 
   return (
     <td colSpan={7} className="px-6 py-4 bg-slate-50 border-t border-slate-100">
@@ -194,15 +194,17 @@ function UserDetailPanel({ userId, onClose }: UserDetailPanelProps) {
         {/* Permission overrides */}
         <div className="space-y-3">
           <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Overrides de permisos</p>
-          {(!perms || overrides.length === 0) ? (
+          {overrideList.length === 0 ? (
             <p className="text-xs text-gray-400">Sin overrides configurados.</p>
           ) : (
             <div className="space-y-1.5">
-              {overrides.map(([key]) => (
-                <div key={key} className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 px-3 py-2 text-sm">
-                  <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-mono shrink-0">deny</span>
-                  <span className="flex-1 truncate text-gray-700 font-mono text-xs">{key}</span>
-                  <button onClick={() => handleRemovePerm(key)} className="text-gray-300 hover:text-red-500 shrink-0">
+              {overrideList.map((ov: PermissionOverride) => (
+                <div key={ov.id} className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 px-3 py-2 text-sm">
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-mono shrink-0 ${ov.effect === 'deny' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {ov.effect}
+                  </span>
+                  <span className="flex-1 truncate text-gray-700 font-mono text-xs">{ov.permission_key}</span>
+                  <button onClick={() => handleRemovePerm(ov.id)} className="text-gray-300 hover:text-red-500 shrink-0">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
