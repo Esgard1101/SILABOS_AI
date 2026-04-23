@@ -643,7 +643,11 @@ class GeminiService:
 
 Dado el siguiente curso y su sumilla, elige el metodo pedagogico mas adecuado de la lista.
 Responde UNICAMENTE con un JSON valido con este formato exacto:
-{{"method_id": <numero>, "reason": "<explicacion breve en espanol>"}}
+{{"method_id": "<ID exacto de la lista>", "reason": "<explicacion breve en espanol>"}}
+
+Reglas:
+- method_id debe copiarse exactamente desde uno de los IDs disponibles.
+- No inventes IDs, no uses numeros de orden y no devuelvas el nombre como ID.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:400]}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Loader2, Sparkles } from 'lucide-react';
 import { BASE_URL, getToken } from '../api/client';
 
@@ -10,13 +10,14 @@ export interface MethodItem {
 }
 
 interface MethodSuggest {
-  method_id: string;
+  method_id: string | null;
   method_name: string;
   reason: string;
 }
 
 interface MethodSelectorProps {
   courseId: string;
+  syllabusId?: string | null;
   value: string | null;
   onChange: (methodId: string, methodName: string, methodSequence?: string) => void;
 }
@@ -29,7 +30,16 @@ async function fetchMethods(): Promise<MethodItem[]> {
   return (json.data as MethodItem[]) || [];
 }
 
-async function fetchSuggest(courseId: string): Promise<MethodSuggest | null> {
+async function fetchSuggest(courseId: string, syllabusId?: string | null): Promise<MethodSuggest | null> {
+  if (syllabusId) {
+    const res = await fetch(`${BASE_URL}/api/syllabi/${encodeURIComponent(syllabusId)}/steps/method/suggest`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken() || ''}` },
+    });
+    const json = await res.json();
+    return (json.data as MethodSuggest) || null;
+  }
+
   const params = new URLSearchParams({ course_id: courseId });
   const res = await fetch(`${BASE_URL}/api/methods/suggest?${params.toString()}`, {
     headers: { Authorization: `Bearer ${getToken() || ''}` },
@@ -38,34 +48,82 @@ async function fetchSuggest(courseId: string): Promise<MethodSuggest | null> {
   return (json.data as MethodSuggest) || null;
 }
 
-export default function MethodSelector({ courseId, value, onChange }: MethodSelectorProps) {
+function normalizeMethodText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function resolveSuggestedMethod(suggestion: MethodSuggest, methods: MethodItem[]) {
+  const byId = methods.find((method) => String(method.id) === String(suggestion.method_id));
+  if (byId) return byId;
+
+  const suggestedName = normalizeMethodText(suggestion.method_name || '');
+  return methods.find((method) => normalizeMethodText(method.name) === suggestedName) || null;
+}
+
+export default function MethodSelector({ courseId, syllabusId, value, onChange }: MethodSelectorProps) {
   const [methods, setMethods] = useState<MethodItem[]>([]);
   const [suggest, setSuggest] = useState<MethodSuggest | null>(null);
   const [loadingMethods, setLoadingMethods] = useState(true);
   const [loadingSuggest, setLoadingSuggest] = useState(true);
+  const userChangedMethodRef = useRef(false);
+  const appliedSuggestionRef = useRef<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoadingMethods(true);
     fetchMethods()
-      .then((list) => setMethods(list))
-      .finally(() => setLoadingMethods(false));
+      .then((list) => {
+        if (!cancelled) setMethods(list);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMethods(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (!courseId) return;
-    setLoadingSuggest(true);
-    fetchSuggest(courseId)
-      .then((suggestion) => {
-        setSuggest(suggestion);
-        if (suggestion && value === null) {
-          const suggestedMethod = methods.find((m) => m.id === suggestion.method_id);
-          onChange(suggestion.method_id, suggestion.method_name, suggestedMethod?.secuencia_didactica);
-        }
-      })
-      .finally(() => setLoadingSuggest(false));
-  }, [courseId, methods]);
 
-  const selectedMethod = methods.find((m) => m.id === value) || null;
+    let cancelled = false;
+    userChangedMethodRef.current = false;
+    appliedSuggestionRef.current = null;
+    setLoadingSuggest(true);
+    setSuggest(null);
+    fetchSuggest(courseId, syllabusId)
+      .then((suggestion) => {
+        if (cancelled) return;
+        setSuggest(suggestion);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSuggest(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, syllabusId]);
+
+  useEffect(() => {
+    if (!suggest || methods.length === 0 || userChangedMethodRef.current) return;
+
+    const suggestedMethod = resolveSuggestedMethod(suggest, methods);
+    if (!suggestedMethod) return;
+
+    const suggestionKey = `${suggestedMethod.id}:${suggest.reason}`;
+    if (appliedSuggestionRef.current === suggestionKey) return;
+
+    appliedSuggestionRef.current = suggestionKey;
+    onChange(suggestedMethod.id, suggestedMethod.name, suggestedMethod.secuencia_didactica);
+  }, [methods, onChange, suggest]);
+
+  const selectedMethod = methods.find((m) => String(m.id) === String(value)) || null;
 
   if (loadingMethods) {
     return (
@@ -117,7 +175,8 @@ export default function MethodSelector({ courseId, value, onChange }: MethodSele
             className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
             value={value ?? ''}
             onChange={(e) => {
-              const selected = methods.find((m) => m.id === e.target.value);
+              userChangedMethodRef.current = true;
+              const selected = methods.find((m) => String(m.id) === e.target.value);
               if (selected) onChange(selected.id, selected.name, selected.secuencia_didactica);
             }}
           >

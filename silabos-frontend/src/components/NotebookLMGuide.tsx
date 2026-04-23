@@ -40,6 +40,12 @@ const IMG = {
   step7:  '/images/notebooklm_steps/step7.png',
 };
 
+const NOTEBOOK_GRADIENT =
+  'linear-gradient(28deg, rgba(2, 0, 36, 1) 0%, rgba(9, 9, 121, 1) 35%, rgba(0, 212, 255, 1) 100%)';
+
+const NOTEBOOK_GRADIENT_SOFT =
+  'linear-gradient(28deg, rgba(2, 0, 36, 0.15) 0%, rgba(9, 9, 121, 0.15) 35%, rgba(0, 212, 255, 0.15) 100%)';
+
 function buildSearchPrompt(courseName: string, sumilla: string, metodologias?: string): string {
   const metodoLine = metodologias?.trim()
     ? `\n\nEnfoques metodológicos del curso: ${metodologias.trim()}`
@@ -108,11 +114,11 @@ function StepCard({
   return (
     <div
       onClick={onClick}
-      style={{ background: 'linear-gradient(345deg, rgba(63,94,251,1) 0%, rgba(156,82,180,1) 50%, rgba(252,70,107,1) 93%)' }}
+      style={{ background: NOTEBOOK_GRADIENT }}
       className={[
         'rounded-2xl border p-4 shadow-lg transition-all duration-200',
         onClick
-          ? 'cursor-pointer border-white/20 hover:border-white/40 hover:shadow-xl hover:shadow-purple-500/25 hover:scale-[1.01]'
+          ? 'cursor-pointer border-white/20 hover:border-white/40 hover:shadow-xl hover:shadow-sky-500/25 hover:scale-[1.01]'
           : 'border-white/15',
       ].join(' ')}
     >
@@ -428,7 +434,7 @@ export default function NotebookLMGuide({
 
         {/* Upload area */}
         <div
-          style={{ background: 'linear-gradient(345deg, rgba(63,94,251,0.15) 0%, rgba(156,82,180,0.15) 50%, rgba(252,70,107,0.15) 93%)' }}
+          style={{ background: NOTEBOOK_GRADIENT_SOFT }}
           className="rounded-2xl border-2 border-dashed border-white/20 p-5 text-center"
         >
           {uploadedBiblio ? (

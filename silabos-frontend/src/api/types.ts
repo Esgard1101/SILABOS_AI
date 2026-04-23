@@ -445,14 +445,14 @@ export interface CourseDetail extends CourseListItem {
 }
 
 export interface MethodItem {
-  id: number;
+  id: string;
   name: string;
   description?: string | null;
   secuencia_didactica?: string | null;
 }
 
 export interface MethodSuggest {
-  method_id: number;
+  method_id: string | null;
   method_name: string;
   reason: string;
 }

@@ -3412,6 +3412,43 @@ class SupabaseService:
             },
         }
 
+    @staticmethod
+    def _coerce_bibliography_refs(value) -> list[str]:
+        if not isinstance(value, list):
+            return []
+
+        refs: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                raw = (
+                    item.get("apa_format")
+                    or item.get("ref_text")
+                    or item.get("reference")
+                    or item.get("text")
+                    or item.get("title")
+                )
+            else:
+                raw = item
+
+            ref = str(raw or "").strip()
+            if ref:
+                refs.append(ref)
+        return refs
+
+    @classmethod
+    def _coerce_progressive_step_block(cls, step_key: str, value) -> dict:
+        if isinstance(value, dict):
+            return value
+
+        if step_key == "bibliography":
+            return {
+                "doc_ids": [],
+                "references": cls._coerce_bibliography_refs(value),
+                "sources_consulted": [],
+            }
+
+        return {}
+
     def _crear_o_obtener_draft_progresivo_sync(
         self,
         course_id: str,
@@ -3526,22 +3563,30 @@ class SupabaseService:
             payload = row["payload_json"]
             if isinstance(payload, str):
                 payload = json.loads(payload)
+            if not isinstance(payload, dict):
+                payload = {}
 
             # Merge block data
-            if step_key not in payload:
-                payload[step_key] = {}
-            payload[step_key].update(block_data)
+            current_block = self._coerce_progressive_step_block(
+                step_key,
+                payload.get(step_key),
+            )
+            current_block.update(block_data)
+            payload[step_key] = current_block
 
             # Update workflow state
-            if "_workflow" not in payload:
+            if not isinstance(payload.get("_workflow"), dict):
                 payload["_workflow"] = self._empty_workflow()
-            current_block_status = payload["_workflow"].get(step_key, {}).get("status", "empty")
+            workflow_block = payload["_workflow"].get(step_key, {})
+            if not isinstance(workflow_block, dict):
+                workflow_block = {}
+            current_block_status = workflow_block.get("status", "empty")
             # Don't downgrade approved → edited
             if current_block_status != "approved":
                 payload["_workflow"][step_key] = {"status": "edited", "dirty": False}
 
             # Update current step tracking
-            if "_meta" not in payload:
+            if not isinstance(payload.get("_meta"), dict):
                 payload["_meta"] = {}
             payload["_meta"]["current_step"] = step_key
 

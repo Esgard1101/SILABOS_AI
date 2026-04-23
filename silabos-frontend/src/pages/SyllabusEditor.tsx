@@ -79,7 +79,7 @@ function EditableField({
     }
   }, [value, multiline]);
 
-  const sharedClass = `w-full bg-transparent focus:outline-none focus:border-orange-500 text-sm leading-relaxed ${
+  const sharedClass = `w-full bg-transparent focus:outline-none focus:border-amber-500 text-sm leading-relaxed ${
     isEmpty ? 'text-slate-400 border-dashed border-slate-300' : 'text-slate-900 border-transparent'
   }`;
 
@@ -781,70 +781,70 @@ export default function SyllabusEditor() {
   return (
     <div className="flex h-screen bg-slate-100 text-slate-900 font-sans">
       <aside className="w-72 border-r border-slate-200 bg-white flex flex-col shrink-0">
-        <div className="p-6 border-b border-slate-200 flex items-center gap-3">
-          <div className="bg-orange-600 p-1.5 rounded-lg text-white">
-            <span className="block text-2xl">*</span>
+        <div className="p-5 border-b border-slate-200 flex items-center gap-3">
+          <div className="rounded-xl border border-amber-400/60 bg-slate-900 p-1.5 text-amber-400 shadow-sm">
+            <span className="block text-xl">*</span>
           </div>
-          <h1 className="font-bold text-lg">Syllabus AI</h1>
+          <h1 className="font-bold text-sm tracking-tight text-slate-900">Syllabus AI</h1>
         </div>
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">Secciones</div>
+        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.22em] px-3 mb-2">Secciones</div>
           {sidebarSections.map((section) => {
             const Icon = section.icon;
             return (
               <button
                 key={section.id}
                 onClick={() => scrollToSection(section.id)}
-                className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-50"
+                className="w-full text-left flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-amber-50 hover:text-slate-900"
               >
-                <Icon size={18} /> {section.label}
+                <Icon size={15} className="text-amber-500" /> {section.label}
               </button>
             );
           })}
         </nav>
         <div className="p-4 border-t border-slate-200">
-          <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl">
-            <div className="h-8 w-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">
-              <User size={20} />
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+            <div className="h-8 w-8 rounded-full bg-slate-900 flex items-center justify-center text-amber-400">
+              <User size={16} />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-bold">{teacherPreviewName}</span>
+              <span className="text-xs font-bold text-slate-900">{teacherPreviewName}</span>
               <span className="text-[10px] text-slate-500">Docente Principal</span>
             </div>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-8">
-        <header className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center gap-4">
+      <main className="flex-1 overflow-y-auto bg-slate-50 p-6">
+        <header className="max-w-4xl mx-auto mb-5 flex justify-between items-center gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => navigate('/syllabi')}
-                className="text-slate-500 hover:text-orange-600 text-sm flex items-center gap-1"
+                className="text-slate-500 hover:text-slate-900 text-xs font-semibold flex items-center gap-1"
               >
                 <ArrowLeft size={14} />
                 Mis sílabos
               </button>
               <StatusBadge status={syllabusStatus} />
             </div>
-            <h2 className="mt-3 text-2xl font-bold">{courseName}</h2>
-            <p className="text-slate-500 text-sm italic">Vista previa del Anexo C</p>
+            <h2 className="mt-3 text-xl font-bold text-slate-900">{courseName}</h2>
+            <p className="text-slate-500 text-xs italic">Vista previa del Anexo C</p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <button disabled className="bg-white border border-slate-200 p-2 rounded-lg opacity-50 cursor-not-allowed">
-              <History size={20} className="text-slate-600" />
+              <History size={16} className="text-slate-600" />
             </button>
-            <button onClick={() => handleExport('docx')} className="bg-white border border-slate-200 px-3 rounded-lg text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <button onClick={() => handleExport('docx')} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
               <Download size={16} /> ? DOCX
             </button>
-            <button onClick={() => handleExport('pdf')} className="bg-white border border-slate-200 px-3 rounded-lg text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <button onClick={() => handleExport('pdf')} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2">
               <Download size={16} /> ? PDF
             </button>
             <button
               onClick={handleSaveDraft}
               disabled={savingDraft || !syllabusId}
-              className="bg-white border border-slate-200 px-3 rounded-lg text-sm font-semibold text-slate-700 flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-2 hover:border-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save size={16} />
               {savingDraft ? 'Guardando...' : 'Guardar borrador'}
@@ -852,7 +852,7 @@ export default function SyllabusEditor() {
             {syllabusId && (syllabusStatus === 'draft' || syllabusStatus === 'returned') && (
               <button
                 onClick={handleSubmitReview}
-                className="bg-orange-600 text-white px-3 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-orange-700"
+                className="bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 hover:bg-slate-800"
               >
                 <Send size={16} />
                 Enviar a revisión
@@ -861,7 +861,7 @@ export default function SyllabusEditor() {
             {syllabusId && syllabusStatus === 'review' && (
               <button
                 disabled
-                className="bg-amber-50 text-amber-700 px-3 rounded-lg text-sm font-semibold flex items-center gap-2 border border-amber-200 cursor-not-allowed"
+                className="bg-amber-50 text-amber-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 border border-amber-200 cursor-not-allowed"
               >
                 <Send size={16} />
                 En revisión...
@@ -870,19 +870,19 @@ export default function SyllabusEditor() {
             {syllabusId && syllabusStatus === 'approved' && (
               <button
                 onClick={handlePublish}
-                className="bg-green-600 text-white px-3 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-green-700"
+                className="bg-amber-500 text-white px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 hover:bg-amber-600"
               >
                 <Rocket size={16} />
                 Publicar
               </button>
             )}
-            <button onClick={handleShare} className="bg-white border border-slate-200 p-2 rounded-lg">
-              <Share size={20} className="text-slate-600" />
+            <button onClick={handleShare} className="bg-white border border-slate-200 p-2 rounded-lg hover:border-amber-300">
+              <Share size={16} className="text-slate-600" />
             </button>
           </div>
         </header>
 
-        <div className="max-w-[210mm] mx-auto bg-white p-10 shadow-lg mb-8 font-serif text-[15px] leading-7">
+        <div className="max-w-4xl mx-auto my-8 bg-white px-10 py-12 shadow-xl font-serif text-[15px] leading-7">
           <header className="mb-10">
             <div className="flex items-start justify-between gap-6">
               <img src="/unprg-logo.png" className="h-16 w-auto" alt="UNPRG" />
@@ -1178,7 +1178,7 @@ export default function SyllabusEditor() {
           </footer>
         </div>
 
-        <div className="max-w-[210mm] mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-20">
+        <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-20">
           <h3 className="text-lg font-bold text-slate-900 mb-4">BibliographyGuide</h3>
           <BibliographyGuide
             courseName={courseName}
@@ -1186,14 +1186,14 @@ export default function SyllabusEditor() {
           />
         </div>
 
-        <div className="max-w-[210mm] mx-auto mb-20 rounded-3xl bg-gradient-to-r from-orange-500 to-orange-600 p-8 text-white shadow-xl">
+        <div className="max-w-4xl mx-auto mb-20 rounded-3xl bg-gradient-to-r from-slate-950 to-blue-950 p-8 text-white shadow-xl ring-1 ring-amber-400/20">
           <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr] lg:items-center">
             <div>
               <p className="text-2xl font-black">? ¡Tu sílabo está listo!</p>
-              <p className="mt-3 text-orange-50">
+              <p className="mt-3 text-slate-200">
                 Descarga el documento oficial en formato Word o PDF para revisión del Departamento Académico, o copia la URL para compartir con tus estudiantes.
               </p>
-              <div className="mt-5 space-y-2 text-sm text-orange-100">
+              <div className="mt-5 space-y-2 text-sm text-slate-200">
                 <p>?? Descarga DOCX para entregar al Dpto. Académico</p>
                 <p>?? Comparte la URL con tus estudiantes</p>
                 <p>?? Sube el PDF al Aula Virtual UNPRG</p>
@@ -1203,14 +1203,14 @@ export default function SyllabusEditor() {
             <div className="space-y-3">
               <button
                 onClick={() => handleExport('docx')}
-                className="flex items-center justify-center gap-2 bg-white text-orange-600 font-bold px-6 py-3 rounded-xl hover:bg-orange-50 transition-all shadow-md w-full"
+                className="flex items-center justify-center gap-2 bg-white text-slate-900 font-bold px-6 py-3 rounded-xl hover:bg-amber-50 transition-all shadow-md w-full"
               >
                 <Download size={18} />
                 Descargar DOCX oficial
               </button>
               <button
                 onClick={() => handleExport('pdf')}
-                className="flex items-center justify-center gap-2 bg-orange-700 text-white font-bold px-6 py-3 rounded-xl hover:bg-orange-800 transition-all w-full"
+                className="flex items-center justify-center gap-2 bg-amber-500 text-white font-bold px-6 py-3 rounded-xl hover:bg-amber-600 transition-all w-full"
               >
                 <Download size={18} />
                 Descargar PDF
@@ -1224,7 +1224,7 @@ export default function SyllabusEditor() {
               </button>
               <button
                 onClick={() => navigate('/syllabi')}
-                className="text-center text-orange-200 text-sm hover:text-white underline w-full"
+                className="text-center text-amber-200 text-sm hover:text-white underline w-full"
               >
                 ← Volver a Mis sílabos
               </button>
@@ -1233,9 +1233,9 @@ export default function SyllabusEditor() {
         </div>
       </main>
 
-      <aside className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-5">
-        <h3 className="font-bold text-sm uppercase mb-4 flex items-center gap-2">
-          <CheckCircle size={18} className="text-orange-600" /> Auditoria de Coherencia
+      <aside className="w-80 shrink-0 border-l border-gray-200 bg-slate-50 overflow-y-auto p-5">
+        <h3 className="font-bold text-xs uppercase tracking-[0.16em] text-slate-900 mb-4 flex items-center gap-2">
+          <CheckCircle size={18} className="text-amber-500" /> Auditoria de Coherencia
         </h3>
 
         {validationLoading ? <p className="text-sm text-slate-500">Validando silabo...</p> : null}

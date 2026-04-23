@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
-  BadgeCheck,
   BookOpen,
   Building2,
-  Clock3,
   FileText,
   LayoutDashboard,
-  LibraryBig,
   RefreshCcw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -163,193 +160,147 @@ export default function Dashboard() {
     <AppShell
       currentPath="/dashboard"
       title="Panel principal"
-      subtitle="Consulta tu contexto activo, revisa el avance del ciclo y entra a los modulos clave desde una vista simple y estable."
+      subtitle="Tu espacio de trabajo activo."
       icon={LayoutDashboard}
     >
-      <div className="flex h-full flex-col gap-5">
-        <section className="app-panel shrink-0 overflow-hidden">
-          <div className="grid gap-5 p-5 lg:grid-cols-[1.2fr_0.8fr] xl:p-6">
+      <div className="grid h-full grid-cols-12 grid-rows-2 gap-5">
+
+        {/* Bloque 1 — Bienvenida */}
+        <div className="app-panel col-span-12 flex flex-col justify-center p-5 lg:col-span-7 xl:p-6">
+          <p className="app-kicker">Bienvenido de nuevo</p>
+          <h2 className="mt-3 text-4xl font-bold text-slate-950 xl:text-5xl">
+            {userName.split(' ').slice(0, 2).join(' ')}
+          </h2>
+          <p className="mt-4 max-w-md text-base leading-7 text-[var(--text-soft)]">
+            Retoma sílabos en progreso o crea uno nuevo para el programa activo.
+          </p>
+        </div>
+
+        {/* Bloque 2 — Contexto activo */}
+        <div className="app-panel col-span-12 flex flex-col justify-between p-5 lg:col-span-5 xl:p-6">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="app-kicker">Bienvenido de nuevo</p>
-              <h2 className="mt-2 text-3xl font-bold text-slate-950">
-                {userName.split(' ').slice(0, 2).join(' ')}
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--text-soft)]">
-                Este espacio resume tu trabajo actual y te ayuda a retomar rapidamente los silabos
-                del programa activo.
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--brand-600)]">
+                Contexto activo
               </p>
+              <p className="mt-1 text-sm text-[var(--text-soft)]">Programa y semestre en curso</p>
             </div>
-
-            <div className="rounded-[1.7rem] border border-[var(--line-subtle)] bg-[var(--surface-base)] p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Contexto activo</p>
-                  <p className="mt-1 text-sm leading-6 text-[var(--text-soft)]">
-                    El dashboard y el creador usaran este contexto mientras dure tu sesion.
-                  </p>
-                </div>
-
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-[var(--brand-700)] shadow-sm">
-                  <Building2 size={18} />
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="app-chip">{context?.program_name || 'Programa no definido'}</span>
-                <span className="app-chip app-chip-muted">{context?.semester || 'Sin semestre'}</span>
-                <span className="app-chip app-chip-muted">{context?.school_name || 'Sin escuela'}</span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleChangeContext}
-                className="mt-5 inline-flex items-center gap-2 rounded-2xl border border-[var(--line-subtle)] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
-              >
-                <RefreshCcw size={16} />
-                Cambiar programa
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid shrink-0 gap-4 md:grid-cols-3">
-          <MetricCard
-            title="Silabos del contexto"
-            value={loadingSyllabi ? '...' : String(metrics.total)}
-            helper="Documentos visibles en este panel segun tu programa activo."
-            icon={<FileText size={20} />}
-          />
-          <MetricCard
-            title="En trabajo"
-            value={loadingSyllabi ? '...' : String(metrics.draft)}
-            helper="Incluye borradores, generados y pendientes de revision."
-            icon={<Clock3 size={20} />}
-          />
-          <MetricCard
-            title="Aprobados o publicados"
-            value={loadingSyllabi ? '...' : String(metrics.published)}
-            helper="Versiones listas para continuar con revision final o entrega."
-            icon={<BadgeCheck size={20} />}
-          />
-        </section>
-
-        <section className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="app-panel flex min-h-0 flex-col p-5 xl:p-6">
-            <div className="shrink-0">
-              <p className="app-kicker">Accesos principales</p>
-              <h2 className="mt-2 text-2xl font-bold text-slate-950">Espacios que usaras mas</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
-                Dejamos aqui solo las rutas que realmente necesitas para avanzar sin perder tiempo.
-              </p>
-            </div>
-
-            <div className="mt-5 grid gap-4 md:grid-cols-3 xl:flex-1 xl:grid-cols-1">
-              <QuickActionCard
-                title="Mis silabos"
-                description="Revisa documentos recientes, estados y accesos de edicion."
-                icon={<BookOpen size={20} />}
-                onClick={() => navigate('/syllabi')}
-              />
-              <QuickActionCard
-                title="Catalogos"
-                description="Consulta metodos, habilidades e instrumentos disponibles."
-                icon={<LibraryBig size={20} />}
-                onClick={() => navigate('/catalog')}
-              />
-              <QuickActionCard
-                title="Cambiar contexto"
-                description="Actualiza programa, escuela o semestre antes de trabajar otro silabo."
-                icon={<RefreshCcw size={20} />}
-                onClick={handleChangeContext}
-              />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--brand-50)] text-[var(--brand-700)]">
+              <Building2 size={18} />
             </div>
           </div>
 
-          <section className="app-panel flex min-h-0 flex-col p-5 xl:p-6">
-            <div className="flex shrink-0 flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="mt-6 space-y-1.5">
+            <p className="text-xl font-bold text-slate-950 leading-7">
+              {context?.program_name || 'Programa no definido'}
+            </p>
+            <p className="text-sm text-[var(--text-soft)]">{context?.school_name || 'Sin escuela'}</p>
+            <div className="pt-1">
+              <span className="app-chip app-chip-muted">{context?.semester || 'Sin semestre'}</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleChangeContext}
+            className="mt-6 inline-flex items-center gap-2 rounded-2xl border border-[var(--line-subtle)] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
+          >
+            <RefreshCcw size={16} />
+            Cambiar programa
+          </button>
+        </div>
+
+        {/* Bloque 3 — CTA principal */}
+        <button
+          type="button"
+          onClick={() => navigate('/creator')}
+          className="col-span-12 flex flex-col justify-between rounded-[2rem] bg-[var(--brand-700)] p-5 text-left text-white transition hover:bg-[var(--brand-800)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-400)] lg:col-span-4 xl:p-6"
+        >
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15">
+            <BookOpen size={24} />
+          </div>
+          <div>
+            <h3 className="mt-6 text-2xl font-bold leading-8">Crear nuevo sílabo</h3>
+            <p className="mt-2 text-sm leading-6 text-white/70">
+              Asistente guiado paso a paso para el programa activo.
+            </p>
+          </div>
+          <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold">
+            Comenzar
+            <ArrowRight size={16} />
+          </span>
+        </button>
+
+        {/* Bloque 4 — Sílabos recientes */}
+        <div className="app-panel col-span-12 flex min-h-0 flex-col p-5 lg:col-span-8 xl:p-6">
+          <div className="flex shrink-0 items-center justify-between gap-4">
+            <div>
+              <p className="app-kicker">Actividad reciente</p>
+              <h3 className="mt-2 text-xl font-bold text-slate-950">Sílabos recientes</h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/syllabi')}
+              className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line-subtle)] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
+            >
+              Ver todos
+              <ArrowRight size={16} />
+            </button>
+          </div>
+
+          {loadingSyllabi ? (
+            <div className="mt-5 min-h-0 flex-1 space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="animate-pulse flex items-center gap-4 rounded-2xl border border-[var(--line-subtle)] bg-white p-4">
+                  <div className="h-10 w-10 rounded-2xl bg-slate-100 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-2/3 rounded bg-slate-100" />
+                    <div className="h-3 w-1/2 rounded bg-slate-100" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recentSyllabi.length === 0 ? (
+            <div className="mt-5 flex flex-1 items-center justify-center rounded-[1.8rem] border border-dashed border-[var(--line-medium)] bg-[var(--surface-base)] px-6 text-center">
               <div>
-                <p className="app-kicker">Actividad reciente</p>
-                <h2 className="mt-2 text-2xl font-bold text-slate-950">Silabos recientes</h2>
-                <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
-                  Retoma trabajo desde los documentos mas cercanos al contexto activo.
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--brand-50)] text-[var(--brand-700)]">
+                  <FileText size={22} />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-slate-900">Sin sílabos aún</h3>
+                <p className="mt-1 text-sm text-[var(--text-soft)]">
+                  Crea tu primer sílabo con el botón de la izquierda.
                 </p>
               </div>
-
-              <button
-                type="button"
-                onClick={() => navigate('/syllabi')}
-                className="inline-flex items-center gap-2 rounded-2xl border border-[var(--line-subtle)] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
-              >
-                Ver todos
-                <ArrowRight size={16} />
-              </button>
             </div>
-
-            {loadingSyllabi ? (
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="animate-pulse rounded-[1.7rem] border border-[var(--line-subtle)] bg-white p-5"
+          ) : (
+            <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+              {recentSyllabi.slice(0, 4).map((item) => {
+                const status = resolveSyllabusStatus(item);
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    onClick={() => navigate('/syllabi')}
+                    className="flex w-full items-center gap-4 rounded-2xl border border-[var(--line-subtle)] bg-white p-4 text-left transition hover:border-[var(--brand-200)] hover:shadow-sm"
                   >
-                    <div className="h-4 w-32 rounded bg-slate-100" />
-                    <div className="mt-4 h-6 w-4/5 rounded bg-slate-100" />
-                    <div className="mt-3 h-4 w-3/5 rounded bg-slate-100" />
-                  </div>
-                ))}
-              </div>
-            ) : recentSyllabi.length === 0 ? (
-              <div className="mt-5 flex flex-1 items-center justify-center rounded-[1.8rem] border border-dashed border-[var(--line-medium)] bg-[var(--surface-base)] px-6 py-10 text-center">
-                <div>
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[var(--brand-50)] text-[var(--brand-700)]">
-                    <FileText size={26} />
-                  </div>
-                  <h3 className="mt-5 text-xl font-semibold text-slate-900">
-                    Aun no tienes silabos en este panel
-                  </h3>
-                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[var(--text-soft)]">
-                    Puedes empezar desde la opcion "Crear Silabo" del menu lateral cuando el
-                    contexto actual ya este confirmado.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {recentSyllabi.map((item) => {
-                    const status = resolveSyllabusStatus(item);
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--brand-50)] text-[var(--brand-700)]">
+                      <FileText size={18} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-950">{getCourseName(item)}</p>
+                      <p className="truncate text-xs text-[var(--text-soft)]">{getCareerName(item)}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <StatusBadge status={status} />
+                      <span className="text-[11px] text-[var(--text-soft)]">{formatDate(item.updated_at)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-                    return (
-                      <button
-                        type="button"
-                        key={item.id}
-                        onClick={() => navigate('/syllabi')}
-                        className="rounded-[1.7rem] border border-[var(--line-subtle)] bg-white p-5 text-left shadow-[0_14px_32px_rgba(9,28,56,0.05)] transition hover:-translate-y-0.5 hover:border-[var(--brand-200)]"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--brand-50)] text-[var(--brand-700)]">
-                            <FileText size={20} />
-                          </div>
-                          <StatusBadge status={status} />
-                        </div>
-
-                        <h3 className="mt-4 text-lg font-semibold leading-7 text-slate-950">
-                          {getCourseName(item)}
-                        </h3>
-                        <p className="mt-2 text-sm text-[var(--text-soft)]">{getCareerName(item)}</p>
-
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <span className="app-chip app-chip-muted">{getSemesterName(item)}</span>
-                          <span className="app-chip app-chip-muted">{formatDate(item.updated_at)}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </section>
-        </section>
       </div>
 
       <Toast toasts={toasts} removeToast={removeToast} />
