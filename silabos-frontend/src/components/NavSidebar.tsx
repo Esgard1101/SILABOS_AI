@@ -3,10 +3,10 @@ import {
   BookOpen,
   BrainCircuit,
   ClipboardCheck,
-  Folder,
   GraduationCap,
   Home,
   Library,
+  LucideIcon,
   LogOut,
   PenSquare,
   ShieldCheck,
@@ -17,23 +17,25 @@ import { useNavigate } from 'react-router-dom';
 import { getStoredUser, useAuth } from '../hooks/useAuth';
 
 interface NavSidebarProps {
-  currentPath: string;
+  currentPath?: string;
 }
 
 type NavItem = {
   path: string;
   label: string;
-  icon: typeof Folder;
+  icon: LucideIcon;
 };
 
 const DOCENTE_NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Panel Principal', icon: Home },
+  { path: '/creator', label: 'Crear Silabo', icon: PenSquare },
   { path: '/syllabi', label: 'Mis Silabos', icon: BookOpen },
   { path: '/catalog', label: 'Catalogos', icon: Library },
 ];
 
 const ADMIN_NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Panel Principal', icon: Home },
+  { path: '/creator', label: 'Crear Silabo', icon: PenSquare },
   { path: '/syllabi', label: 'Mis Silabos', icon: BookOpen },
   { path: '/catalog', label: 'Catalogos', icon: Library },
   { path: '/review', label: 'Revision Academica', icon: ClipboardCheck },
@@ -64,18 +66,31 @@ export default function NavSidebar({ currentPath }: NavSidebarProps) {
   );
 
   return (
-    <aside className="group hidden md:flex md:h-screen md:w-16 md:flex-col md:overflow-hidden md:border-r md:border-orange-100 md:bg-white md:shadow-sm md:transition-all md:duration-300 md:hover:w-60">
-      <div className="flex h-16 items-center justify-center border-b border-orange-100 px-4 group-hover:justify-start">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-600 text-white shadow-sm">
-          <Folder size={18} />
-        </div>
-        <div className="ml-3 min-w-0 overflow-hidden opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-          <p className="whitespace-nowrap text-sm font-bold text-slate-900">Silabos.AI</p>
-          <p className="whitespace-nowrap text-[11px] text-slate-500">Navegacion</p>
+    <aside className="app-sidebar-gradient hidden md:flex md:h-screen md:w-[288px] md:shrink-0 md:flex-col md:overflow-hidden md:border-r md:border-white/10 md:text-white md:shadow-[0_20px_60px_rgba(9,28,56,0.28)] md:sticky md:top-0">
+      <div className="border-b border-white/10 px-6 py-6">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.25rem] bg-white/10 ring-1 ring-white/15 backdrop-blur">
+            <img
+              src="/unprg-logo.png"
+              alt="Logo UNPRG"
+              className="h-11 w-auto object-contain"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-100/75">
+              UNPRG
+            </p>
+            <p className="text-lg font-semibold tracking-tight text-white">SIGEISIL</p>
+            <p className="text-sm text-slate-200/82">Sistema de Gestion Inteligente de Silabos</p>
+          </div>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-2 overflow-y-auto px-2 py-4">
+      <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-5">
+        <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-100/56">
+          Menu
+        </p>
+
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPath === item.path;
@@ -84,21 +99,21 @@ export default function NavSidebar({ currentPath }: NavSidebarProps) {
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all ${
+              className={`flex w-full items-center gap-3 rounded-[1.25rem] px-3 py-3 text-left transition-all ${
                 isActive
-                  ? 'bg-orange-50 text-orange-700 shadow-sm'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-orange-600'
+                  ? 'bg-white text-[var(--brand-800)] shadow-[0_12px_28px_rgba(9,28,56,0.18)]'
+                  : 'text-slate-100/88 hover:bg-white/10 hover:text-white'
               }`}
               title={item.label}
             >
               <span
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  isActive ? 'bg-orange-100' : 'bg-slate-100'
+                  isActive ? 'bg-[var(--brand-50)] text-[var(--brand-700)]' : 'bg-white/10 text-sky-100'
                 }`}
               >
                 <Icon size={18} />
               </span>
-              <span className="whitespace-nowrap text-sm font-semibold opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <span className="whitespace-nowrap text-sm font-semibold">
                 {item.label}
               </span>
             </button>
@@ -106,29 +121,31 @@ export default function NavSidebar({ currentPath }: NavSidebarProps) {
         })}
       </nav>
 
-      <div className="border-t border-orange-100 p-2">
-        <div className="mb-2 flex items-center gap-3 rounded-2xl bg-orange-50 px-3 py-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-600 text-xs font-bold text-white">
+      <div className="border-t border-white/10 p-4">
+        <div className="mb-3 flex items-center gap-3 rounded-[1.35rem] border border-white/10 bg-white/8 px-3 py-3 backdrop-blur-sm">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold text-[var(--brand-800)]">
             {initials}
           </div>
-          <div className="min-w-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-            <p className="truncate text-sm font-semibold text-slate-800">{fullName}</p>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">{fullName}</p>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-200/78">
               {currentUser?.role === 'admin' ? <ShieldCheck size={12} /> : null}
-              <span className="truncate">{currentUser?.role || 'Usuario'}</span>
+              <span className="truncate">
+                {currentUser?.role === 'admin' ? 'Administrador' : 'Docente'}
+              </span>
             </div>
           </div>
         </div>
 
         <button
           onClick={logout}
-          className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-slate-500 transition-all hover:bg-red-50 hover:text-red-600"
+          className="flex w-full items-center gap-3 rounded-[1.2rem] border border-white/10 px-3 py-3 text-slate-100/84 transition-all hover:bg-white/10 hover:text-white"
           title="Cerrar sesion"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
             <LogOut size={18} />
           </span>
-          <span className="whitespace-nowrap text-sm font-semibold opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+          <span className="whitespace-nowrap text-sm font-semibold">
             Cerrar sesion
           </span>
         </button>

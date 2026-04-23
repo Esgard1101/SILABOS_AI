@@ -18,9 +18,9 @@ const STATUS_CONFIG: Record<
   },
   exported: {
     label: 'Exportado',
-    bg: 'bg-purple-50',
-    text: 'text-purple-700',
-    dot: 'bg-purple-500',
+    bg: 'bg-indigo-50',
+    text: 'text-indigo-700',
+    dot: 'bg-indigo-500',
   },
   review: {
     label: 'En revision',
@@ -42,9 +42,9 @@ const STATUS_CONFIG: Record<
   },
   published: {
     label: 'Publicado',
-    bg: 'bg-orange-50',
-    text: 'text-orange-700',
-    dot: 'bg-orange-500',
+    bg: 'bg-sky-50',
+    text: 'text-sky-700',
+    dot: 'bg-sky-500',
   },
 };
 

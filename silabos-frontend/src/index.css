@@ -1,1 +1,229 @@
 @import "tailwindcss";
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  src: url("/fonts/Inter,JetBrains_Mono,Playfair_Display/Inter/Inter-VariableFont_opsz,wght.ttf")
+    format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: italic;
+  font-weight: 100 900;
+  src: url("/fonts/Inter,JetBrains_Mono,Playfair_Display/Inter/Inter-Italic-VariableFont_opsz,wght.ttf")
+    format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  src: url("/fonts/Inter,JetBrains_Mono,Playfair_Display/JetBrains_Mono/JetBrainsMono-VariableFont_wght.ttf")
+    format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: italic;
+  font-weight: 100 800;
+  src: url("/fonts/Inter,JetBrains_Mono,Playfair_Display/JetBrains_Mono/JetBrainsMono-Italic-VariableFont_wght.ttf")
+    format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 400 900;
+  src: url("/fonts/Inter,JetBrains_Mono,Playfair_Display/Playfair_Display/PlayfairDisplay-VariableFont_wght.ttf")
+    format("truetype");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Playfair Display";
+  font-style: italic;
+  font-weight: 400 900;
+  src: url("/fonts/Inter,JetBrains_Mono,Playfair_Display/Playfair_Display/PlayfairDisplay-Italic-VariableFont_wght.ttf")
+    format("truetype");
+  font-display: swap;
+}
+
+:root {
+  --app-bg: #edf4f8;
+  --app-bg-strong: #dceaf4;
+  --surface-base: #f5f9fc;
+  --surface-panel: rgba(255, 255, 255, 0.92);
+  --surface-panel-strong: #ffffff;
+  --surface-accent: #eff6ff;
+  --line-subtle: rgba(15, 41, 74, 0.1);
+  --line-medium: rgba(15, 41, 74, 0.18);
+  --brand-50: #eff7ff;
+  --brand-100: #dbeeff;
+  --brand-200: #b9dcff;
+  --brand-300: #86c5ff;
+  --brand-400: #4ea5f6;
+  --brand-500: #2d7fe0;
+  --brand-600: #195fbb;
+  --brand-700: #154a96;
+  --brand-800: #10386f;
+  --brand-900: #0d2a53;
+  --brand-950: #091c38;
+  --success-soft: #ecfdf3;
+  --warning-soft: #fff8e6;
+  --danger-soft: #fff1f2;
+  --font-sans: "Inter", "Segoe UI", "Trebuchet MS", sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  --text-main: #10233f;
+  --text-soft: #5f6f84;
+  --text-muted: #7b8ca2;
+  --shadow-soft: 0 22px 48px rgba(9, 28, 56, 0.08);
+  --shadow-strong: 0 30px 70px rgba(9, 28, 56, 0.18);
+}
+
+html {
+  background: var(--app-bg);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
+  background:
+    radial-gradient(circle at top right, rgba(134, 197, 255, 0.36), transparent 22%),
+    radial-gradient(circle at bottom left, rgba(13, 42, 83, 0.06), transparent 26%),
+    linear-gradient(180deg, #f7fbff 0%, var(--app-bg) 100%);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.025em;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+code,
+pre,
+kbd,
+samp,
+.app-mono {
+  font-family: var(--font-mono);
+}
+
+.font-playfair {
+  font-family: var(--font-display);
+  font-variation-settings: "wght" 700;
+  letter-spacing: -0.03em;
+}
+
+.font-inter {
+  font-family: var(--font-sans);
+}
+
+.font-jetbrains {
+  font-family: var(--font-mono);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  color: var(--brand-950);
+  background: rgba(134, 197, 255, 0.42);
+}
+
+.app-panel {
+  border: 1px solid var(--line-subtle);
+  border-radius: 28px;
+  background: var(--surface-panel);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(20px);
+}
+
+.app-panel-soft {
+  border: 1px solid rgba(255, 255, 255, 0.64);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 16px 36px rgba(16, 35, 63, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.app-topbar-blur {
+  background:
+    linear-gradient(180deg, rgba(247, 251, 255, 0.95), rgba(244, 248, 252, 0.92)),
+    rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(18px);
+}
+
+.app-kicker {
+  color: var(--brand-600);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(25, 95, 187, 0.12);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--brand-700);
+  background: rgba(239, 247, 255, 0.95);
+}
+
+.app-chip-muted {
+  border-color: rgba(16, 56, 111, 0.08);
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.app-metric {
+  border: 1px solid rgba(16, 56, 111, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 36px rgba(9, 28, 56, 0.06);
+}
+
+.app-grid-overlay {
+  background-image:
+    linear-gradient(rgba(16, 56, 111, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 56, 111, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.app-sidebar-gradient {
+  background:
+    radial-gradient(circle at top right, rgba(78, 165, 246, 0.28), transparent 28%),
+    linear-gradient(180deg, #091c38 0%, #10386f 58%, #154a96 100%);
+}

@@ -40,7 +40,7 @@ const DEEP_RESEARCH_STEPS: DeepResearchStep[] = [
   },
   {
     step: 5,
-    title: 'Subir el PDF a Silabos.AI',
+    title: 'Subir el PDF a SIGEISIL',
     description: 'Regresa a esta plataforma',
     action: "En el Panel Principal usa 'Subir Documento' y selecciona el PDF",
     result: 'Las referencias estarán disponibles en el Chat de tu sílabo',

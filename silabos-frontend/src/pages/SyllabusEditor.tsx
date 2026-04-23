@@ -1233,7 +1233,7 @@ export default function SyllabusEditor() {
         </div>
       </main>
 
-      <aside className="w-80 border-l border-slate-200 bg-white p-5">
+      <aside className="w-80 shrink-0 border-l border-slate-200 bg-white overflow-y-auto p-5">
         <h3 className="font-bold text-sm uppercase mb-4 flex items-center gap-2">
           <CheckCircle size={18} className="text-orange-600" /> Auditoria de Coherencia
         </h3>

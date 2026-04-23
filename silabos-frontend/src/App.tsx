@@ -52,7 +52,9 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <ContextGuard>
+                <Dashboard />
+              </ContextGuard>
             </ProtectedRoute>
           }
         />
@@ -70,7 +72,9 @@ export default function App() {
           path="/editor"
           element={
             <ProtectedRoute>
-              <SyllabusEditor />
+              <ContextGuard>
+                <SyllabusEditor />
+              </ContextGuard>
             </ProtectedRoute>
           }
         />
@@ -78,7 +82,9 @@ export default function App() {
           path="/syllabi"
           element={
             <ProtectedRoute>
-              <SyllabusList />
+              <ContextGuard>
+                <SyllabusList />
+              </ContextGuard>
             </ProtectedRoute>
           }
         />
@@ -94,7 +100,9 @@ export default function App() {
           path="/catalog"
           element={
             <ProtectedRoute>
-              <Catalog />
+              <ContextGuard>
+                <Catalog />
+              </ContextGuard>
             </ProtectedRoute>
           }
         />

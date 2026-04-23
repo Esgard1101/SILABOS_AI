@@ -9,7 +9,9 @@ import {
   ArrowRight,
   BookOpen,
   CheckCircle,
+  CircleHelp,
   Loader2,
+  PanelRightOpen,
   Plus,
   Sparkles,
   Target,
@@ -71,6 +73,147 @@ const MAX_SKILLS = 8;
 const MAX_CONOCIMIENTOS = 8;
 const MAX_ACTITUDES = 6;
 
+const CREATOR_STEP_LABELS: Record<Step, string> = {
+  1: 'Contexto',
+  2: 'Fuentes',
+  3: 'Desempenos',
+  4: 'Contenido',
+  5: 'Metodo',
+  6: 'Evaluacion',
+  7: 'Cierre',
+};
+
+interface CreatorStepGuide {
+  stepTag: string;
+  title: string;
+  main: string;
+  support: string;
+  instruction: string;
+  spotlight?: {
+    title: string;
+    text: string;
+  };
+  checklist: string[];
+}
+
+const CREATOR_STEP_GUIDES: Record<Step, CreatorStepGuide> = {
+  1: {
+    stepTag: 'Paso 2 de 8',
+    title: 'Contexto institucional y curso',
+    main:
+      'En este paso, el sistema te presenta la estructura institucional disponible para seleccionar el contexto academico desde el cual se elaborara el silabo.',
+    support:
+      'El trabajo se organiza desde la ruta Universidad > Facultad > Escuela > Programa > Plan > Curso > Silabo.',
+    instruction:
+      'Selecciona el programa, revisa el curso y confirma que la informacion visible corresponde exactamente al silabo que deseas elaborar antes de continuar.',
+    spotlight: {
+      title: 'Base curricular oficial',
+      text:
+        'Cuando eliges un curso, revisa sumilla, competencia, capacidad o resultado, plantilla y anexos institucionales. Esa base curricular guiara las propuestas posteriores del sistema.',
+    },
+    checklist: [
+      'Programa y curso correctos para el ciclo actual.',
+      'Datos curriculares visibles y revisados antes de continuar.',
+      'Contexto listo para crear o cargar el draft del silabo.',
+    ],
+  },
+  2: {
+    stepTag: 'Paso 4 de 8',
+    title: 'Fuentes del curso y soporte documental',
+    main:
+      'En este paso, el sistema construye la base documental del curso mediante carga docente y curaduria asistida por IA.',
+    support:
+      'Las fuentes activas respaldan las propuestas posteriores, especialmente desempenos, contenido y seleccion metodologica.',
+    instruction:
+      'Carga tus propias fuentes o solicita sugerencias a la IA. Revisa, selecciona y valida las fuentes que serviran como sustento del curso antes de continuar.',
+    spotlight: {
+      title: 'NotebookLM en esta etapa',
+      text:
+        'NotebookLM funciona como cuaderno documental del curso para organizar, consultar y sintetizar las fuentes ya validadas.',
+    },
+    checklist: [
+      'Fuentes docentes cargadas o seleccionadas.',
+      'Referencias sugeridas revisadas antes de aceptarlas.',
+      'Base documental activa confirmada para el curso.',
+    ],
+  },
+  3: {
+    stepTag: 'Paso 5 de 8',
+    title: 'Desempenos oficiales o sugeridos',
+    main:
+      'En este paso, el sistema presenta los desempenos oficiales disponibles y, si hace falta, propone desempenos sugeridos a partir de la sumilla, la competencia y la capacidad o resultado de aprendizaje.',
+    support:
+      'Los desempenos oficiales siguen siendo la referencia institucional. Los sugeridos requieren validacion academica antes de consolidarse en el silabo.',
+    instruction:
+      'Revisa los desempenos del curso, confirma su alineamiento o registra ajustes y observaciones antes de continuar.',
+    checklist: [
+      'Desempenos oficiales confirmados o sugeridos revisados.',
+      'Observaciones del docente registradas cuando corresponda.',
+      'Alineamiento del proposito asegurado antes del contenido.',
+    ],
+  },
+  4: {
+    stepTag: 'Paso 6 de 8',
+    title: 'Contenido derivado',
+    main:
+      'En este paso, el sistema propone el contenido formativo necesario para alcanzar el proposito definido, organizandolo en conocimientos, habilidades y actitudes.',
+    support:
+      'La propuesta se construye desde el proposito validado, las fuentes activas del curso y la biblioteca institucional de habilidades.',
+    instruction:
+      'Revisa la propuesta derivada, confirma lo que sea pertinente y ajusta lo necesario para asegurar que el contenido sea suficiente y coherente.',
+    checklist: [
+      'Habilidades seleccionadas con criterio docente.',
+      'Conocimientos y actitudes suficientes para el curso.',
+      'Contenido listo para pasar al metodo.',
+    ],
+  },
+  5: {
+    stepTag: 'Paso 7 de 8',
+    title: 'Metodo y secuencia didactica',
+    main:
+      'En este paso, el sistema propone el metodo mas pertinente para operativizar el proposito y el contenido del silabo tomando como base las guias metodologicas oficiales.',
+    support:
+      'La propuesta incluye metodo troncal, posibles apoyos complementarios, secuencia didactica sugerida, tecnicas recomendadas y relacion entre metodo, actividades y evidencias.',
+    instruction:
+      'Revisa el metodo sugerido, confirma su pertinencia y ajusta la propuesta antes de pasar al bloque de evaluacion.',
+    checklist: [
+      'Metodo principal revisado con el contenido ya validado.',
+      'Secuencia didactica coherente con el aprendizaje esperado.',
+      'Seleccion final lista para la evaluacion.',
+    ],
+  },
+  6: {
+    stepTag: 'Paso 8 de 8',
+    title: 'Evaluacion y consistencia final',
+    main:
+      'En este paso, el sistema articula evidencias, instrumentos y sistema de calificacion para cerrar la coherencia curricular, didactica y metodologica del silabo.',
+    support:
+      'Aqui se revisa el alineamiento entre desempenos, habilidades, metodo, actividades, evidencias e instrumentos antes del cierre final.',
+    instruction:
+      'Revisa la tabla de evaluacion, valida porcentajes y asegurate de que la propuesta final responda al metodo y al tipo de aprendizaje requerido.',
+    checklist: [
+      'Porcentajes de evaluacion suman exactamente 100%.',
+      'Evidencias e instrumentos responden al metodo elegido.',
+      'La tabla final esta lista para el cierre del silabo.',
+    ],
+  },
+  7: {
+    stepTag: 'Cierre del paso 8',
+    title: 'Validacion y publicacion',
+    main:
+      'En este cierre, el sistema ensambla la version final del silabo y prepara su apertura en el editor o su envio a revision academica cuando corresponda.',
+    support:
+      'Este es el momento para revisar el resumen de bloques y confirmar que todo el documento mantiene coherencia antes de cerrar la fase de creacion.',
+    instruction:
+      'Verifica cada bloque, corrige lo necesario y confirma la version final del silabo antes de enviarlo a revision o abrirlo en el editor.',
+    checklist: [
+      'Resumen final revisado bloque por bloque.',
+      'Validacion academica considerada si hubo sugerencias de IA.',
+      'Documento listo para editor o revision final.',
+    ],
+  },
+};
+
 // ── Helper components ────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: StepBlockStatus }) {
@@ -90,35 +233,73 @@ function StatusBadge({ status }: { status: StepBlockStatus }) {
 function StepIndicator({ current }: { current: Step }) {
   const steps: Step[] = [1, 2, 3, 4, 5, 6, 7];
   return (
-    <div className="flex items-center gap-1 mb-8">
+    <div className="mb-6 flex flex-wrap items-center gap-2">
       {steps.map((s, idx) => (
         <React.Fragment key={s}>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+              className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                 s < current
-                  ? 'bg-green-500 text-white'
+                  ? 'bg-[var(--brand-600)] text-white'
                   : s === current
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-100 text-gray-400'
+                  ? 'bg-[var(--brand-700)] text-white shadow-[0_10px_22px_rgba(21,74,150,0.22)]'
+                  : 'border border-[var(--line-subtle)] bg-white text-[var(--text-muted)]'
               }`}
             >
               {s < current ? <CheckCircle className="w-3.5 h-3.5" /> : s}
             </div>
             <span
-              className={`text-[10px] font-medium hidden sm:inline ${
-                s === current ? 'text-orange-600' : 'text-gray-400'
+              className={`hidden text-[11px] font-semibold sm:inline ${
+                s === current ? 'text-[var(--brand-700)]' : 'text-[var(--text-muted)]'
               }`}
             >
-              {STEP_LABELS[s]}
+              {CREATOR_STEP_LABELS[s]}
             </span>
           </div>
           {idx < steps.length - 1 && (
-            <div className={`flex-1 h-px max-w-8 ${s < current ? 'bg-green-300' : 'bg-gray-200'}`} />
+            <div
+              className={`h-px flex-1 max-w-10 ${
+                s < current ? 'bg-[var(--brand-200)]' : 'bg-[var(--line-subtle)]'
+              }`}
+            />
           )}
         </React.Fragment>
       ))}
     </div>
+  );
+}
+
+function GuideTriggerButton({
+  open,
+  stepTag,
+  onClick,
+}: {
+  open: boolean;
+  stepTag: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={open}
+      title="Guia del paso"
+      className={`group relative flex h-12 w-12 items-center justify-center rounded-2xl border transition-all duration-200 ${
+        open
+          ? 'border-[var(--brand-200)] bg-[var(--brand-50)] text-[var(--brand-700)] shadow-[0_16px_32px_rgba(21,74,150,0.14)]'
+          : 'border-[var(--line-subtle)] bg-white text-slate-500 hover:-translate-y-0.5 hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]'
+      }`}
+    >
+      <CircleHelp size={20} />
+      <span
+        className={`absolute -left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-[var(--brand-600)] transition-opacity ${
+          open ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+      <span className="pointer-events-none absolute right-[calc(100%+0.75rem)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap rounded-full bg-[var(--brand-950)] px-3 py-1.5 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(9,28,56,0.24)] xl:group-hover:block">
+        {stepTag}
+      </span>
+    </button>
   );
 }
 
@@ -141,7 +322,7 @@ function SuggestButton({
       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-      {loading ? 'Generando…' : label}
+      <span>{loading ? 'Generando...' : label}</span>
     </button>
   );
 }
@@ -268,11 +449,12 @@ export default function SyllabusCreator() {
   const { showToast, toasts, removeToast } = useToast();
 
   const [step, setStep] = useState<Step>(1);
+  const [isGuideOpen, setIsGuideOpen] = useState(true);
   const savingRef = useRef(false);
 
   // ── Step 1: Curso
   const [courses, setCourses] = useState<CourseListItem[]>([]);
-  const [loadingCourses, setLoadingCourses] = useState(false);
+  const [loadingCourses, setLoadingCourses] = useState(true);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [courseDetail, setCourseDetail] = useState<CourseDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -342,30 +524,63 @@ export default function SyllabusCreator() {
   const [submittingValidation, setSubmittingValidation] = useState(false);
   const [finalSyllabusId, setFinalSyllabusId] = useState<string | null>(null);
 
+  useEffect(() => {
+    setIsGuideOpen(true);
+  }, [step]);
+
   // ─────────────────────────────────────────────────────────────────────────
   // Load courses
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!context?.program_id) return;
+
+    let cancelled = false;
     setLoadingCourses(true);
     api
       .getCourses(context.program_id)
-      .then((res) => setCourses(res.data || []))
-      .catch(() => showToast('No se pudieron cargar los cursos', 'error'))
-      .finally(() => setLoadingCourses(false));
-  }, [context?.program_id]);
+      .then((res) => {
+        if (cancelled) return;
+        setCourses(res.data || []);
+      })
+      .catch(() => {
+        if (!cancelled) showToast('No se pudieron cargar los cursos', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCourses(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [context?.program_id, showToast]);
 
   // Load course detail
   useEffect(() => {
-    if (!selectedCourseId) { setCourseDetail(null); return; }
+    if (!selectedCourseId) {
+      setCourseDetail(null);
+      return;
+    }
+
+    let cancelled = false;
     setLoadingDetail(true);
     api
       .getCourse(selectedCourseId)
-      .then((res) => setCourseDetail(res.data || null))
-      .catch(() => showToast('No se pudo cargar el detalle del curso', 'error'))
-      .finally(() => setLoadingDetail(false));
-  }, [selectedCourseId]);
+      .then((res) => {
+        if (cancelled) return;
+        setCourseDetail(res.data || null);
+      })
+      .catch(() => {
+        if (!cancelled) showToast('No se pudo cargar el detalle del curso', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDetail(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCourseId, showToast]);
 
   useEffect(() => {
     if (courseDetail?.name && !aiBiblioQuery.trim()) {
@@ -650,6 +865,9 @@ export default function SyllabusCreator() {
 
   const requiresAcademicValidation =
     performancesOrigin === 'ai_suggested' || performancesOrigin === 'teacher_edited_from_ai';
+  const showCourseLoading = loadingCourses;
+  const showCourseEmpty = !loadingCourses && courses.length === 0;
+  const showCourseList = !loadingCourses && courses.length > 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // IA Actions
@@ -954,22 +1172,28 @@ export default function SyllabusCreator() {
   // ─────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────
+  const activeGuide = CREATOR_STEP_GUIDES[step];
 
   return (
-    <div className="min-h-screen bg-slate-50 md:flex">
+    <div
+      className="notranslate min-h-screen bg-[var(--app-bg)] md:flex md:h-screen md:overflow-hidden"
+      translate="no"
+    >
       <NavSidebar currentPath="/creator" />
 
-      <div className="flex-1">
-        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-orange-100">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-3">
+      <div className="min-w-0 flex-1 md:h-screen md:overflow-hidden">
+        <div className="flex min-h-screen flex-col md:h-screen">
+          <header className="app-topbar-blur sticky top-0 z-50 shrink-0 border-b border-[var(--line-subtle)]">
+            <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 xl:px-8">
+            <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => navigate('/dashboard')}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[var(--line-subtle)] bg-white text-slate-600 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
             >
-              <ArrowLeft className="w-4 h-4 text-gray-600" />
+              <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className="bg-orange-500 rounded-lg p-1.5">
-              <BookOpen className="w-4 h-4 text-white" />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--brand-700)] text-white shadow-[0_14px_28px_rgba(21,74,150,0.22)]">
+              <BookOpen className="h-4 w-4" />
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-base font-bold text-gray-900">Nuevo Sílabo</h1>
@@ -977,10 +1201,12 @@ export default function SyllabusCreator() {
                 {context.program_name} — {context.semester}
               </p>
             </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
             {saving && (
               <div className="flex items-center gap-1 text-xs text-gray-400">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Guardando…
+                <span>Guardando...</span>
               </div>
             )}
             {draftId && !saving && (
@@ -988,11 +1214,35 @@ export default function SyllabusCreator() {
                 Draft activo
               </span>
             )}
+            </div>
           </div>
         </header>
 
-        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-          <StepIndicator current={step} />
+        <div className="flex-1 overflow-hidden">
+          <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-5 px-4 py-6 sm:px-6 xl:flex-row xl:items-stretch xl:px-8">
+            <section className="order-2 min-h-0 min-w-0 flex-1 xl:order-1 xl:min-w-[760px]">
+              <div className="app-panel flex h-full min-h-0 flex-col overflow-hidden p-5 xl:p-6">
+                <div className="shrink-0 border-b border-[var(--line-subtle)] pb-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="app-kicker">Proceso de elaboracion</p>
+                      <h2 className="mt-2 text-2xl font-bold text-slate-950">Construccion guiada del silabo</h2>
+                      <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                        Cada bloque se trabaja por separado para reducir errores y mantener una ruta clara para el docente.
+                      </p>
+                    </div>
+
+                    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line-subtle)] bg-[var(--surface-base)] px-3 py-1.5 text-xs font-semibold text-[var(--brand-700)]">
+                      {activeGuide.stepTag}
+                    </div>
+                  </div>
+
+                  <div className="mt-5">
+                    <StepIndicator current={step} />
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto pt-5 pr-1">
 
           {/* ──── PASO 1: Curso ──── */}
           {step === 1 && (
@@ -1004,17 +1254,24 @@ export default function SyllabusCreator() {
                 </p>
               </div>
 
-              {loadingCourses ? (
-                <div className="flex items-center gap-2 text-sm text-gray-500 p-4">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Cargando cursos…
-                </div>
-              ) : courses.length === 0 ? (
-                <p className="text-sm text-gray-500 p-4 bg-gray-50 rounded-lg">
-                  No se encontraron cursos para este programa.
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              <div
+                className={`flex items-center gap-2 rounded-lg p-4 text-sm text-gray-500 ${
+                  showCourseLoading ? '' : 'hidden'
+                }`}
+              >
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Cargando cursos...</span>
+              </div>
+
+              <p
+                className={`rounded-lg bg-gray-50 p-4 text-sm text-gray-500 ${
+                  showCourseEmpty ? '' : 'hidden'
+                }`}
+              >
+                No se encontraron cursos para este programa.
+              </p>
+
+              <div className={showCourseList ? 'space-y-2 max-h-80 overflow-y-auto pr-1' : 'hidden'}>
                   {courses.map((c) => (
                     <button
                       key={c.id}
@@ -1036,7 +1293,7 @@ export default function SyllabusCreator() {
                           )}
                           {c.is_common && (
                             <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
-                              Común
+                              Comun
                             </span>
                           )}
                           {c.credits != null && (
@@ -1047,13 +1304,12 @@ export default function SyllabusCreator() {
                       {c.code && <span className="text-xs text-gray-400">{c.code}</span>}
                     </button>
                   ))}
-                </div>
-              )}
+              </div>
 
               {loadingDetail && (
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Cargando datos del curso…
+                  <span>Cargando datos del curso...</span>
                 </div>
               )}
               {courseDetail && !loadingDetail && <CourseCard course={courseDetail} />}
@@ -1277,7 +1533,7 @@ export default function SyllabusCreator() {
                 {loadingPerformances ? (
                   <div className="flex items-center gap-2 text-sm text-gray-500 p-4">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Cargando desempeños…
+                    <span>Cargando desempenos...</span>
                   </div>
                 ) : officialPerformances.length > 0 ? (
                   <div className="space-y-2">
@@ -1409,8 +1665,8 @@ export default function SyllabusCreator() {
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {suggestingContent
-                      ? <><Loader2 className="w-4 h-4 animate-spin" />Generando propuesta…</>
-                      : <><Sparkles className="w-4 h-4" />Generar propuesta de contenido</>
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Generando propuesta...</span></>
+                      : <><Sparkles className="w-4 h-4" /><span>Generar propuesta de contenido</span></>
                     }
                   </button>
                 </div>
@@ -1511,7 +1767,7 @@ export default function SyllabusCreator() {
                       className="inline-flex items-center gap-1.5 px-3 py-2 text-xs text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg disabled:opacity-50"
                     >
                       {suggestingContent ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                      Regenerar
+                      <span>Regenerar</span>
                     </button>
                   </div>
                 </div>
@@ -1532,7 +1788,8 @@ export default function SyllabusCreator() {
                     </h3>
                     {loadingAllSkills ? (
                       <div className="flex items-center gap-2 text-sm text-gray-500 p-4">
-                        <Loader2 className="w-4 h-4 animate-spin" />Cargando catálogo…
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Cargando catalogo...</span>
                       </div>
                     ) : (
                       <>
@@ -2050,7 +2307,7 @@ export default function SyllabusCreator() {
                         ) : (
                           <Sparkles className="w-4 h-4" />
                         )}
-                        Enviar a validación académica
+                        <span>Enviar a validacion academica</span>
                       </button>
                     ) : null}
                     <button
@@ -2076,16 +2333,190 @@ export default function SyllabusCreator() {
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold rounded-lg text-sm"
                   >
                     {assembling ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" />Ensamblando…</>
+                      <><Loader2 className="w-4 h-4 animate-spin" /><span>Ensamblando...</span></>
                     ) : (
-                      <><Sparkles className="w-4 h-4" />Ensamblar sílabo</>
+                      <><Sparkles className="w-4 h-4" /><span>Ensamblar silabo</span></>
                     )}
                   </button>
                 </div>
               )}
             </div>
           )}
-        </main>
+                </div>
+              </div>
+            </section>
+
+            <aside className="order-1 xl:order-2 xl:sticky xl:top-6 xl:self-start">
+              <div className="flex items-start gap-3">
+                <div className="app-panel-soft flex flex-row items-center gap-2 rounded-[1.6rem] px-2 py-2 xl:w-16 xl:flex-col xl:justify-start">
+                  <div className="hidden xl:flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--surface-base)] text-[var(--brand-700)]">
+                    <PanelRightOpen size={18} />
+                  </div>
+
+                  <GuideTriggerButton
+                    open={isGuideOpen}
+                    stepTag={activeGuide.stepTag}
+                    onClick={() => setIsGuideOpen((current) => !current)}
+                  />
+                </div>
+
+                <div
+                  className={`hidden overflow-hidden transition-[width,opacity] duration-300 xl:block ${
+                    isGuideOpen ? 'w-[400px] opacity-100' : 'w-0 opacity-0'
+                  }`}
+                  aria-hidden={!isGuideOpen}
+                >
+                  <div className="h-full w-[400px]">
+                    <section className="app-panel flex h-full max-h-[calc(100vh-10.75rem)] min-h-[520px] flex-col overflow-hidden">
+                      <div className="flex items-start justify-between gap-4 border-b border-[var(--line-subtle)] px-5 py-5">
+                        <div className="min-w-0">
+                          <p className="app-kicker mb-2 text-[0.65rem] tracking-[0.18em]">
+                            {activeGuide.stepTag}
+                          </p>
+                          <h3 className="text-lg font-semibold text-slate-950">{activeGuide.title}</h3>
+                          <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                            {activeGuide.main}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsGuideOpen(false)}
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--line-subtle)] bg-white text-slate-500 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
+                          aria-label="Cerrar panel lateral"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto px-5 py-5">
+                        <div className="space-y-4">
+                          <div className="rounded-[1.6rem] border border-[var(--line-subtle)] bg-[var(--surface-base)] px-4 py-4">
+                            <p className="text-sm font-semibold text-slate-900">Mensaje de acompanamiento</p>
+                            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                              {activeGuide.support}
+                            </p>
+                          </div>
+
+                          {activeGuide.spotlight ? (
+                            <div className="rounded-[1.6rem] border border-[rgba(25,95,187,0.12)] bg-[var(--brand-50)] px-4 py-4">
+                              <p className="text-sm font-semibold text-[var(--brand-700)]">
+                                {activeGuide.spotlight.title}
+                              </p>
+                              <p className="mt-2 text-sm leading-6 text-[var(--brand-700)]">
+                                {activeGuide.spotlight.text}
+                              </p>
+                            </div>
+                          ) : null}
+
+                          <div className="rounded-[1.6rem] border border-[var(--line-subtle)] bg-white px-4 py-4">
+                            <p className="text-sm font-semibold text-slate-900">Que debe hacer el docente</p>
+                            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                              {activeGuide.instruction}
+                            </p>
+                          </div>
+
+                          <div className="rounded-[1.6rem] border border-[var(--line-subtle)] bg-white px-4 py-4">
+                            <p className="text-sm font-semibold text-slate-900">Checklist rapido</p>
+                            <div className="mt-3 space-y-2">
+                              {activeGuide.checklist.map((item) => (
+                                <div key={item} className="flex items-start gap-3">
+                                  <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-50)] text-[var(--brand-700)]">
+                                    <CheckCircle className="h-3.5 w-3.5" />
+                                  </div>
+                                  <p className="text-sm leading-6 text-[var(--text-soft)]">{item}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+
+                {isGuideOpen ? (
+                  <div
+                    className="fixed inset-0 z-[80] bg-slate-950/34 xl:hidden"
+                    onClick={() => setIsGuideOpen(false)}
+                  >
+                    <div
+                      className="ml-auto h-full w-full max-w-sm p-3"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <section className="app-panel flex h-full flex-col overflow-hidden">
+                        <div className="flex items-start justify-between gap-4 border-b border-[var(--line-subtle)] px-5 py-5">
+                          <div className="min-w-0">
+                            <p className="app-kicker mb-2 text-[0.65rem] tracking-[0.18em]">
+                              {activeGuide.stepTag}
+                            </p>
+                            <h3 className="text-lg font-semibold text-slate-950">{activeGuide.title}</h3>
+                            <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                              {activeGuide.main}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setIsGuideOpen(false)}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[var(--line-subtle)] bg-white text-slate-500 transition hover:border-[var(--brand-200)] hover:text-[var(--brand-700)]"
+                            aria-label="Cerrar panel lateral"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto px-5 py-5">
+                          <div className="space-y-4">
+                            <div className="rounded-[1.6rem] border border-[var(--line-subtle)] bg-[var(--surface-base)] px-4 py-4">
+                              <p className="text-sm font-semibold text-slate-900">Mensaje de acompanamiento</p>
+                              <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                                {activeGuide.support}
+                              </p>
+                            </div>
+
+                            {activeGuide.spotlight ? (
+                              <div className="rounded-[1.6rem] border border-[rgba(25,95,187,0.12)] bg-[var(--brand-50)] px-4 py-4">
+                                <p className="text-sm font-semibold text-[var(--brand-700)]">
+                                  {activeGuide.spotlight.title}
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-[var(--brand-700)]">
+                                  {activeGuide.spotlight.text}
+                                </p>
+                              </div>
+                            ) : null}
+
+                            <div className="rounded-[1.6rem] border border-[var(--line-subtle)] bg-white px-4 py-4">
+                              <p className="text-sm font-semibold text-slate-900">Que debe hacer el docente</p>
+                              <p className="mt-2 text-sm leading-6 text-[var(--text-soft)]">
+                                {activeGuide.instruction}
+                              </p>
+                            </div>
+
+                            <div className="rounded-[1.6rem] border border-[var(--line-subtle)] bg-white px-4 py-4">
+                              <p className="text-sm font-semibold text-slate-900">Checklist rapido</p>
+                              <div className="mt-3 space-y-2">
+                                {activeGuide.checklist.map((item) => (
+                                  <div key={item} className="flex items-start gap-3">
+                                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-50)] text-[var(--brand-700)]">
+                                      <CheckCircle className="h-3.5 w-3.5" />
+                                    </div>
+                                    <p className="text-sm leading-6 text-[var(--text-soft)]">{item}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
       </div>
 
       {showAIBiblioModal && (
@@ -2171,12 +2602,12 @@ export default function SyllabusCreator() {
                   {searchingAIBiblio ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Buscando…
+                      <span>Buscando...</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="h-4 w-4" />
-                      {aiBiblioIntent === 'skip' ? 'Buscar y continuar' : 'Buscar y cargar fuentes'}
+                      <span>{aiBiblioIntent === 'skip' ? 'Buscar y continuar' : 'Buscar y cargar fuentes'}</span>
                     </>
                   )}
                 </button>
