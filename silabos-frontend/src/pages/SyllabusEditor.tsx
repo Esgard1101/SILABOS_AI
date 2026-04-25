@@ -876,6 +876,15 @@ export default function SyllabusEditor() {
                 Publicar
               </button>
             )}
+            {syllabusId && syllabusStatus === 'published' && (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="bg-gradient-to-r from-[#007A8A] to-[#00B4CC] text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:brightness-110"
+              >
+                <CheckCircle size={16} />
+                Finalizar y volver al inicio
+              </button>
+            )}
             <button onClick={handleShare} className="bg-white border border-slate-200 p-2 rounded-lg hover:border-amber-300">
               <Share size={16} className="text-slate-600" />
             </button>

@@ -583,6 +583,42 @@ class SupabaseService:
         """Devuelve las referencias APA pre-parseadas de un curso."""
         return await self._ejecutar(self._obtener_refs_sync, course_id)
 
+    def _obtener_refs_rows_sync(self, course_id: str) -> list[dict]:
+        from services.bibliography_parser import referencia_a_metadata
+
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(
+                    """
+                    SELECT doc_id, ref_text, ref_order, created_at
+                    FROM course_bibliography_refs
+                    WHERE course_id = :course_id
+                    ORDER BY created_at ASC, ref_order ASC
+                    """
+                ),
+                {"course_id": course_id},
+            ).mappings().all()
+
+        rows: list[dict] = []
+        for fila in filas:
+            created_at = fila.get("created_at")
+            if hasattr(created_at, "isoformat"):
+                created_at = created_at.isoformat()
+            rows.append(
+                referencia_a_metadata(
+                    fila.get("ref_text", ""),
+                    doc_id=fila.get("doc_id"),
+                    course_id=course_id,
+                    ref_order=fila.get("ref_order"),
+                    created_at=created_at,
+                )
+            )
+        return rows
+
+    async def obtener_referencias_curso_rows(self, course_id: str) -> list[dict]:
+        """Devuelve filas estructuradas de referencias sin cambiar el schema almacenado."""
+        return await self._ejecutar(self._obtener_refs_rows_sync, course_id)
+
     def _eliminar_refs_doc_sync(self, doc_id: str) -> None:
         with self._Session() as sesion:
             sesion.execute(
@@ -3425,6 +3461,9 @@ class SupabaseService:
                     or item.get("ref_text")
                     or item.get("reference")
                     or item.get("text")
+                    or item.get("display_text")
+                    or item.get("display")
+                    or item.get("label")
                     or item.get("title")
                 )
             else:

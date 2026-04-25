@@ -4,6 +4,7 @@ import { faBell, faCircleQuestion, faUser } from '@fortawesome/free-solid-svg-ic
 import { Building2, LucideIcon } from 'lucide-react';
 import NavSidebar from './NavSidebar';
 import { useAppContext } from '../hooks/useAppContext';
+import { useLayoutContext } from '../context/LayoutContext';
 
 interface AppShellProps {
   currentPath?: string;
@@ -44,6 +45,50 @@ export default function AppShell({
   actions,
 }: AppShellProps) {
   const { context } = useAppContext();
+  const { hasMasterLayout } = useLayoutContext();
+
+  // Embedded inside MasterLayout — skip NavSidebar and sticky header
+  if (hasMasterLayout) {
+    return (
+      <div className="flex h-full flex-col bg-[var(--app-bg)] text-slate-900">
+        <div className="flex-1 overflow-hidden">
+          <main className="mx-auto flex h-full w-full max-w-[1600px] flex-col overflow-hidden px-4 py-5 sm:px-6">
+            <section className="mb-4 shrink-0">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-[var(--line-subtle)] bg-white/75 px-3 py-1">
+                    <Icon size={13} className="text-[var(--brand-600)]" />
+                    <span className="app-kicker text-[0.6rem] tracking-[0.18em]">Espacio docente</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h1 className="text-xl font-bold text-slate-950 sm:text-2xl">{title}</h1>
+                    {context ? (
+                      <>
+                        <span className="app-chip">{context.program_name}</span>
+                        <span className="app-chip app-chip-muted">{context.semester}</span>
+                      </>
+                    ) : null}
+                  </div>
+                  <p className="mt-1.5 max-w-3xl text-xs leading-6 text-[var(--text-soft)]">{subtitle}</p>
+                </div>
+                {actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}
+              </div>
+            </section>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {aside ? (
+                <div className="grid h-full gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+                  <div className="min-w-0 h-full overflow-y-auto pr-1">{children}</div>
+                  <aside className="hidden h-full overflow-y-auto xl:block">{aside}</aside>
+                </div>
+              ) : (
+                <div className="h-full overflow-y-auto pr-1">{children}</div>
+              )}
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--app-bg)] text-slate-900 md:flex md:h-screen md:overflow-hidden">

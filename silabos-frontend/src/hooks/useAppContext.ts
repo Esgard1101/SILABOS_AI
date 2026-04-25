@@ -10,6 +10,8 @@ export interface ActiveContext {
   program_id: string;
   program_name: string;
   semester: string; // 'YYYY-I' o 'YYYY-II'
+  course_id?: string;
+  course_name?: string;
 }
 
 export function getCurrentSemester(): string {

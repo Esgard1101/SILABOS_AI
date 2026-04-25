@@ -85,6 +85,11 @@
   --text-muted: #7b8ca2;
   --shadow-soft: 0 22px 48px rgba(9, 28, 56, 0.08);
   --shadow-strong: 0 30px 70px rgba(9, 28, 56, 0.18);
+  --master-deep: #041A3A;
+  --master-card: #0A2753;
+  --master-gold: #D4A351;
+  --master-cyan: #00B4CC;
+  --master-cyan-dark: #007A8A;
 }
 
 html {
@@ -226,4 +231,13 @@ samp,
   background:
     radial-gradient(circle at top right, rgba(78, 165, 246, 0.28), transparent 28%),
     linear-gradient(180deg, #091c38 0%, #10386f 58%, #154a96 100%);
+}
+
+.icon-gold-badge {
+  filter: sepia(1) saturate(3) hue-rotate(5deg) brightness(0.9);
+}
+
+#root:has(.master-layout) {
+  height: 100vh;
+  overflow: hidden;
 }
