@@ -106,6 +106,9 @@ _PATTERN_SECTION = re.compile(
     r"(?:REFERENCIAS(?:\s+BIBLIOGR[AÁaá]FICAS?)?|BIBLIOGRAF[IÍií]A|FUENTES(?:\s+CONSULTADAS)?|REFERENCES)"
     r"\s*:?\s*"
 )
+_PATTERN_INLINE_SECTION = re.compile(
+    r"(?i)\b(?:REFERENCIAS(?:\s+BIBLIOGR[A-ZÃa-zÃ¡]FICAS?)?|BIBLIOGRAF[IÃiÃ­]A|FUENTES(?:\s+CONSULTADAS)?|REFERENCES)\b\s*:?\s*"
+)
 _PATTERN_NEXT_SECTION = re.compile(
     r"\n\s*(?:#{1,6}\s+\S|(?:[IVXLCDM]+\.?\s+)?(?:ANEXOS?|AP[EÉ]NDICES?|CONCLUSIONES?|NOTAS?|ABSTRACT|INTRODUCCI[OÓ]N|RESULTADOS|DISCUSI[OÓ]N)\b)",
     re.IGNORECASE,
@@ -575,6 +578,9 @@ def _insert_line_breaks_between_refs(text: str) -> str:
 
 def _extract_reference_section(text: str) -> str:
     match = _PATTERN_SECTION.search(text)
+    if not match:
+        match = _PATTERN_INLINE_SECTION.search(text)
+
     if not match:
         compact = text[:5000]
         year_hits = len(_PATTERN_YEAR.findall(compact))

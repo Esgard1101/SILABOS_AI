@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -56,6 +56,26 @@ function truncateText(value: string, maxLength: number) {
   return `${value.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
+function cleanNotebookReference(reference: string) {
+  const marker = /(?:referencias\s+bibliogr[aá]ficas?|bibliograf[ií]a|fuentes\s+consultadas|references)\s*:?\s*/i;
+  const cleaned = reference.replace(/\s+/g, ' ').trim();
+  const match = marker.exec(cleaned);
+  if (!match) return cleaned;
+  return cleaned.slice(match.index + match[0].length).trim();
+}
+
+function dedupeTextItems(items: string[]) {
+  const seen = new Set<string>();
+  return items
+    .map((item) => item.trim())
+    .filter((item) => {
+      const normalized = item.toLowerCase();
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+}
+
 function inferBibliographicType(reference: string): BibliographicType {
   const lower = reference.toLowerCase();
 
@@ -96,40 +116,54 @@ function buildSourceRows({
 }: {
   references: string[];
   sources: string[];
-  uploadedBiblio: { fileName: string; refCount: number } | null;
+  uploadedBiblio: { fileName: string; refCount: number; references?: string[] } | null;
   defaultDate: string;
 }): SourceTableRow[] {
   const hasVerifiedOrigins = sources.length > 0;
+  const notebookReferences = dedupeTextItems((uploadedBiblio?.references || []).map(cleanNotebookReference));
+  const notebookReferenceKeys = new Set(notebookReferences.map((reference) => reference.trim().toLowerCase()));
 
-  const notebookRows: SourceTableRow[] = uploadedBiblio
-    ? [
-        {
-          id: 'notebook-upload',
-          title: truncateText(uploadedBiblio.fileName.replace(/\.pdf$/i, ''), 72),
-          type: 'Documentacion',
-          origin: 'NotebookLM',
-          loadedAt: defaultDate,
-          status: uploadedBiblio.refCount > 0 ? 'Importada' : 'Pendiente',
-          reference:
-            uploadedBiblio.refCount > 0
-              ? `PDF exportado cargado con ${uploadedBiblio.refCount} referencias detectadas por el parser.`
-              : 'PDF exportado cargado. La tabla se completará cuando el parser detecte referencias válidas.',
-        },
-      ]
-    : [];
+  const notebookRows: SourceTableRow[] = notebookReferences.length > 0
+    ? notebookReferences.map((reference, index) => ({
+        id: `notebook-${index}`,
+        title: extractReferenceTitle(reference),
+        type: inferBibliographicType(reference),
+        origin: 'NotebookLM' as const,
+        loadedAt: defaultDate,
+        status: 'Importada' as const,
+        reference: reference.trim(),
+      }))
+    : uploadedBiblio
+      ? [
+          {
+            id: 'notebook-upload',
+            title: truncateText(uploadedBiblio.fileName.replace(/\.pdf$/i, ''), 72),
+            type: 'Documentacion',
+            origin: 'NotebookLM',
+            loadedAt: defaultDate,
+            status: uploadedBiblio.refCount > 0 ? 'Importada' : 'Pendiente',
+            reference:
+              uploadedBiblio.refCount > 0
+                ? `PDF exportado cargado con ${uploadedBiblio.refCount} referencias detectadas por el parser.`
+                : 'PDF exportado cargado. La tabla se completará cuando el parser detecte referencias válidas.',
+          },
+        ]
+      : [];
 
-  const aiRows = references.map((reference, index) => ({
-    id: `ai-${index}`,
-    title: extractReferenceTitle(reference),
-    type: inferBibliographicType(reference),
-    origin: 'Curaduria IA' as const,
-    loadedAt: defaultDate,
-    status:
-      hasVerifiedOrigins || /(https?:\/\/|doi\.org|doi:)/i.test(reference)
-        ? ('Validada' as const)
-        : ('Pendiente' as const),
-    reference: reference.trim(),
-  }));
+  const aiRows = references
+    .filter((reference) => !notebookReferenceKeys.has(reference.trim().toLowerCase()))
+    .map((reference, index) => ({
+      id: `ai-${index}`,
+      title: extractReferenceTitle(reference),
+      type: inferBibliographicType(reference),
+      origin: 'Curaduria IA' as const,
+      loadedAt: defaultDate,
+      status:
+        hasVerifiedOrigins || /(https?:\/\/|doi\.org|doi:)/i.test(reference)
+          ? ('Validada' as const)
+          : ('Pendiente' as const),
+      reference: reference.trim(),
+    }));
 
   return [...notebookRows, ...aiRows];
 }
@@ -163,15 +197,13 @@ function ActionVisualCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-3 rounded-2xl border border-[#D4A351]/18 bg-[#041A3A]/90 p-3.5 text-left shadow-[0_14px_28px_rgba(1,32,63,0.18)] transition hover:border-[#D4A351]/35 hover:bg-[#08234A]"
+      className="group flex w-full items-center gap-4 rounded-2xl border border-[#D4A351]/18 bg-[#041A3A]/90 p-3.5 text-left shadow-[0_14px_28px_rgba(1,32,63,0.18)] transition hover:border-[#D4A351]/35 hover:bg-[#08234A]"
     >
-      <div className="flex h-[112px] w-[112px] shrink-0 items-center justify-center rounded-[24px] border border-white/10 bg-[#0A2753] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_18px_40px_rgba(1,32,63,0.28)]">
-        <img
-          src={imageSrc}
-          alt={imageAlt}
-          className="h-full w-full object-contain drop-shadow-[0_12px_24px_rgba(0,180,204,0.18)]"
-        />
-      </div>
+      <img
+        src={imageSrc}
+        alt={imageAlt}
+        className="h-[138px] w-[138px] shrink-0 object-contain drop-shadow-[0_16px_28px_rgba(0,180,204,0.16)] transition duration-200 group-hover:scale-[1.03]"
+      />
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -271,10 +303,12 @@ function AIBiblioModal({
 function ReferencesModal({
   references,
   sources,
+  originLabel,
   onClose,
 }: {
   references: string[];
   sources: string[];
+  originLabel: string;
   onClose: () => void;
 }) {
   return (
@@ -285,7 +319,7 @@ function ReferencesModal({
             <h3 className="text-sm font-bold text-white">Referencias en formato APA 7</h3>
             <p className="mt-1 text-[11px] text-white/55">
               {references.length} referencias listas para revisión.
-              {sources.length > 0 ? ` Fuentes consultadas: ${sources.join(' · ')}.` : ' Curaduría IA del curso.'}
+              {sources.length > 0 ? ` Fuentes consultadas: ${sources.join(' · ')}.` : ` Origen: ${originLabel}.`}
             </p>
           </div>
           <button
@@ -312,7 +346,7 @@ function ReferencesModal({
                     {formatTypeLabel(inferBibliographicType(reference))}
                   </span>
                   <span className="rounded-full bg-[#00B4CC]/16 px-2 py-0.5 text-[10px] font-semibold text-[#6FDBEA]">
-                    Curaduría IA
+                    {originLabel}
                   </span>
                 </div>
                 <p className="mt-2 text-[12px] leading-6 text-white/76">{reference}</p>
@@ -346,9 +380,22 @@ export default function Step2_Fuentes() {
   const [removingBiblio, setRemovingBiblio] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showReferencesModal, setShowReferencesModal] = useState(false);
+  const [referencesModalOrigin, setReferencesModalOrigin] = useState<'NotebookLM' | 'Curaduria IA'>('NotebookLM');
+  const [focusedReference, setFocusedReference] = useState<string | null>(null);
   const [aiQuery, setAiQuery] = useState(courseDetail?.name ?? '');
   const [searching, setSearching] = useState(false);
   const [tableDateLabel] = useState(() => formatTodayLabel());
+  const notebookReferences = dedupeTextItems((uploadedBiblio?.references || []).map(cleanNotebookReference));
+  const notebookReferenceKeys = new Set(notebookReferences.map((reference) => reference.toLowerCase()));
+  const aiReferences = bibliographyReferences.filter(
+    (reference) => !notebookReferenceKeys.has(cleanNotebookReference(reference).toLowerCase()),
+  );
+  const modalReferences = focusedReference
+    ? [focusedReference]
+    : referencesModalOrigin === 'NotebookLM'
+      ? notebookReferences
+      : aiReferences;
+  const modalSources = referencesModalOrigin === 'NotebookLM' ? ['NotebookLM'] : bibliographySources.filter((source) => source !== 'NotebookLM');
 
   const sourceRows = buildSourceRows({
     references: bibliographyReferences,
@@ -356,6 +403,44 @@ export default function Step2_Fuentes() {
     uploadedBiblio,
     defaultDate: tableDateLabel,
   });
+
+  useEffect(() => {
+    if (!courseDetail?.id || !uploadedBiblio || uploadedBiblio.references?.length) return;
+    if (uploadedBiblio.refCount <= 0) return;
+
+    let cancelled = false;
+
+    const loadStoredNotebookReferences = async () => {
+      try {
+        const res = await api.getBibliographyReferences(courseDetail.id);
+        const parsedRefs = dedupeRefs((res.data?.references || []).map(cleanNotebookReference).filter(Boolean));
+        if (cancelled || parsedRefs.length === 0) return;
+
+        const nextRefs = dedupeRefs([...parsedRefs, ...bibliographyReferences]);
+        const nextSources = dedupeRefs(['NotebookLM', ...bibliographySources]);
+
+        setUploadedBiblio((current) => (current ? { ...current, references: parsedRefs } : current));
+        setBibliographyReferences(nextRefs);
+        setBibliographySources(nextSources);
+      } catch {
+        // The upload flow still works; this only hydrates refs from an already uploaded PDF.
+      }
+    };
+
+    void loadStoredNotebookReferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bibliographyReferences,
+    bibliographySources,
+    courseDetail?.id,
+    setBibliographyReferences,
+    setBibliographySources,
+    setUploadedBiblio,
+    uploadedBiblio,
+  ]);
 
   const handleFile = async (file: File) => {
     if (!context || !courseDetail) return;
@@ -367,9 +452,23 @@ export default function Step2_Fuentes() {
     setUploadingBiblio(true);
     try {
       const res = await api.uploadBibliography(file, courseDetail.id, context.program_id, courseDetail.scope || 'program');
-      const refCount: number = (res as { data?: { ref_count?: number } })?.data?.ref_count ?? 0;
-      const docId: string = (res as { data?: { id?: string } })?.data?.id ?? '';
-      setUploadedBiblio({ docId, fileName: file.name, refCount });
+      const data = res.data;
+      const refCount = data?.ref_count ?? 0;
+      const docId = data?.id ?? '';
+      const parsedRefs = dedupeRefs((data?.references || []).map(cleanNotebookReference).filter(Boolean));
+      const nextRefs = dedupeRefs([...parsedRefs, ...bibliographyReferences]);
+      const nextSources = dedupeRefs(['NotebookLM', ...bibliographySources]);
+
+      setUploadedBiblio({ docId, fileName: file.name, refCount, references: parsedRefs });
+      if (parsedRefs.length > 0) {
+        setBibliographyReferences(nextRefs);
+        setBibliographySources(nextSources);
+        await saveStep('bibliography', {
+          doc_ids: [docId],
+          references: nextRefs,
+          sources_consulted: nextSources,
+        });
+      }
       showToast(refCount > 0 ? `${refCount} referencias extraídas` : 'PDF cargado', 'success');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al subir el archivo';
@@ -385,6 +484,20 @@ export default function Step2_Fuentes() {
     setRemovingBiblio(true);
     try {
       await api.deleteDocument(uploadedBiblio.docId);
+      const uploadedReferenceKeys = new Set((uploadedBiblio.references || []).map((reference) => cleanNotebookReference(reference).toLowerCase()));
+      if (uploadedReferenceKeys.size > 0) {
+        const nextRefs = bibliographyReferences.filter(
+          (reference) => !uploadedReferenceKeys.has(cleanNotebookReference(reference).toLowerCase()),
+        );
+        const nextSources = bibliographySources.filter((source) => source !== 'NotebookLM');
+        setBibliographyReferences(nextRefs);
+        setBibliographySources(nextSources);
+        await saveStep('bibliography', {
+          doc_ids: [],
+          references: nextRefs,
+          sources_consulted: nextSources,
+        });
+      }
       setUploadedBiblio(null);
       showToast('PDF eliminado.', 'success');
     } catch {
@@ -395,26 +508,55 @@ export default function Step2_Fuentes() {
   };
 
   const handleClearReferences = async () => {
-    setBibliographyReferences([]);
-    setBibliographySources([]);
+    setBibliographyReferences(notebookReferences);
+    setBibliographySources(notebookReferences.length > 0 ? ['NotebookLM'] : []);
 
     await saveStep('bibliography', {
       doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
-      references: [],
-      sources_consulted: [],
+      references: notebookReferences,
+      sources_consulted: notebookReferences.length > 0 ? ['NotebookLM'] : [],
     });
 
-    showToast('Referencias eliminadas', 'success');
+    showToast('Resultados de IA eliminados', 'success');
+  };
+
+  const handleRemoveSourceRow = async (row: SourceTableRow) => {
+    const removeKey = cleanNotebookReference(row.reference).toLowerCase();
+    const nextRefs = bibliographyReferences.filter(
+      (reference) => cleanNotebookReference(reference).toLowerCase() !== removeKey,
+    );
+    const nextNotebookRefs = notebookReferences.filter(
+      (reference) => cleanNotebookReference(reference).toLowerCase() !== removeKey,
+    );
+    const nextAiRefs = aiReferences.filter(
+      (reference) => cleanNotebookReference(reference).toLowerCase() !== removeKey,
+    );
+    const nextSources = dedupeRefs([
+      ...(nextNotebookRefs.length > 0 ? ['NotebookLM'] : []),
+      ...(nextAiRefs.length > 0 ? bibliographySources.filter((source) => source !== 'NotebookLM') : []),
+    ]);
+
+    setBibliographyReferences(nextRefs);
+    setBibliographySources(nextSources);
+    if (row.origin === 'NotebookLM') {
+      setUploadedBiblio((current) => (
+        current
+          ? { ...current, refCount: nextNotebookRefs.length, references: nextNotebookRefs }
+          : current
+      ));
+    }
+
+    await saveStep('bibliography', {
+      doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
+      references: nextRefs,
+      sources_consulted: nextSources,
+    });
+
+    showToast('Fuente quitada de la tabla', 'success');
   };
 
   const dedupeRefs = (items: string[]) => {
-    const seen = new Set<string>();
-    return items.filter((item) => {
-      const normalized = item.trim().toLowerCase();
-      if (!normalized || seen.has(normalized)) return false;
-      seen.add(normalized);
-      return true;
-    });
+    return dedupeTextItems(items);
   };
 
   const handleSearch = async (continueAfter: boolean) => {
@@ -437,13 +579,16 @@ export default function Step2_Fuentes() {
         return;
       }
 
-      setBibliographyReferences(nextRefs);
-      setBibliographySources(nextSources as string[]);
+      const mergedRefs = dedupeRefs([...notebookReferences, ...nextRefs]);
+      const mergedSources = dedupeRefs([...(notebookReferences.length > 0 ? ['NotebookLM'] : []), ...(nextSources as string[])]);
+
+      setBibliographyReferences(mergedRefs);
+      setBibliographySources(mergedSources);
 
       await saveStep('bibliography', {
         doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
-        references: nextRefs,
-        sources_consulted: nextSources,
+        references: mergedRefs,
+        sources_consulted: mergedSources,
       });
 
       setShowSearchModal(false);
@@ -544,16 +689,32 @@ export default function Step2_Fuentes() {
                 </div>
 
                 {uploadedBiblio ? (
-                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[#00B4CC]/18 bg-[#08234A] px-3 py-2.5">
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[#D4A351]/25 bg-[#08234A] px-3 py-2.5">
                     <div className="min-w-0">
                       <p className="truncate text-[11px] font-semibold text-white">{uploadedBiblio.fileName}</p>
                       <p className="mt-1 text-[10px] text-[#6FDBEA]">
                         {uploadedBiblio.refCount} referencias detectadas por el parser
                       </p>
                     </div>
-                    <span className="rounded-full bg-[#00B4CC]/14 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#77E3F0]">
-                      PDF
-                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {notebookReferences.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReferencesModalOrigin('NotebookLM');
+                            setFocusedReference(null);
+                            setShowReferencesModal(true);
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg border border-[#D4A351]/25 px-2.5 py-1.5 text-[10px] font-semibold text-[#F2C260] transition hover:border-[#D4A351]/45 hover:text-white"
+                        >
+                          <Eye size={11} />
+                          Ver APA
+                        </button>
+                      )}
+                      <span className="rounded-full bg-[#00B4CC]/14 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#77E3F0]">
+                        PDF
+                      </span>
+                    </div>
                   </div>
                 ) : (
                   <button
@@ -602,16 +763,16 @@ export default function Step2_Fuentes() {
                   </div>
                 </div>
 
-                {bibliographyReferences.length > 0 && (
+                {aiReferences.length > 0 && (
                   <span className="rounded-full bg-[#00B4CC]/16 px-2.5 py-1 text-[10px] font-semibold text-[#77E3F0]">
-                    {bibliographyReferences.length} refs
+                    {aiReferences.length} refs
                   </span>
                 )}
               </div>
 
               <p className="mt-3 text-[11px] leading-5 text-white/60">
-                Solicita sugerencias académicas según el curso. Las referencias APA completas se abren en modal
-                para no desperdiciar altura en esta vista.
+                Solicita sugerencias académicas según el curso. Los resultados IA se muestran aquí solo cuando
+                vienen de OpenAlex, SciELO o Crossref.
               </p>
 
               <div className="mt-3">
@@ -628,17 +789,20 @@ export default function Step2_Fuentes() {
                 />
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowReferencesModal(true)}
-                  disabled={bibliographyReferences.length === 0}
-                  className="flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-[10px] font-semibold text-white/68 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Eye size={12} />
-                  Ver referencias APA
-                </button>
-                {bibliographyReferences.length > 0 && (
+              {aiReferences.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReferencesModalOrigin('Curaduria IA');
+                      setFocusedReference(null);
+                      setShowReferencesModal(true);
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-[10px] font-semibold text-white/68 transition hover:text-white"
+                  >
+                    <Eye size={12} />
+                    Ver APA de IA
+                  </button>
                   <button
                     type="button"
                     onClick={handleClearReferences}
@@ -647,33 +811,33 @@ export default function Step2_Fuentes() {
                     <Trash2 size={12} />
                     Limpiar resultados
                   </button>
-                )}
-              </div>
+                </div>
+              )}
 
               <p className="mt-3 text-[10px] leading-5 text-white/45">
-                {bibliographyReferences.length > 0
-                  ? `Fuentes consultadas: ${bibliographySources.join(' · ') || 'OpenAlex · SciELO · Crossref'}`
+                {aiReferences.length > 0
+                  ? `Fuentes consultadas: ${bibliographySources.filter((source) => source !== 'NotebookLM').join(' · ') || 'OpenAlex · SciELO · Crossref'}`
                   : 'Cuando ejecutes la búsqueda, la tabla compacta mostrará los resultados validados y el modal conservará el formato APA 7.'}
               </p>
             </section>
           </div>
 
-          <section className="mt-4 rounded-2xl border border-white/10 bg-[#0A2753] p-4 shadow-[0_18px_44px_rgba(1,32,63,0.18)]">
+          <section className="mt-4 rounded-2xl border border-[#D4A351]/24 bg-[#0A2753] p-3.5 shadow-[0_18px_44px_rgba(1,32,63,0.18)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8">
-                  <FileText size={16} className="text-[#6FDBEA]" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#D4A351]/14 ring-1 ring-[#D4A351]/25">
+                  <FileText size={15} className="text-[#F2C260]" />
                 </div>
                 <div>
-                  <p className="text-[14px] font-semibold text-white">Fuentes activas del curso</p>
-                  <p className="mt-1 text-[10px] text-white/55">
+                  <p className="text-[13px] font-semibold text-white">Fuentes activas del curso</p>
+                  <p className="mt-0.5 text-[10px] text-white/55">
                     Tabla compacta lista para recibir el nuevo endpoint enriquecido sin cambiar el layout.
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-white/8 px-2.5 py-1 text-[10px] font-semibold text-white/70">
+                <span className="rounded-full bg-[#D4A351]/14 px-2.5 py-1 text-[10px] font-semibold text-[#F2C260] ring-1 ring-[#D4A351]/20">
                   {sourceRows.length} fuentes
                 </span>
                 <button
@@ -682,7 +846,7 @@ export default function Step2_Fuentes() {
                     setAiQuery(courseDetail?.name ?? '');
                     setShowSearchModal(true);
                   }}
-                  className="rounded-xl border border-white/15 px-3 py-2 text-[10px] font-semibold text-white/68 transition hover:text-white"
+                  className="rounded-xl border border-[#D4A351]/24 px-3 py-1.5 text-[10px] font-semibold text-white/68 transition hover:border-[#D4A351]/45 hover:text-white"
                 >
                   Actualizar lista
                 </button>
@@ -698,31 +862,31 @@ export default function Step2_Fuentes() {
                 </p>
               </div>
             ) : (
-              <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-[#041A3A]/82">
+              <div className="mt-2.5 overflow-hidden rounded-xl border border-[#D4A351]/22 bg-[#041A3A]/82">
                 <div className="overflow-x-auto">
-                  <div className="max-h-[18.5rem] overflow-y-auto">
-                    <table className="min-w-[980px] w-full table-fixed">
-                      <thead className="sticky top-0 z-10 bg-[#061F45]">
-                        <tr className="border-b border-white/10">
-                          <th className="w-[52px] px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                  <div className="max-h-[14.25rem] overflow-y-auto">
+                    <table className="min-w-[860px] w-full table-fixed">
+                      <thead className="sticky top-0 z-10 bg-[#061F45] shadow-[inset_0_-1px_0_rgba(212,163,81,0.22)]">
+                        <tr className="border-b border-[#D4A351]/18">
+                          <th className="w-[44px] px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             #
                           </th>
-                          <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                          <th className="px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             Fuente
                           </th>
-                          <th className="w-[132px] px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                          <th className="w-[116px] px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             Tipo
                           </th>
-                          <th className="w-[130px] px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                          <th className="w-[112px] px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             Origen
                           </th>
-                          <th className="w-[112px] px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                          <th className="w-[96px] px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             Fecha
                           </th>
-                          <th className="w-[118px] px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                          <th className="w-[104px] px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             Estado
                           </th>
-                          <th className="w-[104px] px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                          <th className="w-[112px] px-2.5 py-1.5 text-left text-[9px] font-semibold uppercase tracking-[0.16em] text-[#F2C260]/78">
                             Acciones
                           </th>
                         </tr>
@@ -730,42 +894,45 @@ export default function Step2_Fuentes() {
 
                       <tbody>
                         {sourceRows.map((row, index) => (
-                          <tr key={row.id} className="border-b border-white/6 align-top last:border-b-0">
-                            <td className="px-3 py-3 text-[11px] font-semibold text-white/58">{index + 1}</td>
-                            <td className="px-3 py-3">
-                              <p className="text-[11px] font-semibold leading-5 text-white">{row.title}</p>
-                              <p className="mt-1 line-clamp-2 text-[10px] leading-5 text-white/46">
-                                {truncateText(row.reference, 165)}
+                          <tr key={row.id} className="border-b border-white/6 align-top last:border-b-0 hover:bg-[#D4A351]/[0.035]">
+                            <td className="px-2.5 py-2 text-[10px] font-semibold text-[#F2C260]/70">{index + 1}</td>
+                            <td className="px-2.5 py-2">
+                              <p className="line-clamp-1 text-[10.5px] font-semibold leading-4 text-white">{row.title}</p>
+                              <p className="mt-0.5 line-clamp-2 text-[9.5px] leading-4 text-white/46">
+                                {truncateText(row.reference, 130)}
                               </p>
                             </td>
-                            <td className="px-3 py-3 text-[10px] font-semibold text-white/72">{formatTypeLabel(row.type)}</td>
-                            <td className="px-3 py-3 text-[10px] font-semibold text-white/72">{formatOriginLabel(row.origin)}</td>
-                            <td className="px-3 py-3 text-[10px] text-white/60">{row.loadedAt}</td>
-                            <td className="px-3 py-3">
-                              <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${getStatusClasses(row.status)}`}>
+                            <td className="px-2.5 py-2 text-[9.5px] font-semibold text-white/72">{formatTypeLabel(row.type)}</td>
+                            <td className="px-2.5 py-2 text-[9.5px] font-semibold text-white/72">{formatOriginLabel(row.origin)}</td>
+                            <td className="px-2.5 py-2 text-[9.5px] text-white/60">{row.loadedAt}</td>
+                            <td className="px-2.5 py-2">
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[9.5px] font-semibold ${getStatusClasses(row.status)}`}>
                                 {row.status}
                               </span>
                             </td>
-                            <td className="px-3 py-3">
-                              {row.origin === 'Curaduria IA' ? (
+                            <td className="px-2.5 py-2">
+                              <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => setShowReferencesModal(true)}
-                                  className="flex items-center gap-1.5 rounded-lg border border-white/12 px-2.5 py-1.5 text-[10px] font-semibold text-white/68 transition hover:text-white"
+                                  title="Ver APA"
+                                  onClick={() => {
+                                    setReferencesModalOrigin(row.origin);
+                                    setFocusedReference(row.reference);
+                                    setShowReferencesModal(true);
+                                  }}
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#D4A351]/20 text-[#F2C260]/78 transition hover:border-[#D4A351]/45 hover:text-white"
                                 >
                                   <Eye size={11} />
-                                  Ver APA
                                 </button>
-                              ) : (
                                 <button
                                   type="button"
-                                  onClick={() => navigate('/creator/fuentes/notebook')}
-                                  className="flex items-center gap-1.5 rounded-lg border border-white/12 px-2.5 py-1.5 text-[10px] font-semibold text-white/68 transition hover:text-white"
+                                  title="Quitar fuente"
+                                  onClick={() => void handleRemoveSourceRow(row)}
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-300/12 text-white/38 transition hover:border-rose-300/35 hover:text-rose-300"
                                 >
-                                  <ExternalLink size={11} />
-                                  Roadmap
+                                  <Trash2 size={11} />
                                 </button>
-                              )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -823,11 +990,15 @@ export default function Step2_Fuentes() {
         />
       )}
 
-      {showReferencesModal && bibliographyReferences.length > 0 && (
+      {showReferencesModal && modalReferences.length > 0 && (
         <ReferencesModal
-          references={bibliographyReferences}
-          sources={bibliographySources}
-          onClose={() => setShowReferencesModal(false)}
+          references={modalReferences}
+          sources={modalSources}
+          originLabel={formatOriginLabel(referencesModalOrigin)}
+          onClose={() => {
+            setShowReferencesModal(false);
+            setFocusedReference(null);
+          }}
         />
       )}
     </>

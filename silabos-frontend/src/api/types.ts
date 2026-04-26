@@ -136,6 +136,13 @@ export interface SemanaItem {
   tema: string;
   actividad: string;
   producto: string;
+  fecha?: string | null;
+  desempeno?: string | null;
+  desempeno_code?: string | null;
+  conocimientos?: string[] | null;
+  habilidades?: string[] | null;
+  actitudes?: string[] | null;
+  evidencia?: string | null;
 }
 
 export interface FuenteBibliografica {
@@ -258,6 +265,28 @@ export interface DocumentItem {
   created_at?: string | null;
   doc_type?: string;
   name?: string;
+  ref_count?: number;
+  references?: string[];
+  bibliography_rows?: BibliographyReferenceRow[];
+  bibliografia?: FuenteBibliografica[];
+}
+
+export interface BibliographyReferenceRow {
+  apa_format?: string;
+  ref_text?: string;
+  title?: string | null;
+  authors?: string[];
+  year?: number | null;
+  type?: string | null;
+  display_text?: string | null;
+  doi?: string | null;
+  url?: string | null;
+  source?: string | null;
+  verified?: boolean;
+  doc_id?: string | null;
+  course_id?: string | null;
+  ref_order?: number | null;
+  created_at?: string | null;
 }
 
 export interface ValidationObservation {
@@ -442,19 +471,39 @@ export interface CourseDetail extends CourseListItem {
   competencia_egreso?: string | null;
   resultado_aprendizaje?: string | null;
   capacidad?: string | null;
+  hours_theory?: number | null;
+  hours_practice?: number | null;
+  prerequisites?: string | null;
+  tipo_curso?: string | null;
+  naturaleza?: string | null;
+  temas_conocimientos?: string[] | null;
+  habilidades_desempenos?: string[] | null;
+  actividades_metodo?: string[] | null;
 }
 
 export interface MethodItem {
   id: string;
   name: string;
+  code?: string | null;
   description?: string | null;
   secuencia_didactica?: string | null;
+  proposito?: string | null;
+  rol_docente?: string | null;
+  rol_estudiante?: string | null;
+  phases?: string[] | null;
+  productos_tipicos?: string[] | null;
+  tecnicas_didacticas?: string[] | null;
+  estrategias_evaluacion?: string | null;
+  instrumentos_evaluacion?: string[] | null;
 }
 
 export interface MethodSuggest {
   method_id: string | null;
   method_name: string;
+  method_code?: string | null;
   reason: string;
+  phases?: string[] | null;
+  complementario?: { method_id: string; method_name: string } | null;
 }
 
 export interface SyllabusGenerateV2Input {
@@ -555,6 +604,11 @@ export interface CompatibleSkillsResponse {
   compatible_skills: SkillDB[];
   total: number;
   fallback_mode: boolean;
+}
+
+export interface SkillSuggestResponse {
+  skills: SkillDB[];
+  total: number;
 }
 
 // ── Admin — Curriculum History ─────────────────────────────────────────────

@@ -15,6 +15,7 @@
 
 import logging
 import re
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
 
@@ -178,6 +179,166 @@ def _expand_topics(items: list[str], total: int, fallback_title: str) -> list[st
     return expanded
 
 
+# Mapeo nombre → código corto del método (para prefijo "ABPro – Fase: ...")
+_METHOD_SHORT_NAMES = (
+    ("aprendizaje basado en proyectos", "ABPro"),
+    ("aprendizaje basado en desafíos", "ABDe"),
+    ("aprendizaje basado en desafios", "ABDe"),
+    ("aprendizaje basado en investigación", "ABI"),
+    ("aprendizaje basado en investigacion", "ABI"),
+    ("aprendizaje cooperativo", "Aprendizaje Cooperativo"),
+    ("estudio de casos", "Estudio de Casos"),
+    ("aprendizaje experiencial", "Aprendizaje Experiencial"),
+    ("educación matemática realista", "EMR"),
+    ("educacion matematica realista", "EMR"),
+    ("resolución de problemas", "Resolución de Problemas"),
+    ("resolucion de problemas", "Resolución de Problemas"),
+    ("análisis dirigido", "ADI"),
+    ("analisis dirigido", "ADI"),
+)
+
+
+def _short_method_name(name: str, code: str | None = None) -> str:
+    if code and code.strip():
+        return code.strip()
+    if not name:
+        return "Método"
+    lowered = name.strip().lower()
+    for needle, short in _METHOD_SHORT_NAMES:
+        if needle in lowered:
+            return short
+    return name.strip()
+
+
+def _compute_week_dates(semester: str, total_weeks: int = 16) -> list[str]:
+    """Devuelve lista de fechas (lunes) por semana. Acepta semestre 'YYYY-I' o 'YYYY-II'.
+
+    Heurística: I → inicia 4to lunes de marzo del año. II → inicia 4to lunes de agosto.
+    Si no parsea, devuelve lista de '---'.
+    """
+    if not semester:
+        return ["---"] * total_weeks
+    match = re.match(r"\s*(\d{4})\s*[-_]?\s*(I{1,2})\s*$", str(semester).upper())
+    if not match:
+        return ["---"] * total_weeks
+    year = int(match.group(1))
+    period = match.group(2)
+    target_month = 3 if period == "I" else 8
+    first = date(year, target_month, 1)
+    days_until_monday = (7 - first.weekday()) % 7
+    first_monday = first + timedelta(days=days_until_monday)
+    start = first_monday + timedelta(weeks=3)  # 4to lunes
+    return [(start + timedelta(weeks=i)).strftime("%Y-%m-%d") for i in range(total_weeks)]
+
+
+def _resolve_phase_for_week(
+    unit_idx: int,
+    week_in_unit: int,
+    phases: list[str],
+    phase_rules: dict | None,
+) -> tuple[str, str]:
+    """Devuelve (fase_label, action_text) para la celda dada."""
+    if not phases:
+        return ("Desarrollo", "")
+
+    rules = phase_rules if isinstance(phase_rules, dict) else {}
+    by_unit = rules.get("by_unit") if isinstance(rules.get("by_unit"), list) else []
+
+    phase_idx = week_in_unit % len(phases)
+    if unit_idx < len(by_unit):
+        unit_rule = by_unit[unit_idx]
+        weeks_map = unit_rule.get("weeks") if isinstance(unit_rule, dict) else None
+        if isinstance(weeks_map, list) and week_in_unit < len(weeks_map):
+            try:
+                phase_idx = int(weeks_map[week_in_unit]) % len(phases)
+            except (TypeError, ValueError):
+                pass
+
+    fase = phases[phase_idx]
+    return (fase, "")
+
+
+def _resolve_action_for_week(
+    week_number: int,
+    phase_rules: dict | None,
+) -> str:
+    if not isinstance(phase_rules, dict):
+        return ""
+    actions = phase_rules.get("actions_by_week")
+    if not isinstance(actions, dict):
+        return ""
+    return _clean_text(actions.get(str(week_number)) or actions.get(week_number))
+
+
+def _build_methodology_narrative(method_raw: dict | None, course_name: str = "") -> str:
+    if not isinstance(method_raw, dict) or not method_raw.get("name"):
+        return "Metodología activa centrada en el aprendizaje del estudiante."
+
+    name = _clean_text(method_raw.get("name"))
+    description = _clean_text(method_raw.get("description"))
+    proposito = _clean_text(method_raw.get("proposito"))
+    rol_doc = _clean_text(method_raw.get("rol_docente"))
+    rol_est = _clean_text(method_raw.get("rol_estudiante"))
+    phases = _as_text_list(method_raw.get("phases"))
+    estrategias = _clean_text(method_raw.get("estrategias_evaluacion"))
+
+    parrafos: list[str] = []
+    p1 = f"La asignatura{' de ' + course_name if course_name else ''} se desarrollará mediante {name}."
+    if proposito:
+        p1 += f" {proposito}"
+    elif description:
+        p1 += f" {description}"
+    parrafos.append(p1)
+
+    if estrategias:
+        parrafos.append(f"La investigación formativa se desarrollará mediante: {estrategias}")
+    else:
+        parrafos.append(
+            "La investigación formativa se desarrollará mediante revisión documental, "
+            "trabajo cooperativo, elaboración progresiva de productos y retroalimentación académica."
+        )
+
+    if rol_doc or rol_est:
+        partes_rol = []
+        if rol_doc:
+            partes_rol.append(f"Rol del docente: {rol_doc}")
+        if rol_est:
+            partes_rol.append(f"Rol del estudiante: {rol_est}")
+        parrafos.append(" ".join(partes_rol))
+    else:
+        parrafos.append(
+            "El docente actuará como facilitador y orientador del proceso; "
+            "el estudiante asumirá un rol activo en la indagación, producción y exposición."
+        )
+
+    if phases:
+        parrafos.append(f"Esta configuración responde a las fases del método: {', '.join(phases)}.")
+
+    return "\n\n".join(parrafos)
+
+
+def _validate_method_alignment(
+    schedule: list[dict],
+    method_short: str,
+    phases: list[str],
+) -> list[str]:
+    warnings: list[str] = []
+    if not phases or not schedule:
+        return warnings
+    phases_lower = [p.lower() for p in phases]
+    for row in schedule:
+        actividad = (row.get("actividad") or "").lower()
+        if not any(p in actividad for p in phases_lower):
+            warnings.append(
+                f"Sem {row.get('semana')}: actividad no refleja ninguna fase del método ({method_short})."
+            )
+        if method_short and method_short.lower() not in actividad:
+            warnings.append(
+                f"Sem {row.get('semana')}: actividad no menciona el método ({method_short})."
+            )
+    return warnings
+
+
 def _extract_week_targets(grading_rows: list[dict]) -> tuple[dict[int, list[str]], list[str]]:
     by_week: dict[int, list[str]] = {}
     permanent: list[str] = []
@@ -205,6 +366,21 @@ def _extract_week_targets(grading_rows: list[dict]) -> tuple[dict[int, list[str]
     return by_week, permanent
 
 
+def _compose_activity(
+    method_short: str,
+    phase_label: str,
+    action_text: str,
+    topic: str,
+    technique: str = "",
+) -> str:
+    """Formato observado en EjemplosDeSilabos: '**METODO – Fase:** acción específica'."""
+    prefix = f"**{method_short} – {phase_label}:**" if method_short and phase_label else ""
+    cuerpo = action_text or f"desarrollo de {topic}"
+    if technique and technique.lower() not in cuerpo.lower():
+        cuerpo = f"{cuerpo} mediante {technique}"
+    return f"{prefix} {cuerpo}".strip()
+
+
 def _build_units_and_schedule(
     performances: list[str],
     knowledge_items: list[str],
@@ -213,16 +389,111 @@ def _build_units_and_schedule(
     phases: list[str],
     techniques: list[str],
     grading_rows: list[dict],
+    content_plan: dict | None = None,
+    method_code: str | None = None,
+    phase_rules: dict | None = None,
+    week_dates: list[str] | None = None,
+    desempenos_final: list[dict] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     unit_count = 4
     weeks_per_unit = 4
     total_weeks = unit_count * weeks_per_unit
-    knowledge_buckets = _distribute_items(knowledge_items, unit_count)
-    skill_buckets = _distribute_items(skill_names, unit_count)
     evidences_by_week, permanent_evidences = _extract_week_targets(grading_rows)
+    method_short = _short_method_name(method_name, method_code)
+    dates = week_dates if week_dates and len(week_dates) >= total_weeks else ["---"] * total_weeks
+    desempenos_final = desempenos_final or []
+
+    def _date_for(week: int) -> str:
+        idx = week - 1
+        return dates[idx] if 0 <= idx < len(dates) else "---"
+
+    def _perf_for(unit_idx: int, code_hint: str = "") -> str:
+        if code_hint:
+            for d in desempenos_final:
+                if d.get("codigo") == code_hint:
+                    return d.get("descripcion", "") or d.get("statement", "")
+        if unit_idx < len(performances):
+            return performances[unit_idx]
+        if performances:
+            return performances[-1]
+        return ""
 
     units: list[dict] = []
     schedule: list[dict] = []
+
+    plan_units = (content_plan or {}).get("units", []) if isinstance(content_plan, dict) else []
+    if plan_units:
+        for unit_index, plan_unit in enumerate(plan_units[:unit_count]):
+            weeks = plan_unit.get("weeks", []) if isinstance(plan_unit, dict) else []
+            start_week = unit_index * weeks_per_unit + 1
+            end_week = start_week + weeks_per_unit - 1
+            unit_knowledge: list[str] = []
+            unit_skills: list[str] = []
+            unit_attitudes: list[str] = []
+            for week_row in weeks:
+                unit_knowledge.extend(_as_text_list(week_row.get("knowledge", [])))
+                unit_skills.extend([
+                    _clean_text(skill.get("name", "")) if isinstance(skill, dict) else _clean_text(skill)
+                    for skill in week_row.get("skills", [])
+                ])
+                unit_attitudes.extend(_as_text_list(week_row.get("attitudes", [])))
+
+            title = _clean_text((unit_knowledge or [f"Bloque {unit_index + 1}"])[0], f"Bloque {unit_index + 1}")
+            performance_text = _perf_for(unit_index) or _clean_text(plan_unit.get("ra_unidad"), title)
+            units.append(
+                {
+                    "numero": unit_index + 1,
+                    "titulo": title,
+                    "semanas": f"{start_week}-{end_week}",
+                    "temas": _merge_unique_texts(unit_knowledge)[:weeks_per_unit],
+                    "logro": performance_text,
+                    "habilidades_requeridas": ", ".join(_merge_unique_texts(unit_skills)[:3]) or "Desarrollo de habilidades del curso",
+                    "actitudes": _merge_unique_texts(unit_attitudes)[:3],
+                }
+            )
+
+            for offset, week_row in enumerate(weeks[:weeks_per_unit]):
+                week = int(week_row.get("week") or (start_week + offset))
+                week_in_unit = (week - 1) % weeks_per_unit
+                knowledge = _as_text_list(week_row.get("knowledge", []))
+                skills = [
+                    _clean_text(skill.get("name", "")) if isinstance(skill, dict) else _clean_text(skill)
+                    for skill in week_row.get("skills", [])
+                ]
+                attitudes = _as_text_list(week_row.get("attitudes", []))
+                topic = "; ".join(knowledge) or title
+
+                phase_label, _ = _resolve_phase_for_week(unit_index, week_in_unit, phases, phase_rules)
+                action_text = _resolve_action_for_week(week, phase_rules)
+                technique = techniques[week_in_unit % len(techniques)] if techniques else ""
+                activity = _compose_activity(method_short, phase_label, action_text, topic, technique)
+
+                perf_code = _clean_text(week_row.get("performance_code", ""))
+                desempeno_text = _perf_for(unit_index, perf_code)
+
+                evidences = evidences_by_week.get(week) or permanent_evidences
+                product = "; ".join(evidences) if evidences else f"Avance de {topic}"
+                schedule.append(
+                    {
+                        "semana": week,
+                        "fecha": _date_for(week),
+                        "desempeno": desempeno_text,
+                        "desempeno_code": perf_code,
+                        "tema": topic,
+                        "conocimientos": knowledge,
+                        "habilidades": skills,
+                        "actitudes": attitudes,
+                        "actividad": activity,
+                        "producto": product,
+                        "evidencia": product,
+                    }
+                )
+
+        return units, schedule
+
+    # Fallback path: sin content_plan estructurado por semana
+    knowledge_buckets = _distribute_items(knowledge_items, unit_count)
+    skill_buckets = _distribute_items(skill_names, unit_count)
 
     for unit_index in range(unit_count):
         start_week = unit_index * weeks_per_unit + 1
@@ -232,9 +503,8 @@ def _build_units_and_schedule(
         title = _clean_text(seed_topics[0] if seed_topics else fallback_title, fallback_title)
         topics = _expand_topics(seed_topics, weeks_per_unit, title)
 
-        if performances:
-            performance_text = performances[min(unit_index, len(performances) - 1)]
-        else:
+        performance_text = _perf_for(unit_index)
+        if not performance_text:
             performance_text = f"Aplica aprendizajes del bloque {unit_index + 1} en torno a {title.lower()}"
 
         unit_skills = skill_buckets[unit_index] or skill_names[:3]
@@ -253,16 +523,12 @@ def _build_units_and_schedule(
 
         for offset, topic in enumerate(topics):
             week = start_week + offset
-            if phases:
-                phase_index = min(len(phases) - 1, int((week - 1) * len(phases) / total_weeks))
-                phase_label = phases[phase_index]
-            else:
-                phase_label = method_name or "Desarrollo"
+            week_in_unit = offset
 
-            technique = techniques[(week - 1) % len(techniques)] if techniques else ""
-            activity = f"{phase_label}: desarrollo de {topic}"
-            if technique:
-                activity += f" mediante {technique}"
+            phase_label, _ = _resolve_phase_for_week(unit_index, week_in_unit, phases, phase_rules)
+            action_text = _resolve_action_for_week(week, phase_rules)
+            technique = techniques[week_in_unit % len(techniques)] if techniques else ""
+            activity = _compose_activity(method_short, phase_label, action_text, topic, technique)
 
             evidences = evidences_by_week.get(week) or permanent_evidences
             product = "; ".join(evidences) if evidences else f"Avance de {topic}"
@@ -270,12 +536,20 @@ def _build_units_and_schedule(
             schedule.append(
                 {
                     "semana": week,
+                    "fecha": _date_for(week),
+                    "desempeno": performance_text,
+                    "desempeno_code": "",
                     "tema": topic,
+                    "conocimientos": [topic],
+                    "habilidades": unit_skills[:3] if unit_skills else [],
+                    "actitudes": [],
                     "actividad": activity,
                     "producto": product,
+                    "evidencia": product,
                 }
             )
 
+    _ = total_weeks  # silenciar warning si no se usa
     return units, schedule
 
 
@@ -434,12 +708,53 @@ async def sugerir_contenido(
 
     curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
     refs = await supabase.obtener_referencias_curso(str(course_id)) if course_id else []
+    skills_suggest = await supabase.sugerir_skills_para_contenido(
+        course_id=str(course_id) if course_id else None,
+        desempeno=" ".join([str(p.get("statement", "")) for p in performances[:4] if isinstance(p, dict)]),
+        limit=20,
+    ) if course_id else {"skills": []}
 
     try:
-        sugerencia = await progressive_ai.sugerir_contenido(curso or {}, performances, refs[:4])
+        sugerencia = await progressive_ai.sugerir_contenido(
+            curso or {},
+            performances,
+            refs[:4],
+            skills_context=skills_suggest.get("skills", []),
+        )
     except Exception as exc:
         logger.warning("Error en sugerir_contenido: %s", exc)
         sugerencia = {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": []}
+
+    def _merge_unique(*lists):
+        out, seen = [], set()
+        for items in lists:
+            for raw in items or []:
+                text_value = str(raw or "").strip()
+                key = text_value.lower()
+                if text_value and key not in seen:
+                    seen.add(key)
+                    out.append(text_value)
+        return out
+
+    sugerencia["conocimientos"] = _merge_unique(
+        (curso or {}).get("temas_conocimientos", [])[:8],
+        sugerencia.get("conocimientos", []),
+    )[:8]
+    catalog_skill_names = [s.get("nombre", "") for s in skills_suggest.get("skills", [])[:8]]
+    if catalog_skill_names:
+        # RN biblioteca: las habilidades sugeridas deben salir del catálogo maestro cuando hay match.
+        sugerencia["habilidades_sugeridas"] = _merge_unique(catalog_skill_names)[:8]
+    else:
+        sugerencia["habilidades_sugeridas"] = _merge_unique(
+            (curso or {}).get("habilidades_desempenos", [])[:8],
+            sugerencia.get("habilidades_sugeridas", []),
+        )[:8]
+    sugerencia.setdefault("actitudes", [])
+    if len(sugerencia["actitudes"]) < 3:
+        sugerencia["actitudes"] = _merge_unique(
+            sugerencia["actitudes"],
+            ["Responsabilidad académica", "Rigor en el trabajo colaborativo", "Apertura a la mejora continua"],
+        )[:4]
 
     await supabase.guardar_ai_suggestion(
         syllabus_id=syllabus_id,
@@ -473,15 +788,44 @@ async def sugerir_metodo_progresivo(
 
     curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
     metodos_db = await supabase.listar_teaching_methods(include_archived=False)
-    metodos_base = [{"id": m["id"], "name": m["name"], "description": m.get("description", "")} for m in metodos_db]
+    metodos_base = [
+        {
+            "id": m["id"],
+            "name": m["name"],
+            "code": m.get("code", ""),
+            "description": m.get("description", ""),
+            "proposito": m.get("proposito", ""),
+            "phases": _as_text_list(m.get("phases")),
+            "tecnicas_didacticas": _as_text_list(m.get("tecnicas_didacticas")),
+            "rol_docente": m.get("rol_docente", ""),
+            "rol_estudiante": m.get("rol_estudiante", ""),
+        }
+        for m in metodos_db
+    ]
 
     if not metodos_base:
         raise HTTPException(400, "No hay métodos pedagógicos disponibles")
 
-    # Skill context from content block
+    # Contexto enriquecido (Manual V3 §5 Mod6: propósito + contenido + disciplina + guía oficial)
     content_block = payload.get("content", {})
-    conocimientos = ", ".join(content_block.get("knowledge_items", [])[:3])
-    skill_context = f"Conocimientos: {conocimientos}" if conocimientos else "Sin conocimientos especificados"
+    conocimientos = ", ".join(content_block.get("knowledge_items", [])[:5])
+    purpose_block = payload.get("purpose", {})
+    desempenos_text = "; ".join(
+        str(p.get("statement", "")) if isinstance(p, dict) else str(p)
+        for p in purpose_block.get("performances", [])[:4]
+    )
+    disciplina = (
+        curso.get("scope")
+        or curso.get("naturaleza")
+        or curso.get("program_name")
+        or curso.get("career_name")
+        or ""
+    )
+    skill_context = (
+        f"Disciplina/programa: {disciplina}\n"
+        f"Conocimientos clave: {conocimientos or 'no especificados'}\n"
+        f"Desempeños: {desempenos_text or 'no especificados'}"
+    )
 
     fallback = {
         "method_id": metodos_base[0]["id"],
@@ -498,10 +842,24 @@ async def sugerir_metodo_progresivo(
         )
         mid = resultado.get("method_id")
         metodo_encontrado = next((m for m in metodos_base if str(m["id"]) == str(mid)), metodos_base[0])
+        complementario_id = resultado.get("complementario_id")
+        complementario = next(
+            (m for m in metodos_base if complementario_id and str(m["id"]) == str(complementario_id)),
+            None,
+        )
         sugerencia = {
             "method_id": metodo_encontrado["id"],
             "method_name": metodo_encontrado["name"],
+            "method_code": metodo_encontrado.get("code", ""),
+            "phases": metodo_encontrado.get("phases", []),
             "reason": resultado.get("reason", "Sugerido por IA"),
+            "complementario": (
+                {
+                    "method_id": complementario["id"],
+                    "method_name": complementario["name"],
+                }
+                if complementario else None
+            ),
         }
     except Exception as exc:
         logger.warning("Error en sugerir_metodo progresivo: %s", exc)
@@ -627,6 +985,7 @@ async def ensamblar_final(
     attitudes = content.get("attitudes", [])
     habilidades_por_desempeno = content.get("habilidades_por_desempeno", [])
     habilidades_sugeridas = content.get("habilidades_sugeridas", [])
+    content_plan = content.get("content_plan", {})
     selected_skill_ids = content.get("selected_skill_ids", [])
     skills_raw = await supabase.listar_skills_raw_por_ids(selected_skill_ids) if selected_skill_ids else []
     skill_names = [
@@ -637,8 +996,11 @@ async def ensamblar_final(
     method_id = method.get("selected_method_id")
     method_raw = await supabase.obtener_teaching_method(str(method_id)) if method_id else None
     method_name = method.get("selected_method_name", "") or _clean_text((method_raw or {}).get("name"))
+    method_code = _clean_text((method_raw or {}).get("code"))
+    method_short = _short_method_name(method_name, method_code)
     phases = _as_text_list((method_raw or {}).get("phases"))
     techniques = _as_text_list((method_raw or {}).get("tecnicas_didacticas"))
+    phase_rules = (method_raw or {}).get("phase_rules_json") or {}
     method_instruments = await supabase.listar_instrumentos_metodo(str(method_id)) if method_id else []
     instrument_names = [_clean_text(i.get("name")) for i in method_instruments if _clean_text(i.get("name"))]
 
@@ -674,6 +1036,8 @@ async def ensamblar_final(
         except Exception as exc:
             logger.warning("sugerir_instrumentos_por_desempeno failed: %s", exc)
 
+    week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16)
+
     unidades_tematicas, cronograma_semanal = _build_units_and_schedule(
         performances=desempenos_text,
         knowledge_items=knowledge_items,
@@ -682,7 +1046,14 @@ async def ensamblar_final(
         phases=phases,
         techniques=techniques,
         grading_rows=grading_rows,
+        content_plan=content_plan,
+        method_code=method_code,
+        phase_rules=phase_rules,
+        week_dates=week_dates,
+        desempenos_final=desempenos_final,
     )
+
+    method_warnings = _validate_method_alignment(cronograma_semanal, method_short, phases)
     teacher_name = str(
         current_user.get("full_name")
         or draft.get("teacher_name")
@@ -702,11 +1073,10 @@ async def ensamblar_final(
     bibliography_sources = _as_text_list(bibliography.get("sources_consulted", []))
     competencia = curso.get("competencia_egreso", "") if curso else ""
     resultado = curso.get("resultado_aprendizaje", "") if curso else ""
-    metodologia_text = method_name or "Metodologia activa del curso"
-    if method_raw and method_raw.get("description"):
-        metodologia_text = f"{metodologia_text}. {_clean_text(method_raw.get('description'))}"
-    if phases:
-        metodologia_text += f" Fases de trabajo: {', '.join(phases)}."
+    metodologia_text = _build_methodology_narrative(
+        method_raw,
+        course_name=curso.get("name", "") if curso else "",
+    )
 
     final = {
         "_assembled": True,
@@ -752,11 +1122,19 @@ async def ensamblar_final(
             "segun la programacion institucional vigente."
         ),
         "method_id": method_id,
+        "method_short_name": method_short,
         "methodology_json": {
             "id": str(method_id) if method_id else "",
             "name": method_name,
+            "code": method_code,
+            "short_name": method_short,
             "description": _clean_text((method_raw or {}).get("description")),
+            "proposito": _clean_text((method_raw or {}).get("proposito")),
+            "rol_docente": _clean_text((method_raw or {}).get("rol_docente")),
+            "rol_estudiante": _clean_text((method_raw or {}).get("rol_estudiante")),
             "phases": phases,
+            "phase_rules_json": phase_rules,
+            "productos_tipicos": (method_raw or {}).get("productos_tipicos", []),
             "weekly_template": _clean_text((method_raw or {}).get("weekly_template")),
             "tecnicas_didacticas": (method_raw or {}).get("tecnicas_didacticas", []),
             "estrategias_evaluacion": _clean_text((method_raw or {}).get("estrategias_evaluacion")),
@@ -773,6 +1151,10 @@ async def ensamblar_final(
         "bibliografia": refs_a_bibliografia_json(bibliography_refs),
         "bibliography": bibliography_refs,
         "bibliography_sources": bibliography_sources,
+        "_meta": {
+            **(payload.get("_meta") or {}),
+            "method_alignment_warnings": method_warnings,
+        },
     }
 
     resultado = await supabase.ensamblar_final(syllabus_id, final, user_id)

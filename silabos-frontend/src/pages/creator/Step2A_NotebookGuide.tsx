@@ -188,22 +188,31 @@ function HubCardItem({ card, onClick }: { card: HubCard; onClick: () => void }) 
       <span className={`absolute right-2.5 top-2.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${TAG_CLS[card.style]}`}>
         {card.tag}
       </span>
-      <div className="mb-2 flex items-center gap-2">
-        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-          card.style === 'gold' ? 'bg-[#D4A351]/15' : card.style === 'cyan' ? 'bg-[#00B4CC]/15' : 'bg-[#A8D8A8]/10'
-        }`}>
+      <div className="mb-3 flex items-start justify-between gap-3 pr-11">
+        <div className="shrink-0">
           {card.icon ? (
-            <img src={card.icon} alt="" className="h-4 w-4 object-contain"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+            <img
+              src={card.icon}
+              alt=""
+              className="h-[58px] w-auto max-w-[86px] object-contain drop-shadow-[0_14px_24px_rgba(0,180,204,0.14)]"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
           ) : LIcon ? (
-            <LIcon size={13} className={card.style === 'gold' ? 'text-[#D4A351]' : card.style === 'cyan' ? 'text-[#00B4CC]' : 'text-[#A8D8A8]'} />
+            <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+              card.style === 'gold' ? 'bg-[#D4A351]/15' : card.style === 'cyan' ? 'bg-[#00B4CC]/15' : 'bg-[#A8D8A8]/10'
+            }`}>
+              <LIcon
+                size={18}
+                className={card.style === 'gold' ? 'text-[#D4A351]' : card.style === 'cyan' ? 'text-[#00B4CC]' : 'text-[#A8D8A8]'}
+              />
+            </div>
           ) : null}
         </div>
-        <span className="text-[9px] font-bold text-white/20">{String(card.id).padStart(2, '0')}</span>
+        <span className="pt-2 text-[10px] font-bold text-white/24">{String(card.id).padStart(2, '0')}</span>
       </div>
-      <p className={`mb-1 text-[11px] font-bold leading-tight pr-6 ${TITLE_CLS[card.style]}`}>{card.title}</p>
-      <p className="line-clamp-2 flex-1 text-[10px] leading-snug text-white/50">{card.description}</p>
-      <p className={`mt-2 text-[10px] font-semibold ${CTA_CLS[card.style]}`}>{cta}</p>
+      <p className={`mb-1 text-[12px] font-bold leading-tight pr-6 ${TITLE_CLS[card.style]}`}>{card.title}</p>
+      <p className="line-clamp-3 flex-1 text-[10px] leading-snug text-white/50">{card.description}</p>
+      <p className={`mt-2.5 text-[10px] font-semibold ${CTA_CLS[card.style]}`}>{cta}</p>
     </button>
   );
 }

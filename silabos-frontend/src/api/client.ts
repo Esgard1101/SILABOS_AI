@@ -453,6 +453,16 @@ export const api = {
     });
   },
 
+  getBibliographyReferences: (courseId: string) =>
+    request<
+      APIResponse<{
+        references: string[];
+        bibliography_rows?: import('./types').BibliographyReferenceRow[];
+        bibliografia?: import('./types').FuenteBibliografica[];
+        total: number;
+      }>
+    >(`/api/documents/bibliography/${encodeURIComponent(courseId)}/references`),
+
   deleteDocument: (docId: string) =>
     request<APIResponse>(`/api/documents/${encodeURIComponent(docId)}`, {
       method: 'DELETE',
@@ -711,6 +721,25 @@ export const api = {
   },
 
   // ── Wizard Progresivo v3 ──────────────────────────────────────────────────
+
+  suggestSkills: (params?: {
+    course_id?: string | null;
+    desempeno?: string;
+    q?: string;
+    nivel_bloom?: string;
+    limit?: number;
+  }) => {
+    const p = new URLSearchParams();
+    if (params?.course_id) p.set('course_id', params.course_id);
+    if (params?.desempeno) p.set('desempeno', params.desempeno);
+    if (params?.q) p.set('q', params.q);
+    if (params?.nivel_bloom) p.set('nivel_bloom', params.nivel_bloom);
+    if (params?.limit) p.set('limit', String(params.limit));
+    const q = p.toString();
+    return request<APIResponse<import('./types').SkillSuggestResponse>>(
+      `/api/skills/suggest${q ? `?${q}` : ''}`,
+    );
+  },
 
   createOrGetProgressiveDraft: (courseId: string, semester: string, programId?: string | null) =>
     request<APIResponse<import('./types').ProgressiveDraft>>('/api/syllabi/progressive', {

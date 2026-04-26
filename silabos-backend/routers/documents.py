@@ -12,6 +12,7 @@ from models.schemas import APIResponse
 from services.bibliography_parser import (
     parsear_referencias_bibliograficas,
     refs_a_bibliografia_json,
+    refs_a_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,8 @@ async def subir_documento(
 
         # ── Parsear referencias bibliográficas si corresponde ──
         ref_count = 0
+        refs: list[str] = []
+        reference_rows = []
         if es_bibliografia and doc_id:
             texto = resultado.get("text_content") or resultado.get("texto_extraido", "")
             if texto:
@@ -117,6 +120,11 @@ async def subir_documento(
                         f"Referencias parseadas y guardadas: {ref_count} "
                         f"(course_id={course_id}, doc_id={doc_id})"
                     )
+                    reference_rows = refs_a_rows(
+                        refs,
+                        doc_id=doc_id,
+                        course_id=course_id,
+                    )
                 else:
                     logger.warning(
                         f"No se encontró sección REFERENCIAS BIBLIOGRÁFICAS en el documento "
@@ -124,6 +132,9 @@ async def subir_documento(
                     )
 
         resultado["ref_count"] = ref_count
+        resultado["references"] = refs
+        resultado["bibliography_rows"] = reference_rows
+        resultado["bibliografia"] = refs_a_bibliografia_json(refs)
         return APIResponse(success=True, data=resultado, error=None)
 
     except HTTPException:
@@ -150,6 +161,36 @@ async def listar_documentos(request: Request):
         raise
     except Exception as e:
         logger.error(f"Error al listar documentos: {e}")
+        return APIResponse(success=False, data=None, error=str(e))
+
+
+@router.get("/bibliography/{course_id}/references", response_model=APIResponse)
+async def obtener_referencias_bibliografia(course_id: str, request: Request):
+    """Devuelve referencias NotebookLM ya parseadas para alimentar la tabla del step de fuentes."""
+    try:
+        servicios = _obtener_servicios(request)
+        supabase = servicios.get("supabase")
+
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+        refs = await supabase.obtener_referencias_curso(course_id)
+        rows = await supabase.obtener_referencias_curso_rows(course_id)
+        return APIResponse(
+            success=True,
+            data={
+                "references": refs,
+                "bibliography_rows": rows,
+                "bibliografia": refs_a_bibliografia_json(refs),
+                "total": len(refs),
+            },
+            error=None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener referencias bibliograficas del curso {course_id}: {e}")
         return APIResponse(success=False, data=None, error=str(e))
 
 

@@ -122,6 +122,30 @@ async def listar_skills(
     return {"success": True, "data": skills_context, "error": None}
 
 
+@router.get("/skills/suggest")
+async def sugerir_skills_contenido(
+    request: Request,
+    course_id: str = Query(default=""),
+    desempeno: str = Query(default=""),
+    q: str = Query(default=""),
+    nivel_bloom: str = Query(default=""),
+    limit: int = Query(default=300, ge=1, le=400),
+):
+    """Sugiere habilidades de la biblioteca para el paso de contenido."""
+    servicios = _obtener_servicios(request)
+    supabase = servicios.get("supabase")
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+    result = await supabase.sugerir_skills_para_contenido(
+        course_id=course_id or None,
+        desempeno=desempeno,
+        q=q,
+        nivel_bloom=nivel_bloom,
+        limit=limit,
+    )
+    return {"success": True, "data": result, "error": None}
+
+
 @router.get("/methods/suggest")
 async def sugerir_metodo(
     request: Request,

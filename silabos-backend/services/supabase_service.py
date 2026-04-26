@@ -1965,6 +1965,8 @@ class SupabaseService:
                 text("""
                     SELECT c.id, c.name, c.code, c.credits, c.cycle, c.is_common, c.scope,
                            c.program_id, c.sumilla, c.competencia_egreso, c.resultado_aprendizaje, c.capacidad,
+                           c.hours_theory, c.hours_practice, c.prerequisites, c.tipo_curso, c.naturaleza,
+                           c.temas_conocimientos, c.habilidades_desempenos, c.actividades_metodo,
                            p.name AS program_name,
                            cr.id AS career_id,
                            cr.name AS career_name,
@@ -2309,7 +2311,10 @@ class SupabaseService:
         for campo in ("created_at", "updated_at"):
             if campo in item:
                 item[campo] = self._serializar_fecha(item.get(campo))
-        for campo in ("phases", "tecnicas_didacticas", "instrumentos_evaluacion"):
+        for campo in (
+            "phases", "tecnicas_didacticas", "instrumentos_evaluacion",
+            "productos_tipicos", "phase_rules_json", "grading_template_json",
+        ):
             if isinstance(item.get(campo), str):
                 try:
                     item[campo] = json.loads(item[campo])
@@ -2324,6 +2329,8 @@ class SupabaseService:
                 text(f"""
                     SELECT id, name, code, description, phases, weekly_template,
                            tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion,
+                           proposito, rol_docente, rol_estudiante, productos_tipicos,
+                           phase_rules_json, grading_template_json,
                            is_archived
                     FROM teaching_methods
                     {where}
@@ -2345,6 +2352,8 @@ class SupabaseService:
                 text("""
                     SELECT id, name, code, description, phases, weekly_template,
                            tecnicas_didacticas, estrategias_evaluacion, instrumentos_evaluacion,
+                           proposito, rol_docente, rol_estudiante, productos_tipicos,
+                           phase_rules_json, grading_template_json,
                            is_archived
                     FROM teaching_methods
                     WHERE id = :id
@@ -3175,6 +3184,121 @@ class SupabaseService:
     # ══════════════════════════════════════════════════════════════
     # SCOPES Y PERMISOS DE USUARIO
     # ══════════════════════════════════════════════════════════════
+
+    def _sugerir_skills_para_contenido_sync(
+        self,
+        course_id: str | None = None,
+        desempeno: str = "",
+        q: str = "",
+        nivel_bloom: str = "",
+        limit: int = 12,
+    ) -> dict:
+        terms = " ".join([desempeno or "", q or ""]).strip().lower()
+        tokens = [t for t in terms.replace(",", " ").replace(".", " ").split() if len(t) >= 4][:12]
+
+        if course_id:
+            with self._Session() as sesion:
+                course_row = sesion.execute(
+                    text("""
+                        SELECT name, temas_conocimientos, habilidades_desempenos
+                        FROM courses
+                        WHERE id = :course_id
+                    """),
+                    {"course_id": course_id},
+                ).mappings().first()
+            if course_row:
+                course_terms = " ".join(
+                    [
+                        str(course_row.get("name") or ""),
+                        " ".join(course_row.get("temas_conocimientos") or []),
+                        " ".join(course_row.get("habilidades_desempenos") or []),
+                    ]
+                )
+                tokens.extend([t for t in course_terms.lower().replace(",", " ").split() if len(t) >= 5][:10])
+
+        params: dict = {"limit": max(1, min(limit, 400))}
+        where = [
+            "LOWER(TRIM(COALESCE(estado, 'activa'))) = 'activa'",
+            "COALESCE(is_archived, false) = false",
+        ]
+        if nivel_bloom.strip():
+            where.append("LOWER(COALESCE(nivel_cognitivo, '')) = :nivel")
+            params["nivel"] = nivel_bloom.strip().lower()
+        if q.strip():
+            where.append(
+                "(LOWER(nombre) LIKE :q OR LOWER(COALESCE(descripcion, '')) LIKE :q OR LOWER(COALESCE(verbo_principal, '')) LIKE :q)"
+            )
+            params["q"] = f"%{q.strip().lower()}%"
+
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                           nivel_cognitivo, verbo_principal, disciplinas_aplicables,
+                           evidencias_sugeridas, instrumentos_sugeridos, palabras_clave,
+                           estado, is_archived
+                    FROM skills_catalog
+                    WHERE {' AND '.join(where)}
+                    ORDER BY categoria ASC, nivel_cognitivo ASC, nombre ASC
+                    LIMIT :limit
+                """),
+                params,
+            ).mappings().all()
+
+            if not filas and not q.strip() and not nivel_bloom.strip():
+                filas = sesion.execute(
+                    text("""
+                        SELECT id, id_habilidad, nombre, descripcion, categoria, subcategoria,
+                               nivel_cognitivo, verbo_principal, disciplinas_aplicables,
+                               evidencias_sugeridas, instrumentos_sugeridos, palabras_clave,
+                               estado, is_archived
+                        FROM skills_catalog
+                        WHERE COALESCE(is_archived, false) = false
+                        ORDER BY categoria ASC, nivel_cognitivo ASC, nombre ASC
+                        LIMIT :limit
+                    """),
+                    {"limit": params["limit"]},
+                ).mappings().all()
+
+        def _score(row: dict) -> int:
+            nombre = str(row.get("nombre") or "").lower()
+            haystack = " ".join(
+                [
+                    nombre,
+                    str(row.get("descripcion") or "").lower(),
+                    str(row.get("categoria") or "").lower(),
+                    str(row.get("subcategoria") or "").lower(),
+                    str(row.get("verbo_principal") or "").lower(),
+                    str(row.get("disciplinas_aplicables") or "").lower(),
+                    str(row.get("palabras_clave") or "").lower(),
+                ]
+            )
+            return sum(3 if token in nombre else 1 for token in tokens if token in haystack)
+
+        mapped = [self._stringify_uuids(dict(row)) for row in filas]
+        mapped.sort(key=lambda row: (-_score(row), str(row.get("nombre") or "")))
+        return {"skills": mapped[: params["limit"]], "total": len(mapped)}
+
+    async def sugerir_skills_para_contenido(
+        self,
+        course_id: str | None = None,
+        desempeno: str = "",
+        q: str = "",
+        nivel_bloom: str = "",
+        limit: int = 12,
+    ) -> dict:
+        try:
+            return await self._ejecutar(
+                self._sugerir_skills_para_contenido_sync,
+                course_id,
+                desempeno,
+                q,
+                nivel_bloom,
+                limit,
+            )
+        except Exception as e:
+            logger.error(f"Error al sugerir skills para contenido: {e}")
+            return {"skills": [], "total": 0}
 
     def _listar_scopes_usuario_sync(self, user_id: str) -> list:
         with self._Session() as sesion:

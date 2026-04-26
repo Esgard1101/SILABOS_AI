@@ -20,6 +20,7 @@ export interface UploadedBiblio {
   docId: string;
   fileName: string;
   refCount: number;
+  references?: string[];
 }
 
 // ─── Context interface ────────────────────────────────────────────────────────

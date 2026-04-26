@@ -148,6 +148,7 @@ Responde exactamente este formato:
         curso: dict,
         desempenos: list[dict],
         bibliografia: list[str] | None = None,
+        skills_context: list[dict] | None = None,
     ) -> dict:
         desempenos_texto = "\n".join(
             f"- {d.get('statement', d.get('code', ''))}" for d in desempenos[:5]
@@ -155,12 +156,24 @@ Responde exactamente este formato:
         biblio_ctx = ""
         if bibliografia:
             biblio_ctx = "\nREFERENCIAS:\n" + "\n".join(f"- {r}" for r in bibliografia[:4])
+        temas_ctx = "\n".join(f"- {t}" for t in (curso.get("temas_conocimientos") or [])[:12])
+        habilidades_ctx = "\n".join(f"- {h}" for h in (curso.get("habilidades_desempenos") or [])[:12])
+        skills_ctx = "\n".join(
+            f"- {s.get('id_habilidad') or s.get('id')}: {s.get('nombre')} | verbo={s.get('verbo_principal', '')} | nivel={s.get('nivel_cognitivo', '')}"
+            for s in (skills_context or [])[:20]
+        )
 
         prompt = f"""Eres un experto en diseno curricular universitario peruano.
 Dado el proposito del curso, deriva los tres componentes del contenido formativo.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:450]}
+DATOS OFICIALES DEL CURSO - TEMAS/CONOCIMIENTOS:
+{temas_ctx or "- Sin enriquecimiento de temas"}
+DATOS OFICIALES DEL CURSO - HABILIDADES/DESEMPENOS:
+{habilidades_ctx or "- Sin enriquecimiento de habilidades"}
+BIBLIOTECA INSTITUCIONAL DE HABILIDADES PRIORIZADA:
+{skills_ctx or "- Sin skills consultadas"}
 DESEMPENOS:
 {desempenos_texto}
 {biblio_ctx}
@@ -173,9 +186,11 @@ Responde exactamente este JSON:
 }}
 
 REGLAS:
-- conocimientos: 4 a 6 temas especificos
-- actitudes: 3 a 4 disposiciones valorativas
-- habilidades_sugeridas: 2 a 4 habilidades clave
+- conocimientos: 4 a 6 temas especificos en forma de sustantivos/temas. Nunca empieces con verbo.
+- actitudes: 3 a 4 disposiciones valorativas que se forman.
+- habilidades_sugeridas: 4 a 6 habilidades con verbo infinitivo + objeto. Prioriza la biblioteca y datos oficiales.
+- Diferencia ontologica: conocimientos se asimilan, habilidades se desarrollan, actitudes se forman.
+- Deben derivarse de RA/desempenos, no ser lista arbitraria.
 - Responde SOLO JSON, sin texto adicional"""
 
         payload = await self._generate_json(

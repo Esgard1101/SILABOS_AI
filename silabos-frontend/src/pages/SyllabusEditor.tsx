@@ -37,9 +37,11 @@ const REVIEW_MODULE_MESSAGE =
 
 interface ContentRow {
   desempeno: string;
-  habilidades: string;
   semana: string;
+  fecha: string;
   conocimientos: string;
+  habilidades: string;
+  actitudes: string;
   actividades: string;
   evidencias: string;
 }
@@ -228,6 +230,19 @@ function parseWeekNumbers(rawWeeks?: string): number[] {
   return numbers;
 }
 
+function joinList(value: unknown, fallback: string = '—'): string {
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((v) => (typeof v === 'string' ? v : String(v ?? '')).trim())
+      .filter(Boolean);
+    return parts.length ? parts.join('\n') : fallback;
+  }
+  if (typeof value === 'string') {
+    return value.trim() || fallback;
+  }
+  return fallback;
+}
+
 function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSection[] {
   const units = syllabus.unidades_tematicas || [];
   const schedule = syllabus.cronograma_semanal || [];
@@ -241,9 +256,11 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
         rows: [
           {
             desempeno: desempenos[0] || '—',
-            habilidades: '—',
             semana: '—',
+            fecha: '—',
             conocimientos: '—',
+            habilidades: '—',
+            actitudes: '—',
             actividades: '—',
             evidencias: '—',
           },
@@ -255,23 +272,27 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
   return units.map((unidad, index) => {
     const parsedWeeks = parseWeekNumbers(unidad.semanas);
     const matchingRows = schedule.filter((item) => parsedWeeks.includes(item.semana));
-    const habilidades = displayValue(unidad.habilidades_requeridas || unidad.logro || '—');
+    const habilidadesUnit = displayValue(unidad.habilidades_requeridas || unidad.logro || '—');
 
     const rows: ContentRow[] = matchingRows.length
       ? matchingRows.map((item) => ({
-          desempeno: desempenos[index] || `D${index + 1}. —`,
-          habilidades,
+          desempeno: displayValue(item.desempeno || desempenos[index] || `D${index + 1}. —`),
           semana: `Semana ${displayValue(item.semana)}`,
-          conocimientos: displayValue(item.tema),
+          fecha: displayValue(item.fecha || '—'),
+          conocimientos: joinList(item.conocimientos, displayValue(item.tema)),
+          habilidades: joinList(item.habilidades, habilidadesUnit),
+          actitudes: joinList(item.actitudes),
           actividades: displayValue(item.actividad),
-          evidencias: displayValue(item.producto),
+          evidencias: displayValue(item.evidencia || item.producto),
         }))
       : [
           {
             desempeno: desempenos[index] || `D${index + 1}. —`,
-            habilidades,
             semana: displayValue(unidad.semanas),
+            fecha: '—',
             conocimientos: unidad.temas?.length ? unidad.temas.join(', ') : '—',
+            habilidades: habilidadesUnit,
+            actitudes: '—',
             actividades: '—',
             evidencias: '—',
           },
@@ -280,7 +301,7 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
     return {
       id: `unidad-${index + 1}`,
       title: `UNIDAD ${unidad.numero || index + 1}: ${displayValue(unidad.titulo)}`,
-      habilidades,
+      habilidades: habilidadesUnit,
       rows,
     };
   });
@@ -651,12 +672,20 @@ export default function SyllabusEditor() {
       const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || '{}');
       const cronograma = current.cronograma_semanal || [];
       // Rebuild cronograma_semanal from editable units
+      const splitLines = (s: string) =>
+        s.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
       const updatedCronograma = next.flatMap((unit) =>
         unit.rows.map((row) => ({
           semana: parseInt(row.semana.replace(/\D/g, '')) || 0,
+          fecha: row.fecha === '—' ? '' : row.fecha,
+          desempeno: row.desempeno,
           tema: row.conocimientos,
+          conocimientos: splitLines(row.conocimientos),
+          habilidades: splitLines(row.habilidades),
+          actitudes: splitLines(row.actitudes),
           actividad: row.actividades,
           producto: row.evidencias,
+          evidencia: row.evidencias,
         })),
       );
       // Only update if rows are schedule-based (have numeric semana)
@@ -1017,50 +1046,57 @@ export default function SyllabusEditor() {
               {editableUnits.map((section, unitIdx) => (
                 <div key={section.id}>
                   <h4 className="font-bold text-sm mb-2">{section.title}</h4>
-                  <table className="w-full border border-slate-300 border-collapse text-xs table-fixed">
+                  <table className="w-full border border-slate-300 border-collapse text-[10.5px] table-fixed">
                     <colgroup>
+                      <col style={{ width: '15%' }} />
+                      <col style={{ width: '5%' }} />
+                      <col style={{ width: '7%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '13%' }} />
+                      <col style={{ width: '11%' }} />
                       <col style={{ width: '20%' }} />
-                      <col style={{ width: '18%' }} />
-                      <col style={{ width: '9%' }} />
-                      <col style={{ width: '20%' }} />
-                      <col style={{ width: '18%' }} />
                       <col style={{ width: '15%' }} />
                     </colgroup>
                     <thead>
                       <tr className="bg-slate-50">
-                        <th className="border border-slate-300 p-2 text-left">Desempeños</th>
-                        <th className="border border-slate-300 p-2 text-left">Habilidades requeridas</th>
-                        <th className="border border-slate-300 p-2 text-left">Semana</th>
-                        <th className="border border-slate-300 p-2 text-left">Conocimientos</th>
-                        <th className="border border-slate-300 p-2 text-left">Actividades</th>
-                        <th className="border border-slate-300 p-2 text-left">Evidencias de Aprendizaje</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Desempeños</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Sem.</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Fecha</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Conocimientos</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Habilidades</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Actitudes</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Actividades de Aprendizaje</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Evidencias</th>
                       </tr>
                     </thead>
                     <tbody>
                       {section.rows.map((row, rowIndex) => (
                         <tr key={`${section.id}-${rowIndex}`}>
-                          {rowIndex === 0 && (
-                            <td rowSpan={section.rows.length} className="border border-slate-300 p-2 align-top">
-                              {row.desempeno}
-                            </td>
-                          )}
-                          {rowIndex === 0 && (
-                            <td
-                              rowSpan={section.rows.length}
-                              className="border border-slate-300 p-2 align-top whitespace-pre-line"
-                            >
-                              {section.habilidades}
-                            </td>
-                          )}
-                          <td className="border border-slate-300 p-2 align-top">
+                          <td className="border border-slate-300 p-1.5 align-top">
                             <EditableField
-                              value={row.semana}
-                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'semana', v)}
-                              placeholder="Semana..."
+                              value={row.desempeno}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'desempeno', v)}
+                              placeholder="Desempeño..."
                               multiline
                             />
                           </td>
-                          <td className="border border-slate-300 p-2 align-top">
+                          <td className="border border-slate-300 p-1.5 align-top">
+                            <EditableField
+                              value={row.semana}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'semana', v)}
+                              placeholder="Sem."
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-1.5 align-top">
+                            <EditableField
+                              value={row.fecha}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'fecha', v)}
+                              placeholder="Fecha"
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-1.5 align-top whitespace-pre-line">
                             <EditableField
                               value={row.conocimientos}
                               onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'conocimientos', v)}
@@ -1068,7 +1104,23 @@ export default function SyllabusEditor() {
                               multiline
                             />
                           </td>
-                          <td className="border border-slate-300 p-2 align-top">
+                          <td className="border border-slate-300 p-1.5 align-top whitespace-pre-line">
+                            <EditableField
+                              value={row.habilidades}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'habilidades', v)}
+                              placeholder="Habilidades..."
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-1.5 align-top whitespace-pre-line">
+                            <EditableField
+                              value={row.actitudes}
+                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'actitudes', v)}
+                              placeholder="Actitudes..."
+                              multiline
+                            />
+                          </td>
+                          <td className="border border-slate-300 p-1.5 align-top">
                             <EditableField
                               value={row.actividades}
                               onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'actividades', v)}
@@ -1076,7 +1128,7 @@ export default function SyllabusEditor() {
                               multiline
                             />
                           </td>
-                          <td className="border border-slate-300 p-2 align-top">
+                          <td className="border border-slate-300 p-1.5 align-top">
                             <EditableField
                               value={row.evidencias}
                               onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'evidencias', v)}
