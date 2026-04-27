@@ -766,6 +766,7 @@ export interface ContentSuggestion {
   actitudes: string[];
   habilidades_sugeridas: string[];
   habilidades_por_desempeno: HabilidadPorDesempeno[];
+  responsabilidad_social?: string;
 }
 
 export interface GradingSuggestion {

@@ -76,6 +76,8 @@ class CreateProgressiveDraftInput(BaseModel):
     course_id: str
     semester: str
     program_id: str | None = None
+    fecha_inicio: str | None = None
+    fecha_fin: str | None = None
 
 
 class SaveStepBlockInput(BaseModel):
@@ -677,12 +679,32 @@ def _short_method_name(name: str, code: str | None = None) -> str:
     return name.strip()
 
 
-def _compute_week_dates(semester: str, total_weeks: int = 16) -> list[str]:
+def _parse_iso_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_end_date(start_value: str | None, total_weeks: int = 16) -> str:
+    start = _parse_iso_date(start_value)
+    if not start:
+        return ""
+    return (start + timedelta(weeks=total_weeks)).strftime("%Y-%m-%d")
+
+
+def _compute_week_dates(semester: str, total_weeks: int = 16, start_date: str | None = None) -> list[str]:
     """Devuelve lista de fechas (lunes) por semana. Acepta semestre 'YYYY-I' o 'YYYY-II'.
 
     Heurística: I → inicia 4to lunes de marzo del año. II → inicia 4to lunes de agosto.
     Si no parsea, devuelve lista de '---'.
     """
+    explicit_start = _parse_iso_date(start_date)
+    if explicit_start:
+        return [(explicit_start + timedelta(weeks=i)).strftime("%Y-%m-%d") for i in range(total_weeks)]
+
     if not semester:
         return ["---"] * total_weeks
     match = re.match(r"\s*(\d{4})\s*[-_]?\s*(I{1,2})\s*$", str(semester).upper())
@@ -1133,6 +1155,8 @@ async def crear_o_obtener_draft_progresivo(
         semester=datos.semester,
         user_id=user_id,
         program_id=datos.program_id,
+        fecha_inicio=datos.fecha_inicio,
+        fecha_fin=datos.fecha_fin,
         teacher_name=str(current_user.get("full_name") or ""),
         teacher_email=str(current_user.get("email") or ""),
     )
@@ -1333,6 +1357,12 @@ async def sugerir_contenido(
         ), 4)
     else:
         sugerencia["actitudes"] = _sanitize_content_items(sugerencia["actitudes"], 4)
+    if not _clean_text(sugerencia.get("responsabilidad_social")):
+        temas_rsu = ", ".join(sugerencia.get("conocimientos", [])[:2]) or curso.get("name", "el curso")
+        sugerencia["responsabilidad_social"] = (
+            f"Desarrollar una actividad de transferencia comunitaria donde los estudiantes apliquen {temas_rsu} "
+            "para atender una necesidad concreta del entorno local."
+        )
 
     await supabase.guardar_ai_suggestion(
         syllabus_id=syllabus_id,
@@ -1556,6 +1586,7 @@ async def ensamblar_final(
     habilidades_por_desempeno = content.get("habilidades_por_desempeno", [])
     habilidades_sugeridas = content.get("habilidades_sugeridas", [])
     content_plan = content.get("content_plan", {})
+    datos_generales_payload = payload.get("datos_generales", {}) or {}
     selected_skill_ids = content.get("selected_skill_ids", [])
     skills_raw = await supabase.listar_skills_raw_por_ids(selected_skill_ids) if selected_skill_ids else []
     skill_names = [
@@ -1612,7 +1643,9 @@ async def ensamblar_final(
             logger.warning("sugerir_instrumentos_por_desempeno failed: %s", exc)
             raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
 
-    week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16)
+    fecha_inicio = _clean_text(datos_generales_payload.get("fecha_inicio"))
+    fecha_fin = _clean_text(datos_generales_payload.get("fecha_fin")) or _compute_end_date(fecha_inicio, total_weeks=16)
+    week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16, start_date=fecha_inicio)
 
     unidades_tematicas, cronograma_semanal = _build_units_and_schedule(
         performances=desempenos_text,
@@ -1652,6 +1685,13 @@ async def ensamblar_final(
     competencia = curso.get("competencia_egreso", "") if curso else ""
     resultado_raw = curso.get("resultado_aprendizaje", "") if curso else ""
     resultado = _clean_text(resultado_raw) or _draft_ra_curso(curso or {}, desempenos_final, method_name)
+    rsu_text = _clean_text(content.get("responsabilidad_social"))
+    if not rsu_text:
+        temas_rsu = ", ".join(_as_text_list(knowledge_items)[:2]) or (curso.get("name", "") if curso else "el curso")
+        rsu_text = (
+            f"Desarrollar una actividad de transferencia comunitaria donde los estudiantes apliquen {temas_rsu} "
+            "para atender una necesidad concreta del entorno local."
+        )
     metodologia_text = _build_methodology_narrative(
         method_raw,
         course_name=curso.get("name", "") if curso else "",
@@ -1677,6 +1717,11 @@ async def ensamblar_final(
             "escuela_profesional": curso.get("career_name", "") if curso else "",
             "programa_estudios": curso.get("program_name", "") if curso else "",
             "modalidad": "Presencial",
+            "prerrequisito": curso.get("prerequisites", "") if curso else "",
+            "horas_teoria": curso.get("hours_theory", "") if curso else "",
+            "horas_practica": curso.get("hours_practice", "") if curso else "",
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
         },
         "sumilla": curso.get("sumilla", "") if curso else "",
         "competencia_profesional": competencia,
@@ -1701,18 +1746,12 @@ async def ensamblar_final(
             "segun la programacion institucional vigente."
         ),
         "responsabilidad_social": {
-            "actividadPropuesta": "",
-            "descripcion": (
-                "Plantear una actividad para el desarrollo de un Proyecto de RSU "
-                "ligado al proceso formativo del curso"
-            ),
+            "actividadPropuesta": rsu_text,
+            "descripcion": rsu_text,
         },
         "responsabilidadSocial": {
-            "actividadPropuesta": "",
-            "descripcion": (
-                "Plantear una actividad para el desarrollo de un Proyecto de RSU "
-                "ligado al proceso formativo del curso"
-            ),
+            "actividadPropuesta": rsu_text,
+            "descripcion": rsu_text,
         },
         "method_id": method_id,
         "method_short_name": method_short,

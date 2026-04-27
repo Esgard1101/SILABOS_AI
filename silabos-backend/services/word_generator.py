@@ -26,6 +26,18 @@ def _pair(left: Any, right: Any, fallback: str = "—") -> str:
     return " / ".join(visible) if visible else fallback
 
 
+def _format_hours(theory: Any, practice: Any, fallback: str = "â€”") -> str:
+    t = _val(theory)
+    p = _val(practice)
+    if t and p:
+        return f"Teoria: {t} / Practica: {p}"
+    if t:
+        return f"Teoria: {t}"
+    if p:
+        return f"Practica: {p}"
+    return fallback
+
+
 def _safe_filename(nombre_curso: str) -> str:
     nombre = re.sub(r"[^\w\s-]", "", nombre_curso or "silabo")
     return re.sub(r"\s+", "_", nombre.strip())[:50] or "silabo"
@@ -336,6 +348,7 @@ def _build_context(silabo: dict) -> dict:
         "horas_practica": _val(dg.get("horas_practica")),
         "fecha_inicio": _val(dg.get("fecha_inicio")),
         "fecha_fin": _val(dg.get("fecha_fin")),
+        "horas_semanales": _format_hours(dg.get("horas_teoria"), dg.get("horas_practica")),
         "docente_nombre": _val(dg.get("docente")),
         "docente_email": _val(dg.get("docente_email")),
         "sumilla": _val(silabo.get("sumilla")),
@@ -429,8 +442,8 @@ def _generar_docx_programatico(context: dict) -> bytes:
         ("1.8 Periodo Academico", context["periodo_academico"]),
         ("1.9 Creditos", context["creditos"]),
         (
-            "1.10 Horas Semanales (Teoria / Practica)",
-            f"{context['horas_teoria']} / {context['horas_practica']}",
+            "1.10\nHoras Semanales",
+            context["horas_semanales"],
         ),
         (
             "1.11 Duracion (Inicio / Termino)",
@@ -896,7 +909,7 @@ def _build_html(ctx: dict) -> str:
       <div class="info-row"><div class="info-label">1.7 Semestre Academico</div><div class="info-value">{escape(ctx['semestre'])}</div></div>
       <div class="info-row"><div class="info-label">1.8 Periodo Academico</div><div class="info-value">{escape(ctx['periodo_academico'])}</div></div>
       <div class="info-row"><div class="info-label">1.9 Creditos</div><div class="info-value">{escape(ctx['creditos'])}</div></div>
-      <div class="info-row"><div class="info-label">1.10 Horas Semanales (Teoria / Practica)</div><div class="info-value">{escape(_pair(ctx['horas_teoria'], ctx['horas_practica']))}</div></div>
+      <div class="info-row"><div class="info-label">1.10<br/>Horas Semanales</div><div class="info-value">{escape(ctx['horas_semanales'])}</div></div>
       <div class="info-row"><div class="info-label">1.11 Duracion (Inicio / Termino)</div><div class="info-value">{escape(_pair(ctx['fecha_inicio'], ctx['fecha_fin']))}</div></div>
       <div class="info-row"><div class="info-label">1.12 Docente (Nombre / Correo)</div><div class="info-value">{escape(_pair(ctx['docente_nombre'], ctx['docente_email']))}</div></div>
     </div>

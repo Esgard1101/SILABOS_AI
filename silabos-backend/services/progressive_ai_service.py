@@ -160,13 +160,15 @@ Responde exactamente este JSON:
 {{
   "conocimientos": ["Tema 1", "Tema 2", "Tema 3", "Tema 4"],
   "actitudes": ["Actitud 1", "Actitud 2", "Actitud 3"],
-  "habilidades_sugeridas": ["Habilidad 1", "Habilidad 2"]
+  "habilidades_sugeridas": ["Habilidad 1", "Habilidad 2"],
+  "responsabilidad_social": "Una oración con una actividad RSU vinculada a los temas del curso."
 }}
 
 REGLAS:
 - conocimientos: 4 a 6 temas especificos en forma de sustantivos/temas. Nunca empieces con verbo.
 - actitudes: 3 a 4 disposiciones valorativas que se forman.
 - habilidades_sugeridas: 4 a 6 habilidades con verbo infinitivo + objeto. Prioriza la biblioteca y datos oficiales.
+- responsabilidad_social: exactamente 1 oración que proponga una actividad de Responsabilidad Social Universitaria vinculada a los temas del curso y al beneficio de la comunidad.
 - Diferencia ontologica: conocimientos se asimilan, habilidades se desarrollan, actitudes se forman.
 - Deben derivarse de RA/desempenos, no ser lista arbitraria.
 - Responde SOLO JSON, sin texto adicional"""
@@ -177,8 +179,9 @@ REGLAS:
             force_provider=force_provider,
         )
         if isinstance(payload, dict):
+            payload["responsabilidad_social"] = str(payload.get("responsabilidad_social") or "").strip()
             return payload
-        return {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": []}
+        return {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": [], "responsabilidad_social": ""}
 
     async def sugerir_calificacion(
         self,

@@ -417,6 +417,8 @@ export default function Step4_Contenido() {
     setActitudes,
     contentNotes,
     setContentNotes,
+    responsabilidadSocial,
+    setResponsabilidadSocial,
     saveStep,
     showToast,
   } = useSyllabus();
@@ -506,6 +508,7 @@ export default function Step4_Contenido() {
         if (d.actitudes?.length) setActitudes((prev) => cleanItems([...prev, ...d.actitudes], CONTENT_LIMITS.attitudes));
         if (d.habilidades_sugeridas?.length) setHabilidadesSugeridas((prev) => cleanItems([...prev, ...d.habilidades_sugeridas], CONTENT_LIMITS.skills));
         if (d.habilidades_por_desempeno?.length) setHabilidadesPorDesempeno(d.habilidades_por_desempeno);
+        if (d.responsabilidad_social) setResponsabilidadSocial(d.responsabilidad_social);
         setContentMode('proposal');
         showToast('Propuesta de contenido generada', 'success');
       }
@@ -541,6 +544,7 @@ export default function Step4_Contenido() {
         selected_skill_ids: selectedSkillIds,
         knowledge_items: enrichedKnowledge,
         attitudes: actitudes,
+        responsabilidad_social: responsabilidadSocial,
         content_plan: { units: contentPlan.units, warnings: contentPlan.warnings },
         content_mode: 'confirmed',
         teacher_notes: contentNotes,
@@ -693,6 +697,14 @@ export default function Step4_Contenido() {
       </div>
 
       <div className="mt-3">
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Responsabilidad Social Universitaria</label>
+        <textarea
+          className="mb-3 w-full resize-none rounded-xl border border-white/10 bg-[#0A2753] px-3 py-2 text-[11px] text-white outline-none focus:border-[#D4A351]/40"
+          rows={2}
+          placeholder="Actividad RSU vinculada a los temas del curso..."
+          value={responsabilidadSocial}
+          onChange={(event) => setResponsabilidadSocial(event.target.value)}
+        />
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Observaciones del docente</label>
         <textarea
           className="w-full resize-none rounded-xl border border-white/10 bg-[#0A2753] px-3 py-2 text-[11px] text-white outline-none focus:border-[#D4A351]/40"

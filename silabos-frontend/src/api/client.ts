@@ -749,11 +749,22 @@ export const api = {
     );
   },
 
-  createOrGetProgressiveDraft: (courseId: string, semester: string, programId?: string | null) =>
+  createOrGetProgressiveDraft: (
+    courseId: string,
+    semester: string,
+    programId?: string | null,
+    options?: { fechaInicio?: string; fechaFin?: string },
+  ) =>
     request<APIResponse<import('./types').ProgressiveDraft>>('/api/syllabi/progressive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ course_id: courseId, semester, program_id: programId ?? null }),
+      body: JSON.stringify({
+        course_id: courseId,
+        semester,
+        program_id: programId ?? null,
+        fecha_inicio: options?.fechaInicio ?? null,
+        fecha_fin: options?.fechaFin ?? null,
+      }),
     }),
 
   getProgressiveDraft: (syllabusId: string) =>

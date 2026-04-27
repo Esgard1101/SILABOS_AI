@@ -34,6 +34,9 @@ interface Course {
   code?: string;
   credits?: number;
   cycle?: number;
+  hours_theory?: number | null;
+  hours_practice?: number | null;
+  prerequisites?: string | null;
 }
 
 async function fetchFaculties(): Promise<Faculty[]> {
@@ -62,6 +65,12 @@ async function fetchCourses(programId: string): Promise<Course[]> {
   return (json.data as Course[]) || [];
 }
 
+async function fetchCourse(courseId: string): Promise<Course | null> {
+  const res = await fetch(`${BASE_URL}/api/courses/${encodeURIComponent(courseId)}`);
+  const json = await res.json();
+  return (json.data as Course) || null;
+}
+
 const SELECT_CLS =
   'h-9 w-full appearance-none rounded border border-white/20 bg-[#041A3A] px-3 text-[11px] text-white outline-none transition focus:border-[#00B4CC]/60 focus:ring-1 focus:ring-[#00B4CC]/20 disabled:cursor-not-allowed disabled:opacity-40';
 
@@ -73,6 +82,25 @@ const LOADING_FIELD = (
     <Loader2 size={11} className="animate-spin" /> Cargando...
   </div>
 );
+
+function toISODate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function nearestMonday(from = new Date()) {
+  const date = new Date(from);
+  const day = date.getDay();
+  const diff = day === 1 ? 0 : (8 - day) % 7;
+  date.setDate(date.getDate() + diff);
+  return toISODate(date);
+}
+
+function addWeeks(value: string, weeks = 16) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + weeks * 7);
+  return toISODate(date);
+}
 
 export default function ContextSelector() {
   const navigate = useNavigate();
@@ -88,6 +116,8 @@ export default function ContextSelector() {
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [semester, setSemester] = useState(getCurrentSemester());
+  const [startDate, setStartDate] = useState(nearestMonday());
+  const endDate = addWeeks(startDate);
 
   const [loadingFaculties, setLoadingFaculties] = useState(true);
   const [loadingCareers, setLoadingCareers] = useState(false);
@@ -161,6 +191,13 @@ export default function ContextSelector() {
       semester,
       course_id: selectedCourse.id,
       course_name: selectedCourse.name,
+      course_code: selectedCourse.code ?? null,
+      credits: selectedCourse.credits ?? null,
+      hours_theory: selectedCourse.hours_theory ?? null,
+      hours_practice: selectedCourse.hours_practice ?? null,
+      prerequisites: selectedCourse.prerequisites ?? null,
+      start_date: startDate,
+      end_date: endDate,
     });
     navigate('/creator', { replace: true });
   };
@@ -172,6 +209,7 @@ export default function ContextSelector() {
     setCourses([]);
     setSelectedCourse(null);
     setSemester(getCurrentSemester());
+    setStartDate(nearestMonday());
     setError(null);
   };
 
@@ -181,6 +219,7 @@ export default function ContextSelector() {
     selectedProgram !== null &&
     selectedCourse !== null &&
     semester.trim().length > 0 &&
+    startDate.trim().length > 0 &&
     !submitting;
 
   return (
@@ -377,9 +416,17 @@ export default function ContextSelector() {
                     className={SELECT_CLS}
                     value={selectedCourse?.id || ''}
                     disabled={!selectedProgram}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    onChange={async (e: React.ChangeEvent<HTMLSelectElement>) => {
                       const course = courses.find((c: Course) => c.id === e.target.value) || null;
                       setSelectedCourse(course);
+                      if (course?.id) {
+                        try {
+                          const detail = await fetchCourse(course.id);
+                          if (detail) setSelectedCourse({ ...course, ...detail });
+                        } catch {
+                          // The selector can continue with the list payload if detail is unavailable.
+                        }
+                      }
                     }}
                   >
                     <option value="">
@@ -406,6 +453,51 @@ export default function ContextSelector() {
                   placeholder="Ej: 2026-I"
                   className="h-9 w-full rounded border border-white/20 bg-[#041A3A] px-3 text-[11px] text-white outline-none placeholder-white/30 transition focus:border-[#00B4CC]/60 focus:ring-1 focus:ring-[#00B4CC]/20"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  Prerrequisito
+                </label>
+                <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">
+                  {selectedCourse?.prerequisites?.trim() || 'No registrado'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">Creditos</label>
+                  <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">{selectedCourse?.credits ?? '—'}</div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">H. Teoria</label>
+                  <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">{selectedCourse?.hours_theory ?? '—'}</div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">H. Practica</label>
+                  <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">{selectedCourse?.hours_practice ?? '—'}</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  Fecha de inicio
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-9 w-full rounded border border-white/20 bg-[#041A3A] px-3 text-[11px] text-white outline-none transition focus:border-[#00B4CC]/60 focus:ring-1 focus:ring-[#00B4CC]/20"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">
+                  Fecha de termino
+                </label>
+                <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">
+                  {endDate || '—'}
+                </div>
               </div>
 
               {canSubmit && (

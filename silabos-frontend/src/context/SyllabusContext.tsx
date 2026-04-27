@@ -65,6 +65,8 @@ interface SyllabusCtxValue {
   setActitudes: React.Dispatch<React.SetStateAction<string[]>>;
   contentNotes: string;
   setContentNotes: React.Dispatch<React.SetStateAction<string>>;
+  responsabilidadSocial: string;
+  setResponsabilidadSocial: React.Dispatch<React.SetStateAction<string>>;
   // Method
   selectedMethodId: string | null;
   setSelectedMethodId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -127,6 +129,7 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
   const [conocimientos, setConocimientos] = useState<string[]>([]);
   const [actitudes, setActitudes] = useState<string[]>([]);
   const [contentNotes, setContentNotes] = useState('');
+  const [responsabilidadSocial, setResponsabilidadSocial] = useState('');
 
   const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
   const [selectedMethodName, setSelectedMethodName] = useState('');
@@ -180,6 +183,7 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
         activeCourse.id,
         context.semester,
         context.program_id,
+        { fechaInicio: context.start_date, fechaFin: context.end_date },
       );
       const draft = res.data;
       if (!draft?.id) return;
@@ -205,6 +209,7 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
         if (c.selected_skill_ids?.length) setSelectedSkillIds(c.selected_skill_ids as string[]);
         if (c.knowledge_items?.length) setConocimientos(c.knowledge_items as string[]);
         if (c.attitudes?.length) setActitudes(c.attitudes as string[]);
+        if (typeof c.responsabilidad_social === 'string') setResponsabilidadSocial(c.responsabilidad_social);
         setContentNotes((c.teacher_notes as string) || '');
         const cStatus = pl._workflow?.content?.status;
         const storedMode = c.content_mode as ContentMode | undefined;
@@ -265,6 +270,7 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
     conocimientos, setConocimientos,
     actitudes, setActitudes,
     contentNotes, setContentNotes,
+    responsabilidadSocial, setResponsabilidadSocial,
     selectedMethodId, setSelectedMethodId,
     selectedMethodName, setSelectedMethodName,
     selectedMethodSequence, setSelectedMethodSequence,

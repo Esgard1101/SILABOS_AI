@@ -3559,6 +3559,8 @@ class SupabaseService:
         program_id: Optional[str],
         teacher_name: str = "",
         teacher_email: str = "",
+        fecha_inicio: str = "",
+        fecha_fin: str = "",
     ) -> dict:
         return {
             "_meta": {
@@ -3608,6 +3610,8 @@ class SupabaseService:
                 "semestre": semester,
                 "docente": teacher_name,
                 "docente_email": teacher_email,
+                "fecha_inicio": fecha_inicio,
+                "fecha_fin": fecha_fin,
             },
         }
 
@@ -3659,6 +3663,8 @@ class SupabaseService:
         program_id: Optional[str] = None,
         teacher_name: str = "",
         teacher_email: str = "",
+        fecha_inicio: str = "",
+        fecha_fin: str = "",
     ) -> dict:
         with self._Session() as sesion:
             # Look for existing open progressive draft
@@ -3680,6 +3686,28 @@ class SupabaseService:
             ).mappings().first()
 
             if existing:
+                payload = existing["payload_json"]
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                if isinstance(payload, dict) and (fecha_inicio or fecha_fin):
+                    datos = payload.setdefault("datos_generales", {})
+                    if fecha_inicio:
+                        datos["fecha_inicio"] = fecha_inicio
+                    if fecha_fin:
+                        datos["fecha_fin"] = fecha_fin
+                    sesion.execute(
+                        text(
+                            """
+                            UPDATE syllabi
+                            SET payload_json = CAST(:payload_json AS JSONB), updated_at = now()
+                            WHERE id = :id
+                            """
+                        ),
+                        {"id": existing["id"], "payload_json": json.dumps(payload, ensure_ascii=False)},
+                    )
+                    sesion.commit()
+                    existing = dict(existing)
+                    existing["payload_json"] = payload
                 return self._mapear_silabo_fila(existing) or {}
 
             # Create new progressive draft
@@ -3690,6 +3718,8 @@ class SupabaseService:
                 program_id,
                 teacher_name=teacher_name,
                 teacher_email=teacher_email,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
             )
             sesion.execute(
                 text("""
@@ -3736,11 +3766,14 @@ class SupabaseService:
         program_id: Optional[str] = None,
         teacher_name: str = "",
         teacher_email: str = "",
+        fecha_inicio: str = "",
+        fecha_fin: str = "",
     ) -> dict:
         try:
             return await self._ejecutar(
                 self._crear_o_obtener_draft_progresivo_sync,
                 course_id, semester, user_id, program_id, teacher_name, teacher_email,
+                fecha_inicio, fecha_fin,
             )
         except Exception as e:
             logger.error(f"Error al crear/obtener draft progresivo: {e}")

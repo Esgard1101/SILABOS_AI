@@ -12,6 +12,13 @@ export interface ActiveContext {
   semester: string; // 'YYYY-I' o 'YYYY-II'
   course_id?: string;
   course_name?: string;
+  course_code?: string | null;
+  credits?: number | null;
+  hours_theory?: number | null;
+  hours_practice?: number | null;
+  prerequisites?: string | null;
+  start_date?: string;
+  end_date?: string;
 }
 
 export function getCurrentSemester(): string {
