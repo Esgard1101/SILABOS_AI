@@ -73,6 +73,35 @@ function skillNamesByPerformance(items: HabilidadPorDesempeno[], code: string): 
   return items.find((item) => item.desempeno_code === code)?.habilidades || [];
 }
 
+function progressiveKnowledgeForWeek(items: string[], absoluteWeek: number): string[] {
+  const seeds = items.length ? items : ['fundamentos del curso', 'aplicacion disciplinar'];
+  const seed = (index: number) => seeds[Math.min(seeds.length - 1, index % seeds.length)];
+  const templates = [
+    'Fundamentos conceptuales de {a}',
+    'Contexto, alcance y categorias de {a}',
+    'Principios y enfoques de {a}',
+    'Integracion diagnostica de {a} y {b}',
+    'Modelos teoricos de {a}',
+    'Procedimientos y estrategias de {a}',
+    'Analisis comparado de {a} y {b}',
+    'Producto parcial sobre {a}',
+    'Metodos de aplicacion de {a}',
+    'Criterios de diseno e intervencion en {a}',
+    'Resolucion de situaciones practicas vinculadas con {a}',
+    'Evaluacion parcial de resultados sobre {a}',
+    'Proyecto integrador aplicado a {a}',
+    'Validacion y mejora de propuestas sobre {a}',
+    'Sustentacion de evidencias y toma de decisiones en {a}',
+    'Cierre integrador y reflexion academica sobre {a}',
+  ];
+  const idx = Math.max(0, absoluteWeek - 1);
+  return [
+    templates[idx % templates.length]
+      .replace('{a}', seed(idx))
+      .replace('{b}', seed(idx + 1)),
+  ];
+}
+
 function buildContentPlan({
   performances,
   conocimientos,
@@ -102,10 +131,7 @@ function buildContentPlan({
       const perf = perfFallback[Math.min(unitIndex, perfFallback.length - 1)] || perfFallback[0];
       const performanceCode = perf.code || `D${unitNumber}`;
       const perfSkills = skillNamesByPerformance(habilidadesPorDesempeno, performanceCode);
-      const knowledge = cleanItems([
-        conocimientos[(absoluteWeek - 1) % Math.max(conocimientos.length, 1)],
-        conocimientos[(absoluteWeek) % Math.max(conocimientos.length, 1)],
-      ], 2);
+      const knowledge = cleanItems(progressiveKnowledgeForWeek(conocimientos, absoluteWeek), 2);
       const skillText = cleanItems([
         ...perfSkills,
         habilidades[(absoluteWeek - 1) % Math.max(habilidades.length, 1)],

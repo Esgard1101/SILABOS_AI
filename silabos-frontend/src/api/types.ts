@@ -761,12 +761,36 @@ export interface HabilidadPorDesempeno {
   habilidades: string[];
 }
 
+export interface ContentPlanSkill {
+  skill_id?: string | null;
+  name: string;
+}
+
+export interface ContentPlanWeek {
+  week: number;
+  unit_number: number;
+  performance_code?: string;
+  knowledge: string[];
+  skills: ContentPlanSkill[];
+  attitudes: string[];
+}
+
+export interface ContentUnit {
+  unit_number: number;
+  ra_unidad?: string;
+  weeks: ContentPlanWeek[];
+}
+
 export interface ContentSuggestion {
   conocimientos: string[];
   actitudes: string[];
   habilidades_sugeridas: string[];
   habilidades_por_desempeno: HabilidadPorDesempeno[];
   responsabilidad_social?: string;
+  content_plan?: {
+    units?: ContentUnit[];
+    warnings?: string[];
+  };
 }
 
 export interface GradingSuggestion {

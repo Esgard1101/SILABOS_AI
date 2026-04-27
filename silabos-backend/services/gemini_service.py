@@ -123,7 +123,7 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
     "progressive_content_suggest": TaskConfig(
         provider="openrouter_light",
         temperature=0.2,
-        max_output_tokens=2048,
+        max_output_tokens=4096,
         json_mode=False,
     ),
     "progressive_grading_suggest": TaskConfig(
@@ -135,7 +135,7 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
     "suggest_instruments": TaskConfig(
         provider="gemini",
         temperature=0.2,
-        max_output_tokens=1024,
+        max_output_tokens=2048,
         json_mode=True,
     ),
 }
@@ -537,7 +537,17 @@ class GeminiService:
             ) from exc
 
         data = response.json()
-        message = (data.get("choices") or [{}])[0].get("message") or {}
+        choice = (data.get("choices") or [{}])[0]
+        finish_reason = str(choice.get("finish_reason") or "").lower()
+        if finish_reason in {"length", "max_tokens", "content_filter"}:
+            raise AIProviderError(
+                f"OpenRouter respuesta incompleta para {task_name}: finish_reason={finish_reason}",
+                retryable=True,
+                provider="openrouter",
+                model=data.get("model") or model,
+            )
+
+        message = choice.get("message") or {}
         result = AIResult(
             text=_normalize_text_from_message(message.get("content")),
             provider="openrouter",
@@ -556,7 +566,7 @@ class GeminiService:
         *,
         fallback_used: bool = False,
     ) -> AIResult:
-        provider = config.provider if config.provider.startswith("openrouter") else "openrouter_light"
+        provider = config.provider if config.provider.startswith("openrouter") else "openrouter_audit"
         primary_model = self._resolve_openrouter_model(provider)
         reasoning_enabled = config.reasoning and self.openrouter_audit_reasoning
 

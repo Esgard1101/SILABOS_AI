@@ -44,12 +44,7 @@ def _parse_json_text(text: str) -> Any:
 
 
 class ProgressiveAIService:
-    """
-    Servicio IA especifico para el wizard progresivo.
-
-    Todas las sugerencias intermedias se enrutan por OpenRouter para
-    reservar Gemini solo para la generacion final critica del silabo.
-    """
+    """IA especializada para el wizard progresivo."""
 
     def __init__(self) -> None:
         legacy_openrouter_model = os.getenv("OPENROUTER_MODEL", "").strip()
@@ -58,10 +53,7 @@ class ProgressiveAIService:
             or legacy_openrouter_model
             or DEFAULT_OPENROUTER_AUDIT_MODEL
         )
-        self.light_model = (
-            os.getenv("OPENROUTER_LIGHT_MODEL", "").strip()
-            or audit_model
-        )
+        self.light_model = os.getenv("OPENROUTER_LIGHT_MODEL", "").strip() or audit_model
 
     async def _generate_json(
         self,
@@ -91,14 +83,13 @@ class ProgressiveAIService:
             )
 
         prompt = f"""Eres un experto en diseno curricular universitario peruano.
-Genera entre 3 y 5 desempenos de aprendizaje para el curso indicado, derivados de la sumilla, competencia y capacidad.
+Genera entre 3 y 5 desempenos de aprendizaje para el curso indicado.
 
 REGLAS:
 - Cada desempeno inicia con un verbo en infinitivo.
-- Deben ser observables y medibles.
-- Deben derivarse del proposito del curso.
-- No inventes contenido ajeno a la sumilla.
-- Responde UNICAMENTE con JSON valido, sin markdown.
+- Deben ser observables, medibles y derivados de la sumilla.
+- No inventes contenido ajeno al curso.
+- Responde UNICAMENTE JSON valido, sin markdown.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:500]}
@@ -107,7 +98,7 @@ RESULTADO DE APRENDIZAJE: {str(curso.get("resultado_aprendizaje", ""))[:300]}
 CAPACIDAD: {str(curso.get("capacidad", ""))[:250]}
 {biblio_ctx}
 
-Responde exactamente este formato:
+Formato:
 [
   {{"code": "D1", "statement": "Verbo + objeto + condicion"}},
   {{"code": "D2", "statement": "Verbo + objeto + condicion"}}
@@ -129,7 +120,8 @@ Responde exactamente este formato:
         force_provider: str | None = None,
     ) -> dict:
         desempenos_texto = "\n".join(
-            f"- {d.get('statement', d.get('code', ''))}" for d in desempenos[:5]
+            f"- [{d.get('code', f'D{i + 1}')}] {d.get('statement', '')}"
+            for i, d in enumerate((desempenos or [])[:5])
         )
         biblio_ctx = ""
         if bibliografia:
@@ -142,15 +134,15 @@ Responde exactamente este formato:
         )
 
         prompt = f"""Eres un experto en diseno curricular universitario peruano.
-Dado el proposito del curso, deriva los tres componentes del contenido formativo.
+Deriva contenido formativo y un plan semanal de 16 semanas para el curso.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:450]}
-DATOS OFICIALES DEL CURSO - TEMAS/CONOCIMIENTOS:
+TEMAS OFICIALES:
 {temas_ctx or "- Sin enriquecimiento de temas"}
-DATOS OFICIALES DEL CURSO - HABILIDADES/DESEMPENOS:
+HABILIDADES OFICIALES:
 {habilidades_ctx or "- Sin enriquecimiento de habilidades"}
-BIBLIOTECA INSTITUCIONAL DE HABILIDADES PRIORIZADA:
+BIBLIOTECA DE HABILIDADES:
 {skills_ctx or "- Sin skills consultadas"}
 DESEMPENOS:
 {desempenos_texto}
@@ -158,20 +150,38 @@ DESEMPENOS:
 
 Responde exactamente este JSON:
 {{
-  "conocimientos": ["Tema 1", "Tema 2", "Tema 3", "Tema 4"],
-  "actitudes": ["Actitud 1", "Actitud 2", "Actitud 3"],
-  "habilidades_sugeridas": ["Habilidad 1", "Habilidad 2"],
-  "responsabilidad_social": "Una oración con una actividad RSU vinculada a los temas del curso."
+  "conocimientos": ["Tema 1", "Tema 2"],
+  "actitudes": ["Actitud 1", "Actitud 2"],
+  "habilidades_sugeridas": ["Analizar objeto", "Aplicar procedimiento"],
+  "responsabilidad_social": "Una oracion con una actividad RSU vinculada al curso.",
+  "content_plan": {{
+    "units": [
+      {{
+        "unit_number": 1,
+        "ra_unidad": "Resultado de aprendizaje de la unidad 1",
+        "weeks": [
+          {{
+            "week": 1,
+            "unit_number": 1,
+            "performance_code": "D1",
+            "knowledge": ["Tema unico y secuencial de la semana 1"],
+            "skills": [{{"skill_id": null, "name": "Analizar fundamentos del tema"}}],
+            "attitudes": ["Responsabilidad academica"]
+          }}
+        ]
+      }}
+    ]
+  }}
 }}
 
 REGLAS:
-- conocimientos: 4 a 6 temas especificos en forma de sustantivos/temas. Nunca empieces con verbo.
-- actitudes: 3 a 4 disposiciones valorativas que se forman.
-- habilidades_sugeridas: 4 a 6 habilidades con verbo infinitivo + objeto. Prioriza la biblioteca y datos oficiales.
-- responsabilidad_social: exactamente 1 oración que proponga una actividad de Responsabilidad Social Universitaria vinculada a los temas del curso y al beneficio de la comunidad.
-- Diferencia ontologica: conocimientos se asimilan, habilidades se desarrollan, actitudes se forman.
-- Deben derivarse de RA/desempenos, no ser lista arbitraria.
-- Responde SOLO JSON, sin texto adicional"""
+- conocimientos: 8 a 12 temas especificos. Nunca empieces con verbo.
+- habilidades_sugeridas: 4 a 8 habilidades; todas deben iniciar con verbo en infinitivo terminado en -ar, -er o -ir.
+- content_plan: EXACTAMENTE 4 unidades con EXACTAMENTE 4 semanas cada una, semanas 1 a 16.
+- Cada semana debe tener un tema de knowledge unico, secuencial y de complejidad creciente. Prohibido repetir o fragmentar el mismo concepto.
+- Unidad 1 introductoria; unidades 2 y 3 de profundizacion; unidad 4 de aplicacion/integracion.
+- responsabilidad_social: exactamente 1 oracion con actividad RSU vinculada a los temas y a la comunidad.
+- Responde SOLO JSON, sin texto adicional."""
 
         payload = await self._generate_json(
             task="progressive_content_suggest",
@@ -181,7 +191,13 @@ REGLAS:
         if isinstance(payload, dict):
             payload["responsabilidad_social"] = str(payload.get("responsabilidad_social") or "").strip()
             return payload
-        return {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": [], "responsabilidad_social": ""}
+        return {
+            "conocimientos": [],
+            "actitudes": [],
+            "habilidades_sugeridas": [],
+            "responsabilidad_social": "",
+            "content_plan": {"units": []},
+        }
 
     async def sugerir_calificacion(
         self,
@@ -207,14 +223,12 @@ REGLAS:
 - La suma de porcentajes debe ser exactamente 100.
 - Incluir entre 3 y 5 evidencias.
 - Cada evidencia debe ser coherente con el metodo pedagogico.
-- Las siglas deben ser cortas.
 - Responde SOLO JSON valido.
 
-Formato exacto:
+Formato:
 [
-  {{"evidencia": "Tareas", "sigla": "TA", "porcentaje": 40, "cronograma": "Permanente"}},
-  {{"evidencia": "Producto 1", "sigla": "P1", "porcentaje": 30, "cronograma": "Semana 8"}},
-  {{"evidencia": "Producto 2", "sigla": "P2", "porcentaje": 30, "cronograma": "Semana 15"}}
+  {{"evidencia": "Tareas", "sigla": "TA", "porcentaje": 15, "cronograma": "Permanente"}},
+  {{"evidencia": "Producto Acreditable 1", "sigla": "PA1", "porcentaje": 15, "cronograma": "Semana 4"}}
 ]"""
 
         payload = await self._generate_json(

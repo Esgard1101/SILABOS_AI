@@ -38,6 +38,14 @@ def _format_hours(theory: Any, practice: Any, fallback: str = "â€”") -> str
     return fallback
 
 
+def _sanitize_sentence_spacing(text: Any) -> str:
+    value = str(text or "")
+    value = re.sub(r"\s+", " ", value).strip()
+    value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])\.([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r". \1", value)
+    value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])([!?])([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r"\1 \2", value)
+    return value
+
+
 def _safe_filename(nombre_curso: str) -> str:
     nombre = re.sub(r"[^\w\s-]", "", nombre_curso or "silabo")
     return re.sub(r"\s+", "_", nombre.strip())[:50] or "silabo"
@@ -361,18 +369,18 @@ def _build_context(silabo: dict) -> dict:
         "eval_filas": eval_filas,
         "grading": grading,
         "formula_pf": "PF = " + " + ".join(f"{row['peso']}*{row['sigla']}" for row in grading),
-        "metodologia": _val(
+        "metodologia": _sanitize_sentence_spacing(_val(
             silabo.get("metodologia"),
             "El curso emplea metodologias activas: ABP, Aprendizaje Basado "
             "en Proyectos e Investigacion Formativa. Se complementa con el "
             "Aula Virtual UNPRG.",
-        ),
-        "tutoria": _val(
+        )),
+        "tutoria": _sanitize_sentence_spacing(_val(
             silabo.get("tutoria"),
             "Las tutorias academicas se realizan de manera presencial o "
             "virtual, conforme a la normativa institucional vigente.",
-        ),
-        "responsabilidad_social": responsabilidad_social,
+        )),
+        "responsabilidad_social": _sanitize_sentence_spacing(responsabilidad_social),
         "referencias": referencias,
         "_filename": _safe_filename(_val(dg.get("nombre_curso"))),
     }
@@ -531,6 +539,15 @@ def _generar_docx_programatico(context: dict) -> bytes:
             _set_cell_text(row[5], fila.get("actitudes", "—"))
             _set_cell_text(row[6], fila["actividades"])
             _set_cell_text(row[7], fila["evidencias"])
+
+        desempenos_unidad = [
+            _val(fila.get("desempeno"))
+            for fila in unidad.get("filas", [])
+            if isinstance(fila, dict)
+        ]
+        if len(desempenos_unidad) > 1 and len(set(desempenos_unidad)) == 1:
+            merged = unit_table.cell(1, 0).merge(unit_table.cell(len(desempenos_unidad), 0))
+            _set_cell_text(merged, desempenos_unidad[0])
 
     _add_section_title(document, "VII. Sistema de Evaluacion")
     eval_table = document.add_table(rows=1, cols=4)

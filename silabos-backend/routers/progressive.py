@@ -394,6 +394,51 @@ def _sanitize_content_items(items: list[str], limit: int | None = None) -> list[
     return cleaned
 
 
+_CONJUGATED_TO_INFINITIVE = {
+    "analiza": "Analizar",
+    "describe": "Describir",
+    "identifica": "Identificar",
+    "detecta": "Detectar",
+    "disena": "Disenar",
+    "diseña": "Diseñar",
+    "aplica": "Aplicar",
+    "evalua": "Evaluar",
+    "evalúa": "Evaluar",
+    "compara": "Comparar",
+    "formula": "Formular",
+    "interpreta": "Interpretar",
+    "comunica": "Comunicar",
+    "argumenta": "Argumentar",
+    "reconoce": "Reconocer",
+    "resuelve": "Resolver",
+    "propone": "Proponer",
+    "implementa": "Implementar",
+    "construye": "Construir",
+    "crea": "Crear",
+    "organiza": "Organizar",
+    "selecciona": "Seleccionar",
+    "utiliza": "Utilizar",
+}
+
+
+def _normalize_skill_phrase(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip(" .;,\n\t"))
+    if not text:
+        return ""
+    parts = text.split(" ", 1)
+    first = parts[0].lower()
+    rest = parts[1] if len(parts) > 1 else ""
+    if re.search(r"(ar|er|ir)$", first):
+        return text[0].upper() + text[1:]
+    if first in _CONJUGATED_TO_INFINITIVE:
+        return f"{_CONJUGATED_TO_INFINITIVE[first]} {rest}".strip()
+    return f"Analizar {text[0].lower() + text[1:]}"
+
+
+def _sanitize_skill_items(items: list[str], limit: int | None = None) -> list[str]:
+    return _sanitize_content_items([_normalize_skill_phrase(item) for item in items or []], limit)
+
+
 def _format_cell_items(items: list[str], fallback: str = "") -> str:
     cleaned = _sanitize_content_items(items)
     return ", ".join(cleaned) if cleaned else fallback
@@ -437,6 +482,116 @@ def _expand_topics(items: list[str], total: int, fallback_title: str) -> list[st
         else:
             expanded.append(f"{base[-1]} - aplicacion {index - len(base) + 1}")
     return expanded
+
+
+def _topic_tokens(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9Ã¡Ã©Ã­Ã³ÃºÃ±]{4,}", _normalize_match_text(text)))
+
+
+def _topic_similarity(left: str, right: str) -> float:
+    a = _topic_tokens(left)
+    b = _topic_tokens(right)
+    if not a or not b:
+        return 0.0
+    return len(a & b) / max(len(a | b), 1)
+
+
+def _content_plan_topics(plan_units: list[dict]) -> list[str]:
+    topics: list[str] = []
+    for unit in plan_units or []:
+        weeks = unit.get("weeks", []) if isinstance(unit, dict) else []
+        for week in weeks:
+            if not isinstance(week, dict):
+                continue
+            topics.append("; ".join(_as_text_list(week.get("knowledge", []))))
+    return [topic for topic in topics if topic]
+
+
+def _content_plan_is_usable(plan_units: list[dict]) -> bool:
+    if len(plan_units or []) < 4:
+        return False
+    topics = _content_plan_topics(plan_units[:4])
+    if len(topics) < 16:
+        return False
+    normalized = {re.sub(r"[\W_]+", "", topic.lower()) for topic in topics}
+    if len(normalized) < 12:
+        return False
+    for idx in range(1, len(topics)):
+        if _topic_similarity(topics[idx - 1], topics[idx]) >= 0.80:
+            return False
+    return True
+
+
+def _progressive_topic_sequence(items: list[str], total: int = 16) -> list[str]:
+    seeds = _sanitize_content_items(items, 12) or ["fundamentos del curso", "aplicacion disciplinar"]
+
+    def seed(index: int) -> str:
+        return seeds[min(len(seeds) - 1, index % len(seeds))]
+
+    templates = [
+        "Fundamentos conceptuales de {a}",
+        "Contexto, alcance y categorias de {a}",
+        "Principios y enfoques de {a}",
+        "Integracion diagnostica de {a} y {b}",
+        "Modelos teoricos de {a}",
+        "Procedimientos y estrategias de {a}",
+        "Analisis comparado de {a} y {b}",
+        "Producto parcial sobre {a}",
+        "Metodos de aplicacion de {a}",
+        "Criterios de diseno e intervencion en {a}",
+        "Resolucion de situaciones practicas vinculadas con {a}",
+        "Evaluacion parcial de resultados sobre {a}",
+        "Proyecto integrador aplicado a {a}",
+        "Validacion y mejora de propuestas sobre {a}",
+        "Sustentacion de evidencias y toma de decisiones en {a}",
+        "Cierre integrador y reflexion academica sobre {a}",
+    ]
+    topics = []
+    for index in range(total):
+        a = seed(index)
+        b = seed(index + 1)
+        topics.append(templates[index % len(templates)].format(a=a, b=b))
+    return topics
+
+
+def _build_deterministic_content_plan(
+    knowledge_items: list[str],
+    skill_names: list[str],
+    attitudes: list[str] | None,
+    desempenos_final: list[dict],
+) -> dict:
+    topics = _progressive_topic_sequence(knowledge_items, 16)
+    skills = _sanitize_skill_items(skill_names, 12) or ["Analizar fundamentos del curso", "Aplicar procedimientos academicos"]
+    attitudes_pool = _sanitize_content_items(attitudes or [], 8) or ["Responsabilidad academica", "Rigor en el trabajo colaborativo"]
+    units = []
+    for unit_index in range(4):
+        weeks = []
+        perf_code = f"D{unit_index + 1}"
+        if unit_index < len(desempenos_final):
+            perf_code = _clean_text(desempenos_final[unit_index].get("codigo"), perf_code)
+        for offset in range(4):
+            week = unit_index * 4 + offset + 1
+            weeks.append(
+                {
+                    "week": week,
+                    "unit_number": unit_index + 1,
+                    "performance_code": perf_code,
+                    "knowledge": [topics[week - 1]],
+                    "skills": [
+                        {"skill_id": None, "name": skills[(week - 1) % len(skills)]},
+                        {"skill_id": None, "name": skills[week % len(skills)]},
+                    ],
+                    "attitudes": [attitudes_pool[(week - 1) % len(attitudes_pool)]],
+                }
+            )
+        units.append(
+            {
+                "unit_number": unit_index + 1,
+                "ra_unidad": f"Resultado de aprendizaje de la unidad {unit_index + 1}",
+                "weeks": weeks,
+            }
+        )
+    return {"units": units, "warnings": ["content_plan regenerado por baja diversidad tematica"]}
 
 
 def _split_into_weeks(items: list[str], total_weeks: int = 16, per_week: int = 2) -> list[list[str]]:
@@ -951,6 +1106,14 @@ def _build_units_and_schedule(
     schedule: list[dict] = []
 
     plan_units = (content_plan or {}).get("units", []) if isinstance(content_plan, dict) else []
+    if not _content_plan_is_usable(plan_units):
+        repaired_plan = _build_deterministic_content_plan(
+            knowledge_items=knowledge_items,
+            skill_names=skill_names,
+            attitudes=attitudes_pool,
+            desempenos_final=desempenos_final,
+        )
+        plan_units = repaired_plan.get("units", [])
     if plan_units:
         for unit_index, plan_unit in enumerate(plan_units[:unit_count]):
             weeks = plan_unit.get("weeks", []) if isinstance(plan_unit, dict) else []
@@ -962,7 +1125,7 @@ def _build_units_and_schedule(
             for week_row in weeks:
                 unit_knowledge.extend(_as_text_list(week_row.get("knowledge", [])))
                 unit_skills.extend([
-                    _clean_text(skill.get("name", "")) if isinstance(skill, dict) else _clean_text(skill)
+                    _normalize_skill_phrase(skill.get("name", "")) if isinstance(skill, dict) else _normalize_skill_phrase(skill)
                     for skill in week_row.get("skills", [])
                 ])
                 unit_attitudes.extend(_as_text_list(week_row.get("attitudes", [])))
@@ -992,7 +1155,7 @@ def _build_units_and_schedule(
                 week_in_unit = (week - 1) % weeks_per_unit
                 knowledge = _as_text_list(week_row.get("knowledge", []))
                 skills = [
-                    _clean_text(skill.get("name", "")) if isinstance(skill, dict) else _clean_text(skill)
+                    _normalize_skill_phrase(skill.get("name", "")) if isinstance(skill, dict) else _normalize_skill_phrase(skill)
                     for skill in week_row.get("skills", [])
                 ]
                 attitudes = _as_text_list(week_row.get("attitudes", []))
@@ -1343,9 +1506,9 @@ async def sugerir_contenido(
     catalog_skill_names = [s.get("nombre", "") for s in skills_suggest.get("skills", [])[:8]]
     if catalog_skill_names:
         # RN biblioteca: las habilidades sugeridas deben salir del catálogo maestro cuando hay match.
-        sugerencia["habilidades_sugeridas"] = _sanitize_content_items(_merge_unique(catalog_skill_names), 8)
+        sugerencia["habilidades_sugeridas"] = _sanitize_skill_items(_merge_unique(catalog_skill_names), 8)
     else:
-        sugerencia["habilidades_sugeridas"] = _sanitize_content_items(_merge_unique(
+        sugerencia["habilidades_sugeridas"] = _sanitize_skill_items(_merge_unique(
             (curso or {}).get("habilidades_desempenos", [])[:8],
             sugerencia.get("habilidades_sugeridas", []),
         ), 8)
@@ -1362,6 +1525,24 @@ async def sugerir_contenido(
         sugerencia["responsabilidad_social"] = (
             f"Desarrollar una actividad de transferencia comunitaria donde los estudiantes apliquen {temas_rsu} "
             "para atender una necesidad concreta del entorno local."
+        )
+    plan_units = (
+        (sugerencia.get("content_plan") or {}).get("units", [])
+        if isinstance(sugerencia.get("content_plan"), dict)
+        else []
+    )
+    if not _content_plan_is_usable(plan_units):
+        sugerencia["content_plan"] = _build_deterministic_content_plan(
+            knowledge_items=sugerencia.get("conocimientos", []),
+            skill_names=sugerencia.get("habilidades_sugeridas", []),
+            attitudes=sugerencia.get("actitudes", []),
+            desempenos_final=[
+                {
+                    "codigo": p.get("code", f"D{i + 1}") if isinstance(p, dict) else f"D{i + 1}",
+                    "descripcion": p.get("statement", "") if isinstance(p, dict) else str(p),
+                }
+                for i, p in enumerate(performances or [])
+            ],
         )
 
     await supabase.guardar_ai_suggestion(
