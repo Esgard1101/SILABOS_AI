@@ -348,6 +348,34 @@ export default function Step6_Cierre() {
     );
   };
 
+  const isTimeoutOrNetworkError = (error: unknown) => {
+    if (error instanceof ApiError) return false;
+    if (!(error instanceof Error)) return false;
+    return /excedio el tiempo|tiempo de espera|Error de conexion|NetworkError|Failed to fetch|aborted/i.test(
+      error.message,
+    );
+  };
+
+  const pollAssembledSyllabus = async (
+    syllabusId: string,
+    attempts = 12,
+    intervalMs = 5000,
+  ): Promise<boolean> => {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const resp = await api.getSyllabus(syllabusId);
+        const payload = (resp?.data as { payload_json?: { _assembled?: boolean } } | undefined)?.payload_json;
+        if (payload?._assembled) {
+          return true;
+        }
+      } catch {
+        // ignore, continue polling
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return false;
+  };
+
   const handleAssemble = async (forceProvider?: 'gemini' | 'openrouter') => {
     if (!draftId) return;
     setAssembling(true);
@@ -368,7 +396,24 @@ export default function Step6_Cierre() {
         navigate(`/editor?id=${d.syllabus_id}`);
       }
     } catch (error) {
-      if (isAiAvailabilityError(error)) {
+      if (isTimeoutOrNetworkError(error)) {
+        showToast(
+          'La IA esta tardando mas de lo esperado. Esperando a que termine en segundo plano...',
+          'warning',
+        );
+        const completed = await pollAssembledSyllabus(draftId);
+        if (completed) {
+          showToast('Silabo generado correctamente. Redirigiendo al editor...', 'success');
+          setFinalSyllabusId(draftId);
+          setAssembled(true);
+          navigate(`/editor?id=${draftId}`);
+        } else {
+          showToast(
+            'La IA aun no termina. Espera unos segundos e intenta de nuevo, o abre el sílabo desde la lista.',
+            'warning',
+          );
+        }
+      } else if (isAiAvailabilityError(error)) {
         setAiRecoveryVisible(true);
         showToast('Servidor IA con alta demanda. Puedes reintentar o usar el alternativo.', 'warning');
       } else {
@@ -522,7 +567,7 @@ export default function Step6_Cierre() {
           {assembling ? (
             <>
               <Loader2 size={12} className="animate-spin" />
-              Ensamblando...
+              Ensamblando... (puede tardar hasta 2 min)
             </>
           ) : (
             <>

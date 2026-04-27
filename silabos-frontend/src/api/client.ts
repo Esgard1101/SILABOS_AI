@@ -820,7 +820,7 @@ export const api = {
     return request<APIResponse<{ syllabus_id: string; assembled: boolean; requires_academic_validation: boolean; final_syllabus: Record<string, unknown> }>>(
       `/api/syllabi/${encodeURIComponent(syllabusId)}/assemble-final${q}`,
       { method: 'POST' },
-      30000,
+      180000,
     );
   },
 
