@@ -128,7 +128,9 @@ export interface UnidadTematica {
   semanas: string;
   temas: string[];
   logro: string;
+  ra_unidad?: string | null;
   habilidades_requeridas?: string;
+  actitudes?: string[];
 }
 
 export interface SemanaItem {
@@ -250,9 +252,13 @@ export interface SyllabusData {
 }
 
 export interface EvaluacionMatrizRow {
+  resultado_aprendizaje?: string;
+  resultadoDeAprendizaje?: string;
   desempeno: string;
-  habilidades: string[];
+  desempenos?: string;
+  habilidades?: string[] | string;
   evidencias: string;
+  evidenciasDeAprendizaje?: string;
   instrumentos: string;
 }
 

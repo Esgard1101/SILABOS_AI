@@ -12,8 +12,10 @@ interface LoginNotice {
   showRegisterCta?: boolean;
 }
 
-function getPostLoginPath(_role?: string) {
-  return '/dashboard';
+function getPostLoginPath(role?: string) {
+  return role === 'admin' || role === 'director' || role === 'coordinador'
+    ? '/dashboard'
+    : '/select-context';
 }
 
 function resolveGoogleNotice(accountStatus: string, fallbackMessage: string): LoginNotice {

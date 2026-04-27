@@ -308,7 +308,7 @@ export default function Step1_Repositorio() {
     setCourseDetail(detail);
 
     try {
-      await createOrLoadDraft();
+      await createOrLoadDraft(detail);
       navigate('/creator/fuentes');
     } catch {
       showToast('Error al inicializar el draft', 'error');

@@ -619,6 +619,45 @@ class SupabaseService:
         """Devuelve filas estructuradas de referencias sin cambiar el schema almacenado."""
         return await self._ejecutar(self._obtener_refs_rows_sync, course_id)
 
+    def _obtener_doc_refs_curso_sync(self, course_id: str) -> dict | None:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    SELECT
+                        refs.doc_id,
+                        docs.name AS document_name,
+                        COUNT(*) AS total,
+                        MIN(refs.created_at) AS created_at
+                    FROM course_bibliography_refs refs
+                    LEFT JOIN curriculum_docs docs ON docs.id::text = refs.doc_id
+                    WHERE refs.course_id = :course_id
+                    GROUP BY refs.doc_id, docs.name
+                    ORDER BY MIN(refs.created_at) DESC
+                    LIMIT 1
+                    """
+                ),
+                {"course_id": course_id},
+            ).mappings().first()
+
+        if not fila:
+            return None
+
+        created_at = fila.get("created_at")
+        if hasattr(created_at, "isoformat"):
+            created_at = created_at.isoformat()
+
+        return {
+            "doc_id": fila.get("doc_id"),
+            "document_name": fila.get("document_name"),
+            "total": int(fila.get("total") or 0),
+            "created_at": created_at,
+        }
+
+    async def obtener_doc_refs_curso(self, course_id: str) -> dict | None:
+        """Devuelve el documento NotebookLM asociado a las referencias del curso."""
+        return await self._ejecutar(self._obtener_doc_refs_curso_sync, course_id)
+
     def _eliminar_refs_doc_sync(self, doc_id: str) -> None:
         with self._Session() as sesion:
             sesion.execute(
@@ -631,22 +670,22 @@ class SupabaseService:
         """Elimina las referencias ligadas a un documento (para cascada en delete doc)."""
         await self._ejecutar(self._eliminar_refs_doc_sync, doc_id)
 
+    def _eliminar_refs_curso_sync(self, course_id: str) -> None:
+        with self._Session() as sesion:
+            sesion.execute(
+                text("DELETE FROM course_bibliography_refs WHERE course_id = :course_id"),
+                {"course_id": course_id},
+            )
+            sesion.commit()
+
+    async def eliminar_referencias_curso(self, course_id: str) -> None:
+        """Elimina las referencias NotebookLM asociadas al curso."""
+        await self._ejecutar(self._eliminar_refs_curso_sync, course_id)
+
     async def obtener_doc_id_refs_curso(self, course_id: str) -> str | None:
         """Devuelve el doc_id del último upload de bibliografía para el curso, o None."""
-        def _sync():
-            with self._Session() as sesion:
-                fila = sesion.execute(
-                    text(
-                        """
-                        SELECT doc_id FROM course_bibliography_refs
-                        WHERE course_id = :course_id
-                        LIMIT 1
-                        """
-                    ),
-                    {"course_id": course_id},
-                ).mappings().first()
-            return fila["doc_id"] if fila else None
-        return await self._ejecutar(_sync)
+        doc = await self.obtener_doc_refs_curso(course_id)
+        return doc.get("doc_id") if doc else None
 
     async def obtener_texto_docs(self, doc_ids: list) -> str:
         """
@@ -1150,7 +1189,7 @@ class SupabaseService:
                     UPDATE syllabi
                     SET status = :status,
                         updated_at = now()
-                    WHERE id = :id::uuid
+                    WHERE id = CAST(:id AS UUID)
                 """),
                 {"status": new_status, "id": syllabus_id},
             )
@@ -1182,7 +1221,7 @@ class SupabaseService:
                       (syllabus_id, version_number,
                        payload_json, changed_by, change_note)
                     VALUES
-                      (:sid::uuid, :ver, :payload::jsonb,
+                      (CAST(:sid AS UUID), :ver, CAST(:payload AS JSONB),
                        :changed_by, :note)
                     RETURNING id, version_number, created_at
                 """),
@@ -1221,7 +1260,7 @@ class SupabaseService:
                     SELECT id, version_number, changed_by,
                            change_note, created_at
                     FROM syllabus_versions
-                    WHERE syllabus_id = :sid::uuid
+                    WHERE syllabus_id = CAST(:sid AS UUID)
                     ORDER BY version_number DESC
                 """),
                 {"sid": syllabus_id},
@@ -1248,7 +1287,7 @@ class SupabaseService:
                 text("""
                     INSERT INTO syllabus_observations
                       (syllabus_id, observer_name, observation)
-                    VALUES (:sid::uuid, :name, :obs)
+                    VALUES (CAST(:sid AS UUID), :name, :obs)
                     RETURNING id, created_at
                 """),
                 {
@@ -1283,7 +1322,7 @@ class SupabaseService:
                     SELECT id, observer_name, observation,
                            status, created_at
                     FROM syllabus_observations
-                    WHERE syllabus_id = :sid::uuid
+                    WHERE syllabus_id = CAST(:sid AS UUID)
                     ORDER BY created_at DESC
                 """),
                 {"sid": syllabus_id},
@@ -1461,7 +1500,7 @@ class SupabaseService:
                 methodology_json,
             )
         except Exception as e:
-            logger.error(f"Error al guardar sÃ­labo: {e}")
+            logger.error(f"Error al guardar sílabo: {e}")
             return {}
 
     def _actualizar_silabo_sync(
@@ -1526,7 +1565,7 @@ class SupabaseService:
                 status,
             )
         except Exception as e:
-            logger.error(f"Error al actualizar sÃ­labo {silabo_id}: {e}")
+            logger.error(f"Error al actualizar sílabo {silabo_id}: {e}")
             return None
 
     def _obtener_silabo_sync(
@@ -1561,7 +1600,7 @@ class SupabaseService:
                 self._obtener_silabo_sync, silabo_id, user_id
             )
         except Exception as e:
-            logger.error(f"Error al obtener sÃ­labo {silabo_id}: {e}")
+            logger.error(f"Error al obtener sílabo {silabo_id}: {e}")
             return None
 
     def _listar_silabos_sync(
@@ -1604,7 +1643,7 @@ class SupabaseService:
                 user_id,
             )
         except Exception as e:
-            logger.error(f"Error al listar sÃ­labos: {e}")
+            logger.error(f"Error al listar sílabos: {e}")
             return []
 
     def _obtener_ultima_version_sync(self, syllabus_id: str) -> int:
@@ -1613,7 +1652,7 @@ class SupabaseService:
                 text("""
                     SELECT COALESCE(MAX(version_number), 0)
                     FROM syllabus_versions
-                    WHERE syllabus_id = :sid::uuid
+                    WHERE syllabus_id = CAST(:sid AS UUID)
                 """),
                 {"sid": syllabus_id},
             ).scalar()
@@ -1625,7 +1664,7 @@ class SupabaseService:
                 self._obtener_ultima_version_sync, syllabus_id
             )
         except Exception as e:
-            logger.error(f"Error al obtener Ãºltima versiÃ³n: {e}")
+            logger.error(f"Error al obtener última versión: {e}")
             return 0
 
     def _ping_sync(self) -> bool:
@@ -3830,7 +3869,7 @@ class SupabaseService:
                         academic_validation_status = 'pending',
                         submitted_for_validation_at = now(),
                         updated_at = now()
-                    WHERE id = :id::uuid
+                    WHERE id = CAST(:id AS UUID)
                 """),
                 {
                     "id": syllabus_id,

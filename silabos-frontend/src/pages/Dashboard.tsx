@@ -163,7 +163,7 @@ export default function Dashboard() {
       subtitle="Tu espacio de trabajo activo."
       icon={LayoutDashboard}
     >
-      <div className="grid h-full grid-cols-12 grid-rows-2 gap-5">
+      <div className="dashboard-dark grid h-full grid-cols-12 grid-rows-2 gap-5">
 
         {/* Bloque 1 — Bienvenida */}
         <div className="app-panel col-span-12 flex flex-col justify-center p-5 lg:col-span-7 xl:p-6">

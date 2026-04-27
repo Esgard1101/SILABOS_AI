@@ -31,7 +31,7 @@ interface SyllabusCtxValue {
   workflow: WorkflowState;
   saving: boolean;
   setCourseDetail: (d: CourseDetail | null) => void;
-  createOrLoadDraft: () => Promise<void>;
+  createOrLoadDraft: (courseOverride?: CourseDetail | null) => Promise<void>;
   saveStep: (key: string, data: Record<string, unknown>) => Promise<void>;
   showToast: (msg: string, type?: 'success' | 'error' | 'warning') => void;
   toasts: ReturnType<typeof useToast>['toasts'];
@@ -134,9 +134,11 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
   const [methodNotes, setMethodNotes] = useState('');
 
   const [gradingRows, setGradingRows] = useState<GradingRow[]>([
-    { evidencia: 'Tareas', sigla: 'TA', porcentaje: 40, cronograma: 'Permanente' },
-    { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 30, cronograma: 'Semana 8' },
-    { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 30, cronograma: 'Semana 15' },
+    { evidencia: 'Tareas', sigla: 'TA', porcentaje: 15, cronograma: 'Permanente' },
+    { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 15, cronograma: 'Semana 4' },
+    { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: 'Semana 8' },
+    { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: 15, cronograma: 'Semana 12' },
+    { evidencia: 'Proyecto Final y Reflexión', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
   ]);
   const [gradingOrigin, setGradingOrigin] = useState<GradingOrigin>('none');
   const [gradingNotes, setGradingNotes] = useState('');
@@ -170,11 +172,12 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
     [draftId],
   );
 
-  const createOrLoadDraft = useCallback(async () => {
-    if (!courseDetail || !context) return;
+  const createOrLoadDraft = useCallback(async (courseOverride?: CourseDetail | null) => {
+    const activeCourse = courseOverride ?? courseDetail;
+    if (!activeCourse || !context) return;
     try {
       const res = await api.createOrGetProgressiveDraft(
-        courseDetail.id,
+        activeCourse.id,
         context.semester,
         context.program_id,
       );

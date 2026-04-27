@@ -94,24 +94,48 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=512,
-        json_mode=True,
+        json_mode=False,
     ),
     "search_result_filter": TaskConfig(
         provider="openrouter_light",
         temperature=0.1,
         max_output_tokens=2048,
-        json_mode=True,
+        json_mode=False,
     ),
     "bibliography_format": TaskConfig(
         provider="openrouter_light",
         temperature=0.1,
         max_output_tokens=2048,
-        json_mode=True,
+        json_mode=False,
     ),
     "method_suggest": TaskConfig(
         provider="openrouter_light",
         temperature=0.1,
         max_output_tokens=512,
+        json_mode=False,
+    ),
+    "progressive_purpose_suggest": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.2,
+        max_output_tokens=2048,
+        json_mode=False,
+    ),
+    "progressive_content_suggest": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.2,
+        max_output_tokens=2048,
+        json_mode=False,
+    ),
+    "progressive_grading_suggest": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.2,
+        max_output_tokens=2048,
+        json_mode=False,
+    ),
+    "suggest_instruments": TaskConfig(
+        provider="gemini",
+        temperature=0.2,
+        max_output_tokens=1024,
         json_mode=True,
     ),
 }
@@ -188,7 +212,32 @@ def _error_is_retryable(message: str) -> bool:
     message = message.lower()
     return any(
         marker in message
-        for marker in ("429", "quota", "rate", "timeout", "connection", "unavailable", "overloaded")
+        for marker in (
+            "408",
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "quota",
+            "rate",
+            "resource exhausted",
+            "temporarily",
+            "timeout",
+            "connection",
+            "unavailable",
+            "overloaded",
+        )
+    )
+
+
+def _openrouter_json_mode_not_supported(message: str) -> bool:
+    lowered = (message or "").lower()
+    return (
+        "json mode is not supported" in lowered
+        or "json mode unsupported" in lowered
+        or ('"response_format"' in lowered and "not supported" in lowered)
+        or ("response_format" in lowered and "not supported" in lowered)
     )
 
 
@@ -255,13 +304,25 @@ SALIDA A REPARAR:
 """
 
 
-async def generate_content(prompt: str, task: str = "document_chat") -> str:
+async def generate_content(
+    prompt: str,
+    task: str = "document_chat",
+    force_provider: str | None = None,
+) -> str:
     try:
         service = _get_router_service()
-        return await service.generate_text(task, prompt)
+        return await service.generate_text(task, prompt, force_provider=force_provider)
     except AIProviderError as exc:
         logger.error("Error IA en tarea %s: %s", task, exc)
-        raise HTTPException(status_code=503, detail="Servicio IA no disponible")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "AI_PROVIDER_SATURATED",
+                "message": "Servicio IA no disponible",
+                "provider": exc.provider,
+                "retryable": exc.retryable,
+            },
+        )
 
 
 def generate_embedding(text: str) -> list[float]:
@@ -325,6 +386,7 @@ class GeminiService:
             os.getenv("OPENROUTER_AUDIT_REASONING"),
             default=False,
         )
+        self.openrouter_no_native_json_models: set[str] = set()
         logger.info(
             "GeminiService inicializado | gemini=%s | openrouter_audit=%s | openrouter_light=%s",
             self.gemini_model,
@@ -401,13 +463,17 @@ class GeminiService:
                 model=model,
             )
 
+        use_native_json_mode = (
+            config.json_mode
+            and model not in self.openrouter_no_native_json_models
+        )
         payload: dict[str, Any] = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": config.temperature,
             "max_tokens": config.max_output_tokens,
         }
-        if config.json_mode:
+        if use_native_json_mode:
             payload["response_format"] = {"type": "json_object"}
         if reasoning_enabled:
             payload["reasoning"] = {"enabled": True}
@@ -436,6 +502,25 @@ class GeminiService:
             ) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500]
+            if (
+                use_native_json_mode
+                and exc.response.status_code == 400
+                and _openrouter_json_mode_not_supported(body)
+            ):
+                self.openrouter_no_native_json_models.add(model)
+                logger.warning(
+                    "OpenRouter modelo %s no soporta JSON mode nativo; reintentando %s sin response_format",
+                    model,
+                    task_name,
+                )
+                return await self._post_openrouter(
+                    task_name=task_name,
+                    prompt=prompt,
+                    model=model,
+                    config=config,
+                    reasoning_enabled=reasoning_enabled,
+                    fallback_used=fallback_used,
+                )
             raise AIProviderError(
                 f"OpenRouter HTTP {exc.response.status_code}: {body}",
                 retryable=exc.response.status_code in OPENROUTER_RETRYABLE_STATUS_CODES,
@@ -468,8 +553,11 @@ class GeminiService:
         task_name: str,
         prompt: str,
         config: TaskConfig,
+        *,
+        fallback_used: bool = False,
     ) -> AIResult:
-        primary_model = self._resolve_openrouter_model(config.provider)
+        provider = config.provider if config.provider.startswith("openrouter") else "openrouter_light"
+        primary_model = self._resolve_openrouter_model(provider)
         reasoning_enabled = config.reasoning and self.openrouter_audit_reasoning
 
         try:
@@ -479,7 +567,7 @@ class GeminiService:
                 model=primary_model,
                 config=config,
                 reasoning_enabled=reasoning_enabled,
-                fallback_used=False,
+                fallback_used=fallback_used,
             )
         except AIProviderError as exc:
             fallback_model = self.openrouter_fallback_model
@@ -506,20 +594,53 @@ class GeminiService:
                 fallback_used=True,
             )
 
-    async def _run_task(self, task_name: str, prompt: str) -> AIResult:
+    async def _run_task(
+        self,
+        task_name: str,
+        prompt: str,
+        force_provider: str | None = None,
+    ) -> AIResult:
         config = _task_config(task_name)
+        forced = (force_provider or "").strip().lower()
+        if forced and forced not in {"gemini", "openrouter"}:
+            raise ValueError(f"Proveedor forzado no soportado: {force_provider}")
+
+        if forced == "openrouter":
+            return await self._call_openrouter(task_name, prompt, config, fallback_used=True)
+
         if config.provider == "gemini":
-            return await self._call_gemini(task_name, prompt, config)
+            try:
+                return await self._call_gemini(task_name, prompt, config)
+            except AIProviderError as exc:
+                if not exc.retryable:
+                    raise
+                logger.warning(
+                    "Gemini no disponible para %s; reintentando con OpenRouter | error=%s",
+                    task_name,
+                    exc,
+                )
+                return await self._call_openrouter(task_name, prompt, config, fallback_used=True)
+
         if config.provider.startswith("openrouter"):
             return await self._call_openrouter(task_name, prompt, config)
         raise ValueError(f"Proveedor no soportado para tarea {task_name}: {config.provider}")
 
-    async def generate_text(self, task_name: str, prompt: str) -> str:
-        result = await self._run_task(task_name, prompt)
+    async def generate_text(
+        self,
+        task_name: str,
+        prompt: str,
+        force_provider: str | None = None,
+    ) -> str:
+        result = await self._run_task(task_name, prompt, force_provider=force_provider)
         return result.text
 
-    async def generate_json(self, task_name: str, prompt: str) -> dict | list:
-        result = await self._run_task(task_name, prompt)
+    async def generate_json(
+        self,
+        task_name: str,
+        prompt: str,
+        force_provider: str | None = None,
+    ) -> dict | list:
+        result = await self._run_task(task_name, prompt, force_provider=force_provider)
         return json.loads(_extraer_json(result.text))
 
     async def generar_silabo(self, datos_curso: dict, contexto_curricular: str = "") -> dict:
@@ -635,6 +756,7 @@ class GeminiService:
         curso: dict,
         metodos_base: list[dict],
         skill_context: str,
+        force_provider: str | None = None,
     ) -> dict:
         lista_metodos_texto = "\n".join(
             [f"ID {m['id']}: {m['name']} - {m['description']}" for m in metodos_base]
@@ -658,7 +780,7 @@ METODOS DISPONIBLES:
 
 Responde solo JSON, sin markdown, sin texto adicional."""
 
-        payload = await self.generate_json("method_suggest", prompt)
+        payload = await self.generate_json("method_suggest", prompt, force_provider=force_provider)
         if not isinstance(payload, dict):
             raise ValueError("El modelo no devolvio un objeto JSON para method_suggest")
         return payload
@@ -838,6 +960,7 @@ Formato exacto:
         method_name: str,
         course_name: str,
         sumilla: str = "",
+        force_provider: str | None = None,
     ) -> list[dict]:
         """Genera instrumentos de evaluación específicos al curso por cada desempeño.
         Retorna [{desempeno_code, instrumentos: [str]}].
@@ -887,7 +1010,7 @@ Formato exacto:
   {{"desempeno_code": "D2", "instrumentos": ["Rúbrica analítica de...", "Guía de observación de..."]}}
 ]"""
 
-        resultado = await self.generate_json("suggest_instruments", prompt)
+        resultado = await self.generate_json("suggest_instruments", prompt, force_provider=force_provider)
         if isinstance(resultado, list) and resultado and isinstance(resultado[0], dict):
             return resultado
         return []

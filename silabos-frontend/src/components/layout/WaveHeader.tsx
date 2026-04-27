@@ -21,8 +21,8 @@
             </button>
 
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/10">
-                <img src="/unprg-logo.png" alt="UNPRG" className="h-7 w-auto object-contain" />
+              <div className="logo-mark flex h-10 w-10 items-center justify-center">
+                <img src="/unprg-logo.png" alt="UNPRG" className="h-10 w-auto object-contain" />
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/60">
@@ -41,8 +41,8 @@
               </p>
               <p className="text-[11px] font-bold text-white">FACHSE</p>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/15 bg-white/10">
-              <img src="/logo_fachse.png" alt="FACHSE" className="h-7 w-auto object-contain" />
+            <div className="logo-mark flex h-10 w-10 items-center justify-center">
+              <img src="/logo_fachse.png" alt="FACHSE" className="h-10 w-auto object-contain" />
             </div>
           </div>
         </div>

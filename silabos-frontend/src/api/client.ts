@@ -1,4 +1,4 @@
-import {
+﻿import {
   AdminCourseListResponse,
   AdminUserListResponse,
   AnalyticsDashboard,
@@ -456,6 +456,9 @@ export const api = {
   getBibliographyReferences: (courseId: string) =>
     request<
       APIResponse<{
+        doc_id?: string | null;
+        document_name?: string | null;
+        document_created_at?: string | null;
         references: string[];
         bibliography_rows?: import('./types').BibliographyReferenceRow[];
         bibliografia?: import('./types').FuenteBibliografica[];
@@ -465,6 +468,11 @@ export const api = {
 
   deleteDocument: (docId: string) =>
     request<APIResponse>(`/api/documents/${encodeURIComponent(docId)}`, {
+      method: 'DELETE',
+    }),
+
+  deleteCourseBibliography: (courseId: string) =>
+    request<APIResponse>(`/api/documents/bibliography/${encodeURIComponent(courseId)}`, {
       method: 'DELETE',
     }),
 
@@ -760,40 +768,50 @@ export const api = {
       body: JSON.stringify({ block_data: blockData }),
     }),
 
-  suggestPerformances: (syllabusId: string) =>
-    request<APIResponse<{ performances: import('./types').SuggestedPerformance[]; origin: string }>>(
-      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/purpose/suggest-performances`,
+  suggestPerformances: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<{ performances: import('./types').SuggestedPerformance[]; origin: string }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/purpose/suggest-performances${q}`,
       { method: 'POST' },
       60000,
-    ),
+    );
+  },
 
-  suggestContent: (syllabusId: string) =>
-    request<APIResponse<import('./types').ContentSuggestion>>(
-      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/content/suggest`,
+  suggestContent: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').ContentSuggestion>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/content/suggest${q}`,
       { method: 'POST' },
       60000,
-    ),
+    );
+  },
 
-  suggestMethodProgressive: (syllabusId: string) =>
-    request<APIResponse<import('./types').MethodSuggest>>(
-      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/method/suggest`,
+  suggestMethodProgressive: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').MethodSuggest>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/method/suggest${q}`,
       { method: 'POST' },
       60000,
-    ),
+    );
+  },
 
-  suggestGrading: (syllabusId: string) =>
-    request<APIResponse<import('./types').GradingSuggestion>>(
-      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/grading/suggest`,
+  suggestGrading: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').GradingSuggestion>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/grading/suggest${q}`,
       { method: 'POST' },
       60000,
-    ),
+    );
+  },
 
-  assembleFinal: (syllabusId: string) =>
-    request<APIResponse<{ syllabus_id: string; assembled: boolean; requires_academic_validation: boolean; final_syllabus: Record<string, unknown> }>>(
-      `/api/syllabi/${encodeURIComponent(syllabusId)}/assemble-final`,
+  assembleFinal: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<{ syllabus_id: string; assembled: boolean; requires_academic_validation: boolean; final_syllabus: Record<string, unknown> }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/assemble-final${q}`,
       { method: 'POST' },
       30000,
-    ),
+    );
+  },
 
   submitAcademicValidation: (syllabusId: string) =>
     request<APIResponse>(
@@ -811,3 +829,4 @@ export const api = {
       `/api/methods/${encodeURIComponent(methodId)}/instruments`,
     ),
 };
+

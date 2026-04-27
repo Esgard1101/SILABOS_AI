@@ -404,24 +404,50 @@ export default function Step2_Fuentes() {
     defaultDate: tableDateLabel,
   });
 
+  const hydrateStoredNotebookReferences = async (showFoundToast = false) => {
+    if (!courseDetail?.id) return false;
+
+    const res = await api.getBibliographyReferences(courseDetail.id);
+    const data = res.data;
+    const parsedRefs = dedupeRefs((data?.references || []).map(cleanNotebookReference).filter(Boolean));
+    const docId = data?.doc_id || '';
+
+    if (!docId && parsedRefs.length === 0) return false;
+
+    const nextRefs = dedupeRefs([...parsedRefs, ...bibliographyReferences]);
+    const nextSources = dedupeRefs(['NotebookLM', ...bibliographySources]);
+    const fileName = data?.document_name || 'PDF NotebookLM cargado';
+    const refCount = data?.total ?? parsedRefs.length;
+
+    setUploadedBiblio({ docId, fileName, refCount, references: parsedRefs });
+    if (parsedRefs.length > 0) {
+      setBibliographyReferences(nextRefs);
+      setBibliographySources(nextSources);
+      await saveStep('bibliography', {
+        doc_ids: docId ? [docId] : [],
+        references: nextRefs,
+        sources_consulted: nextSources,
+      });
+    }
+
+    if (showFoundToast) {
+      showToast('Ya existe un PDF NotebookLM para este curso. Lo cargue para que puedas revisarlo o eliminarlo.', 'warning');
+    }
+
+    return true;
+  };
+
   useEffect(() => {
-    if (!courseDetail?.id || !uploadedBiblio || uploadedBiblio.references?.length) return;
-    if (uploadedBiblio.refCount <= 0) return;
+    if (!courseDetail?.id) return;
+    if (uploadedBiblio?.references?.length) return;
+    if (uploadedBiblio && uploadedBiblio.refCount <= 0) return;
 
     let cancelled = false;
 
     const loadStoredNotebookReferences = async () => {
       try {
-        const res = await api.getBibliographyReferences(courseDetail.id);
-        const parsedRefs = dedupeRefs((res.data?.references || []).map(cleanNotebookReference).filter(Boolean));
-        if (cancelled || parsedRefs.length === 0) return;
-
-        const nextRefs = dedupeRefs([...parsedRefs, ...bibliographyReferences]);
-        const nextSources = dedupeRefs(['NotebookLM', ...bibliographySources]);
-
-        setUploadedBiblio((current) => (current ? { ...current, references: parsedRefs } : current));
-        setBibliographyReferences(nextRefs);
-        setBibliographySources(nextSources);
+        if (cancelled) return;
+        await hydrateStoredNotebookReferences();
       } catch {
         // The upload flow still works; this only hydrates refs from an already uploaded PDF.
       }
@@ -432,15 +458,7 @@ export default function Step2_Fuentes() {
     return () => {
       cancelled = true;
     };
-  }, [
-    bibliographyReferences,
-    bibliographySources,
-    courseDetail?.id,
-    setBibliographyReferences,
-    setBibliographySources,
-    setUploadedBiblio,
-    uploadedBiblio,
-  ]);
+  }, [courseDetail?.id, uploadedBiblio]);
 
   const handleFile = async (file: File) => {
     if (!context || !courseDetail) return;
@@ -471,6 +489,14 @@ export default function Step2_Fuentes() {
       }
       showToast(refCount > 0 ? `${refCount} referencias extraídas` : 'PDF cargado', 'success');
     } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null && 'status' in err && err.status === 409) {
+        try {
+          const hydrated = await hydrateStoredNotebookReferences(true);
+          if (hydrated) return;
+        } catch {
+          // Fall through to the API error when the existing upload cannot be hydrated.
+        }
+      }
       const message = err instanceof Error ? err.message : 'Error al subir el archivo';
       showToast(message, 'error');
     } finally {
@@ -483,7 +509,13 @@ export default function Step2_Fuentes() {
 
     setRemovingBiblio(true);
     try {
-      await api.deleteDocument(uploadedBiblio.docId);
+      if (uploadedBiblio.docId) {
+        await api.deleteDocument(uploadedBiblio.docId);
+      } else if (courseDetail?.id) {
+        await api.deleteCourseBibliography(courseDetail.id);
+      } else {
+        throw new Error('No se encontro el documento de bibliografia');
+      }
       const uploadedReferenceKeys = new Set((uploadedBiblio.references || []).map((reference) => cleanNotebookReference(reference).toLowerCase()));
       if (uploadedReferenceKeys.size > 0) {
         const nextRefs = bibliographyReferences.filter(

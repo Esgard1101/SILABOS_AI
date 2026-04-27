@@ -1,13 +1,125 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../../api/client';
+import { ApiError, api } from '../../api/client';
 import type { GradingRow } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 
 // ─── Donut chart ─────────────────────────────────────────────────────────────
 
 const SEGMENT_COLORS = ['#D4A351', '#00B4CC', '#6C85C2', '#A8D8A8', '#E8A0A0', '#C4A0D8'];
+
+const DEFAULT_GRADING_ROWS: GradingRow[] = [
+  { evidencia: 'Tareas', sigla: 'TA', porcentaje: 15, cronograma: 'Permanente' },
+  { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 15, cronograma: 'Semana 4' },
+  { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: 'Semana 8' },
+  { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: 15, cronograma: 'Semana 12' },
+  { evidencia: 'Proyecto Final y Reflexión', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
+];
+
+const METHOD_EVIDENCE_PRODUCTS: Record<string, [string, string, string, string]> = {
+  ABPro: [
+    'Dossier analítico',
+    'Avance de proyecto / Recurso parcial',
+    'Examen Parcial / Sustentación',
+    'Proyecto final integrador + exposición',
+  ],
+  ABI: [
+    'Informe analítico de investigación',
+    'Seminario documentado',
+    'Examen Parcial',
+    'Informe de investigación final + sustentación',
+  ],
+  ABDe: [
+    'Evidencias iniciales y preguntas esenciales',
+    'Recurso de desafío',
+    'Sustentación / Examen Parcial',
+    'Propuesta final de difusión',
+  ],
+  AEC: [
+    'Informe de caso introductorio',
+    'Sustentación de caso histórico/práctico',
+    'Examen Parcial / Informe evaluativo',
+    'Informe final de caso integrador + exposición',
+  ],
+  AC: [
+    'Informe grupal',
+    'Dossier cooperativo',
+    'Examen Parcial / Informe cooperativo',
+    'Informe grupal integrador y exposición final',
+  ],
+  AE: [
+    'Informe reflexivo-aplicado',
+    'Microdiseño sustentado / Avance',
+    'Examen Parcial',
+    'Propuesta integral + exposición',
+  ],
+  ADI: [
+    'Informe argumentado de fundamentos',
+    'Dossier argumentado / Unidad sustentada',
+    'Examen Parcial',
+    'Propuesta completa argumentada + sustentación',
+  ],
+  CER: [
+    'Informe de fenomenología',
+    'Dossier de evidencias y razonamiento',
+    'Examen Parcial',
+    'Aplicación contextualizada final',
+  ],
+  EMR: [
+    'Informe sobre fundamentos realistas',
+    'Propuesta didáctica parcial',
+    'Examen Parcial',
+    'Propuesta integral EMR + sustentación',
+  ],
+  ABT: [
+    'Informe síntesis de fundamentos',
+    'Producto de taller sustentado',
+    'Examen Parcial',
+    'Propuesta completa de taller + sustentación',
+  ],
+  ABRP: [
+    'Informe de fundamentación inicial',
+    'Dossier de análisis teórico-problemático',
+    'Examen Parcial / Propuesta de intervención',
+    'Propuesta final de abordaje didáctico + sustentación',
+  ],
+};
+
+function normalizeMethodText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function resolveMethodKey(methodName: string) {
+  const text = normalizeMethodText(methodName);
+  if (/\babpro\b/.test(text) || text.includes('proyecto')) return 'ABPro';
+  if (/\babi\b/.test(text) || text.includes('investigacion')) return 'ABI';
+  if (/\babde\b/.test(text) || text.includes('desafio')) return 'ABDe';
+  if (/\baec\b/.test(text) || text.includes('caso')) return 'AEC';
+  if (/\bac\b/.test(text) || text.includes('cooperativo')) return 'AC';
+  if (/\bae\b/.test(text) || text.includes('experiencial')) return 'AE';
+  if (/\badi\b/.test(text) || text.includes('indagacion')) return 'ADI';
+  if (/\bcer\b/.test(text) || text.includes('claim') || text.includes('evidencia') && text.includes('razonamiento')) return 'CER';
+  if (/\bemr\b/.test(text) || text.includes('matematica realista')) return 'EMR';
+  if (/\babt\b/.test(text) || text.includes('taller')) return 'ABT';
+  if (/\babrp\b/.test(text) || text.includes('resolucion de problemas')) return 'ABRP';
+  return 'ABPro';
+}
+
+function isLegacyDefault(rows: GradingRow[]) {
+  return (
+    rows.length === 3
+    && rows[0]?.sigla === 'TA'
+    && rows[0]?.porcentaje === 40
+    && rows[1]?.sigla === 'PA1'
+    && rows[1]?.porcentaje === 30
+    && rows[2]?.sigla === 'PA2'
+    && rows[2]?.porcentaje === 30
+  );
+}
 
 function DonutChart({ rows }: { rows: GradingRow[] }) {
   const circ = 2 * Math.PI * 48;
@@ -184,6 +296,14 @@ export default function Step6_Cierre() {
 
   const [suggesting, setSuggesting] = useState(false);
   const [assembling, setAssembling] = useState(false);
+  const [aiRecoveryVisible, setAiRecoveryVisible] = useState(false);
+
+  useEffect(() => {
+    if (isLegacyDefault(gradingRows)) {
+      setGradingRows(DEFAULT_GRADING_ROWS);
+      setGradingOrigin('none');
+    }
+  }, [gradingRows, setGradingOrigin, setGradingRows]);
 
   const totalPct = gradingRows.reduce((s, r) => s + r.porcentaje, 0);
 
@@ -197,26 +317,41 @@ export default function Step6_Cierre() {
   const allOk = checks.every((c) => c.ok);
 
   const handleSuggestGrading = async () => {
-    if (!draftId) return;
     setSuggesting(true);
     try {
-      const res = await api.suggestGrading(draftId);
-      const d = res.data;
-      if (d?.rows?.length) {
-        setGradingRows(d.rows);
-        setGradingOrigin(d.origin);
-        showToast('Sistema de evaluación sugerido', 'success');
-      }
+      const methodKey = resolveMethodKey(selectedMethodName);
+      const products = METHOD_EVIDENCE_PRODUCTS[methodKey];
+      setGradingRows((currentRows) => currentRows.map((row, index) => (
+        index >= 1 && index <= 4
+          ? { ...row, evidencia: products[index - 1] }
+          : row
+      )));
+      setGradingOrigin('ai_suggested');
+      showToast('Evidencias sugeridas segun el metodo seleccionado', 'success');
     } catch {
-      showToast('Error al sugerir sistema de evaluación', 'error');
+      showToast('Error al sugerir sistema de evaluacion', 'error');
     } finally {
       setSuggesting(false);
     }
   };
 
-  const handleAssemble = async () => {
+  const isAiAvailabilityError = (error: unknown) => {
+    if (!(error instanceof ApiError)) return false;
+    if (error.status !== 503 && error.status !== 429) return false;
+    const detail = (error.details as { detail?: unknown } | undefined)?.detail;
+    return (
+      error.status === 503 ||
+      (typeof detail === 'object' &&
+        detail !== null &&
+        'code' in detail &&
+        detail.code === 'AI_PROVIDER_SATURATED')
+    );
+  };
+
+  const handleAssemble = async (forceProvider?: 'gemini' | 'openrouter') => {
     if (!draftId) return;
     setAssembling(true);
+    setAiRecoveryVisible(false);
     try {
       await saveStep('grading', {
         rows: gradingRows,
@@ -224,7 +359,7 @@ export default function Step6_Cierre() {
         total_percent: totalPct,
         teacher_notes: gradingNotes,
       });
-      const res = await api.assembleFinal(draftId);
+      const res = await api.assembleFinal(draftId, forceProvider ? { forceProvider } : undefined);
       const d = res.data;
       if (d?.syllabus_id) {
         setFinalSyllabusId(d.syllabus_id);
@@ -232,8 +367,13 @@ export default function Step6_Cierre() {
         setRequiresValidation(d.requires_academic_validation ?? false);
         navigate(`/editor?id=${d.syllabus_id}`);
       }
-    } catch {
-      showToast('Error al ensamblar el sílabo', 'error');
+    } catch (error) {
+      if (isAiAvailabilityError(error)) {
+        setAiRecoveryVisible(true);
+        showToast('Servidor IA con alta demanda. Puedes reintentar o usar el alternativo.', 'warning');
+      } else {
+        showToast('Error al ensamblar el sílabo', 'error');
+      }
     } finally {
       setAssembling(false);
     }
@@ -263,7 +403,7 @@ export default function Step6_Cierre() {
             <button
               type="button"
               onClick={handleSuggestGrading}
-              disabled={suggesting || !draftId}
+              disabled={suggesting}
               className="flex items-center gap-1.5 rounded-lg border border-[#D4A351]/40 bg-[#D4A351]/10 px-3 py-1.5 text-[10px] font-bold text-[#D4A351] transition hover:bg-[#D4A351]/20 disabled:opacity-50"
             >
               {suggesting ? (
@@ -334,6 +474,35 @@ export default function Step6_Cierre() {
       </div>
 
       {/* ── Action bar ──────────────────────────────────────────────────── */}
+      {aiRecoveryVisible && (
+        <div className="mt-4 rounded-xl border border-[#D4A351]/35 bg-[#0A2753] p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#D4A351]">
+            Alta demanda del servidor IA
+          </p>
+          <p className="mt-2 max-w-3xl text-[11px] leading-5 text-white/65">
+            Nuestros servidores principales están experimentando alta demanda. Puedes reintentar o usar nuestro servidor alternativo.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => handleAssemble('gemini')}
+              disabled={assembling || !allOk || !draftId}
+              className="rounded-lg border border-[#00B4CC]/35 px-3 py-2 text-[10px] font-bold text-[#77E3F0] transition hover:bg-[#00B4CC]/10 disabled:opacity-50"
+            >
+              Reintentar (Servidor Principal)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAssemble('openrouter')}
+              disabled={assembling || !allOk || !draftId}
+              className="rounded-lg border border-[#D4A351]/40 bg-[#D4A351]/10 px-3 py-2 text-[10px] font-bold text-[#F2C260] transition hover:bg-[#D4A351]/20 disabled:opacity-50"
+            >
+              Usar Servidor Alternativo
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-5 flex items-center justify-between">
         <button
           type="button"
@@ -345,7 +514,7 @@ export default function Step6_Cierre() {
         </button>
         <button
           type="button"
-          onClick={handleAssemble}
+          onClick={() => handleAssemble()}
           disabled={assembling || !allOk || !draftId}
           className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#007A8A] to-[#00B4CC] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           title={!allOk ? 'Completa todos los ítems del checklist antes de ensamblar' : undefined}

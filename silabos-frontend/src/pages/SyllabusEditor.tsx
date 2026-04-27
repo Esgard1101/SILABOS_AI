@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Info,
@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
-import { CourseDetail, CriterioEvaluacion, EvaluacionMatrizRow, SyllabusData, SyllabusStatus, ValidationObservation, ValidationResult } from '../api/types';
+import { CourseDetail, CriterioEvaluacion, EvaluacionMatrizRow, SyllabusData, SyllabusStatus, UnidadTematica, ValidationObservation, ValidationResult } from '../api/types';
 import BibliographyGuide from '../components/BibliographyGuide';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
@@ -47,8 +47,8 @@ interface ContentRow {
 }
 
 interface EvaluationRow {
-  desempeno: string;
-  habilidades: string;
+  resultadoAprendizaje: string;
+  desempenos: string;
   evidencias: string;
   instrumentos: string;
 }
@@ -56,6 +56,7 @@ interface EvaluationRow {
 interface UnitSection {
   id: string;
   title: string;
+  resultadoAprendizaje: string;
   habilidades: string;
   rows: ContentRow[];
 }
@@ -235,7 +236,7 @@ function joinList(value: unknown, fallback: string = '—'): string {
     const parts = value
       .map((v) => (typeof v === 'string' ? v : String(v ?? '')).trim())
       .filter(Boolean);
-    return parts.length ? parts.join('\n') : fallback;
+    return parts.length ? parts.join(', ') : fallback;
   }
   if (typeof value === 'string') {
     return value.trim() || fallback;
@@ -246,12 +247,14 @@ function joinList(value: unknown, fallback: string = '—'): string {
 function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSection[] {
   const units = syllabus.unidades_tematicas || [];
   const schedule = syllabus.cronograma_semanal || [];
+  const romanUnits = ['I', 'II', 'III', 'IV'];
 
   if (units.length === 0) {
     return [
       {
         id: 'unidad-unica',
-        title: 'UNIDAD I: —',
+        title: '6.1. UNIDAD I: —',
+        resultadoAprendizaje: '—',
         habilidades: '—',
         rows: [
           {
@@ -300,7 +303,8 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
 
     return {
       id: `unidad-${index + 1}`,
-      title: `UNIDAD ${unidad.numero || index + 1}: ${displayValue(unidad.titulo)}`,
+      title: `6.${unidad.numero || index + 1}. UNIDAD ${romanUnits[index] || unidad.numero || index + 1}: ${displayValue(unidad.titulo)}`,
+      resultadoAprendizaje: displayValue(unidad.ra_unidad || unidad.logro),
       habilidades: habilidadesUnit,
       rows,
     };
@@ -309,17 +313,17 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
 
 function buildEvaluationRows(unitSections: UnitSection[], matriz?: EvaluacionMatrizRow[]): EvaluationRow[] {
   if (matriz && matriz.length > 0) {
-    return matriz.map((item) => ({
-      desempeno: item.desempeno || '—',
-      habilidades: Array.isArray(item.habilidades) ? (item.habilidades.join('\n') || '—') : (item.habilidades || '—'),
-      evidencias: item.evidencias || '—',
+    return matriz.map((item, index) => ({
+      resultadoAprendizaje: item.resultado_aprendizaje || item.resultadoDeAprendizaje || `RA${index + 1}`,
+      desempenos: item.desempenos || item.desempeno || '—',
+      evidencias: item.evidenciasDeAprendizaje || item.evidencias || '—',
       instrumentos: item.instrumentos || '—',
     }));
   }
 
-  return unitSections.map((section) => ({
-    desempeno: section.rows[0]?.desempeno || '—',
-    habilidades: section.habilidades,
+  return unitSections.map((section, index) => ({
+    resultadoAprendizaje: `RA${index + 1}`,
+    desempenos: section.rows[0]?.desempeno || '—',
     evidencias: section.rows
       .map((row) => row.evidencias)
       .filter((evidencia) => evidencia !== '—')
@@ -329,6 +333,43 @@ function buildEvaluationRows(unitSections: UnitSection[], matriz?: EvaluacionMat
 }
 
 function buildGradingRows(criteria?: CriterioEvaluacion[]) {
+  const canonicalRows = [
+    {
+      evidencia: 'Tareas',
+      nombre: 'Tareas',
+      sigla: 'TA',
+      porcentaje: 15,
+      cronograma: 'Permanente',
+    },
+    {
+      evidencia: 'Producto Acreditable 1',
+      nombre: 'Producto Acreditable 1',
+      sigla: 'PA1',
+      porcentaje: 15,
+      cronograma: 'Semana 4',
+    },
+    {
+      evidencia: 'Producto Acreditable 2',
+      nombre: 'Producto Acreditable 2',
+      sigla: 'PA2',
+      porcentaje: 20,
+      cronograma: 'Semana 8',
+    },
+    {
+      evidencia: 'Examen Parcial',
+      nombre: 'Examen Parcial',
+      sigla: 'EP',
+      porcentaje: 15,
+      cronograma: 'Semana 12',
+    },
+    {
+      evidencia: 'Proyecto Final y Reflexión',
+      nombre: 'Proyecto Final y Reflexión',
+      sigla: 'PA3',
+      porcentaje: 35,
+      cronograma: 'Semana 16',
+    },
+  ];
   const rows = (criteria || [])
     .filter((item) => item && (item.nombre || item.sigla || item.porcentaje != null))
     .map((item, index) => ({
@@ -342,36 +383,7 @@ function buildGradingRows(criteria?: CriterioEvaluacion[]) {
     return rows;
   }
 
-  return [
-    {
-      evidencia: 'Tareas',
-      nombre: 'Tareas (Reportes de lectura, informes de clase, trabajo práctico)',
-      sigla: 'TA',
-      porcentaje: 40,
-      cronograma: 'Permanente',
-    },
-    {
-      evidencia: 'Producto Acreditable 1',
-      nombre: 'Producto Acreditable 1 (Planificación del trabajo integrador)',
-      sigla: 'PA1',
-      porcentaje: 10,
-      cronograma: '5ª Semana',
-    },
-    {
-      evidencia: 'Producto Acreditable 2',
-      nombre: 'Producto Acreditable 2 (Avance del Trabajo Integrador)',
-      sigla: 'PA2',
-      porcentaje: 20,
-      cronograma: '12ª Semana',
-    },
-    {
-      evidencia: 'Producto Acreditable 3',
-      nombre: 'Producto Acreditable 3 (Versión Final del Trabajo Integrador)',
-      sigla: 'PA3',
-      porcentaje: 30,
-      cronograma: '15ª Semana',
-    },
-  ];
+  return canonicalRows;
 }
 
 function buildGradingFormula(rows: Array<{ sigla: string; porcentaje: number }>) {
@@ -393,15 +405,16 @@ const defaultTutoria = `Durante el desarrollo de la asignatura se brinda al estu
 const sidebarSections = [
   { id: 'info-general', label: 'I. Información General', icon: Info },
   { id: 'sumilla', label: 'II. Sumilla', icon: FileText },
-  { id: 'competencia', label: 'III. Competencia Profesional', icon: GraduationCap },
-  { id: 'capacidad', label: 'IV. Capacidad del Curso', icon: ClipboardList },
+  { id: 'ra-curso', label: 'III. Resultado de Aprendizaje del Curso', icon: GraduationCap },
+  { id: 'ra-unidades', label: 'IV. RA de Unidades Didácticas', icon: ClipboardList },
   { id: 'desempenos', label: 'V. Desempeños', icon: GitBranch },
-  { id: 'programa-contenidos', label: 'VI. Programa de Contenidos', icon: ScrollText },
+  { id: 'programa-contenidos', label: 'VI. Programación Académica', icon: ScrollText },
   { id: 'sistema-evaluacion', label: 'VII. Sistema de Evaluación', icon: BarChart },
   { id: 'sistema-calificacion', label: 'VIII. Sistema de Calificación', icon: Sigma },
   { id: 'metodologia', label: 'IX. Metodología', icon: FlaskConical },
   { id: 'tutoria', label: 'X. Tutoría', icon: Users },
-  { id: 'referencias', label: 'XI. Referencias', icon: Library },
+  { id: 'responsabilidad-social', label: 'XI. Responsabilidad Social', icon: Share },
+  { id: 'referencias', label: 'XII. Referencias', icon: Library },
 ];
 
 export default function SyllabusEditor() {
@@ -601,6 +614,15 @@ export default function SyllabusEditor() {
   );
   const metodologia = displayValue(syllabus?.metodologia || defaultMetodologia);
   const tutoria = displayValue(syllabus?.tutoria || defaultTutoria);
+  const responsabilidadRaw = syllabus?.responsabilidad_social || syllabus?.responsabilidadSocial;
+  const responsabilidadSocial = pickDisplayValue(
+    typeof responsabilidadRaw === 'object' && responsabilidadRaw !== null
+      ? ((responsabilidadRaw as { actividadPropuesta?: string; actividad_propuesta?: string; descripcion?: string }).actividadPropuesta
+        || (responsabilidadRaw as { actividadPropuesta?: string; actividad_propuesta?: string; descripcion?: string }).actividad_propuesta
+        || (responsabilidadRaw as { actividadPropuesta?: string; actividad_propuesta?: string; descripcion?: string }).descripcion)
+      : responsabilidadRaw,
+    'Plantear una actividad para el desarrollo de un Proyecto de RSU ligado al proceso formativo del curso.',
+  );
   const courseName = pickDisplayValue(courseDetail?.name, dg.nombre_curso, 'Curso sin nombre');
   const facultyName = pickDisplayValue(context?.faculty_name, dg.facultad);
   const schoolName = pickDisplayValue(context?.school_name, dg.escuela_profesional, dg.programa_estudios, dg.carrera);
@@ -1019,16 +1041,36 @@ export default function SyllabusEditor() {
             <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
           </section>
 
-          <section id="competencia" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">III. Competencia Profesional</h3>
-            <p className="text-sm leading-7">{competenciaProfesional}</p>
-            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
+          <section id="ra-curso" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">III. Resultado de Aprendizaje del Curso</h3>
+            <p className="text-sm leading-7 font-semibold">{displayValue(syllabus.resultado_aprendizaje || syllabus.resultados_aprendizaje?.[0])}</p>
+            {(competenciaProfesional && competenciaProfesional !== '—') && (
+              <p className="mt-3 text-xs italic text-slate-600">
+                <span className="font-semibold not-italic">Competencia profesional asociada:</span> {competenciaProfesional}
+              </p>
+            )}
+            {(capacidadDelCurso && capacidadDelCurso !== '—') && (
+              <p className="mt-1 text-xs italic text-slate-600">
+                <span className="font-semibold not-italic">Capacidad del curso:</span> {capacidadDelCurso}
+              </p>
+            )}
           </section>
 
-          <section id="capacidad" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">IV. Capacidad del Curso</h3>
-            <p className="text-sm leading-7">{capacidadDelCurso}</p>
-            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
+          <section id="ra-unidades" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">IV. Resultados de Aprendizaje de las Unidades Didácticas</h3>
+            <div className="space-y-2 text-sm">
+              {(syllabus.unidades_tematicas || []).map((unidad: UnidadTematica, index: number) => {
+                const ra = unidad.ra_unidad || unidad.logro || '—';
+                return (
+                  <p key={`ra-u-${index}`}>
+                    <span className="font-bold">RA{index + 1}:</span> {displayValue(ra)}
+                  </p>
+                );
+              })}
+              {(!syllabus.unidades_tematicas || syllabus.unidades_tematicas.length === 0) && (
+                <p className="italic text-slate-500">Sin unidades configuradas.</p>
+              )}
+            </div>
           </section>
 
           <section id="desempenos" className="mb-8 scroll-mt-24">
@@ -1041,11 +1083,14 @@ export default function SyllabusEditor() {
           </section>
 
           <section id="programa-contenidos" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VI. Programa de Contenidos</h3>
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VI. Programación Académica</h3>
             <div className="space-y-6">
               {editableUnits.map((section, unitIdx) => (
                 <div key={section.id}>
                   <h4 className="font-bold text-sm mb-2">{section.title}</h4>
+                  <p className="mb-2 text-xs leading-5">
+                    <span className="font-semibold">Resultado de Aprendizaje:</span> {section.resultadoAprendizaje}
+                  </p>
                   <table className="w-full border border-slate-300 border-collapse text-[10.5px] table-fixed">
                     <colgroup>
                       <col style={{ width: '15%' }} />
@@ -1150,8 +1195,8 @@ export default function SyllabusEditor() {
             <table className="w-full border border-slate-300 border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50">
+                  <th className="border border-slate-300 p-2 text-left">Resultado de Aprendizaje</th>
                   <th className="border border-slate-300 p-2 text-left">Desempeños</th>
-                  <th className="border border-slate-300 p-2 text-left">Habilidades requeridas</th>
                   <th className="border border-slate-300 p-2 text-left">Evidencias de Aprendizaje</th>
                   <th className="border border-slate-300 p-2 text-left">Instrumentos de Evaluación</th>
                 </tr>
@@ -1159,8 +1204,8 @@ export default function SyllabusEditor() {
               <tbody>
                 {evaluationRows.map((row, index) => (
                   <tr key={`evaluation-${index}`}>
-                    <td className="border border-slate-300 p-2">{row.desempeno}</td>
-                    <td className="border border-slate-300 p-2 whitespace-pre-line">{row.habilidades}</td>
+                    <td className="border border-slate-300 p-2">{row.resultadoAprendizaje}</td>
+                    <td className="border border-slate-300 p-2">{row.desempenos}</td>
                     <td className="border border-slate-300 p-2">{row.evidencias}</td>
                     <td className="border border-slate-300 p-2">{row.instrumentos}</td>
                   </tr>
@@ -1204,8 +1249,13 @@ export default function SyllabusEditor() {
             <p className="text-sm leading-7">{tutoria}</p>
           </section>
 
+          <section id="responsabilidad-social" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">XI. Responsabilidad Social</h3>
+            <p className="text-sm leading-7">{responsabilidadSocial}</p>
+          </section>
+
           <section id="referencias" className="mb-10 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">XI. Referencias</h3>
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">XII. Referencias</h3>
             {(syllabus.bibliografia || []).length === 0 ? (
               <p className="text-sm">Pendiente de completar</p>
             ) : (
@@ -1332,3 +1382,5 @@ export default function SyllabusEditor() {
     </div>
   );
 }
+
+

@@ -176,9 +176,13 @@ async def obtener_referencias_bibliografia(course_id: str, request: Request):
 
         refs = await supabase.obtener_referencias_curso(course_id)
         rows = await supabase.obtener_referencias_curso_rows(course_id)
+        doc = await supabase.obtener_doc_refs_curso(course_id)
         return APIResponse(
             success=True,
             data={
+                "doc_id": doc.get("doc_id") if doc else None,
+                "document_name": doc.get("document_name") if doc else None,
+                "document_created_at": doc.get("created_at") if doc else None,
                 "references": refs,
                 "bibliography_rows": rows,
                 "bibliografia": refs_a_bibliografia_json(refs),
@@ -191,6 +195,40 @@ async def obtener_referencias_bibliografia(course_id: str, request: Request):
         raise
     except Exception as e:
         logger.error(f"Error al obtener referencias bibliograficas del curso {course_id}: {e}")
+        return APIResponse(success=False, data=None, error=str(e))
+
+
+@router.delete("/bibliography/{course_id}", response_model=APIResponse)
+async def eliminar_bibliografia_curso(course_id: str, request: Request):
+    """Elimina el PDF NotebookLM/ref asociado al curso para destrabar un nuevo upload."""
+    try:
+        servicios = _obtener_servicios(request)
+        supabase = servicios.get("supabase")
+
+        if not supabase:
+            raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+        doc_id = await supabase.obtener_doc_id_refs_curso(course_id)
+        if doc_id:
+            eliminado = await supabase.eliminar_documento(doc_id)
+            if eliminado:
+                return APIResponse(
+                    success=True,
+                    data={"eliminado": doc_id, "course_id": course_id},
+                    error=None,
+                )
+
+        await supabase.eliminar_referencias_curso(course_id)
+        return APIResponse(
+            success=True,
+            data={"eliminado": None, "course_id": course_id},
+            error=None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al eliminar bibliografia del curso {course_id}: {e}")
         return APIResponse(success=False, data=None, error=str(e))
 
 

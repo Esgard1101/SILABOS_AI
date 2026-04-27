@@ -1,4 +1,4 @@
-# services/bibliography_parser.py
+﻿# services/bibliography_parser.py
 # Parsea referencias exportadas desde NotebookLM y centraliza su normalizacion.
 
 from __future__ import annotations
@@ -103,11 +103,11 @@ _VIDEO_HINTS = (
 
 _PATTERN_SECTION = re.compile(
     r"(?im)(?:^|\n)\s*(?:#{1,6}\s*)?(?:[IVXLCDM]+\.?\s+)?"
-    r"(?:REFERENCIAS(?:\s+BIBLIOGR[AÁaá]FICAS?)?|BIBLIOGRAF[IÍií]A|FUENTES(?:\s+CONSULTADAS)?|REFERENCES)"
+    r"(?:REFERENCIAS(?:\s+BIBLIOGR[AÁaá]FICAS?)?|BIBLIOGRAF[IÍií]A|FUENTES\s+CONSULTADAS|REFERENCES)"
     r"\s*:?\s*"
 )
 _PATTERN_INLINE_SECTION = re.compile(
-    r"(?i)\b(?:REFERENCIAS(?:\s+BIBLIOGR[A-ZÃa-zÃ¡]FICAS?)?|BIBLIOGRAF[IÃiÃ­]A|FUENTES(?:\s+CONSULTADAS)?|REFERENCES)\b\s*:?\s*"
+    r"(?i)\b(?:REFERENCIAS(?:\s+BIBLIOGR[A-ZÃa-zÃ¡]FICAS?)?|BIBLIOGRAF[IÃiÃ­]A|FUENTES\s+CONSULTADAS|REFERENCES)\b\s*:?\s*"
 )
 _PATTERN_NEXT_SECTION = re.compile(
     r"\n\s*(?:#{1,6}\s+\S|(?:[IVXLCDM]+\.?\s+)?(?:ANEXOS?|AP[EÉ]NDICES?|CONCLUSIONES?|NOTAS?|ABSTRACT|INTRODUCCI[OÓ]N|RESULTADOS|DISCUSI[OÓ]N)\b)",
@@ -552,6 +552,11 @@ def normalize_reference_metadata(
 def _insert_line_breaks_between_refs(text: str) -> str:
     text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
     text = re.sub(
+        r"(https?://\S+)\s+([A-Z][^,]{1,80},\s*[A-Z])",
+        r"\1\n\2",
+        text,
+    )
+    text = re.sub(
         r"\.([A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ\-]+(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ\-]+)*,\s+[A-Z][\.,])",
         r".\n\1",
         text,
@@ -577,9 +582,11 @@ def _insert_line_breaks_between_refs(text: str) -> str:
 
 
 def _extract_reference_section(text: str) -> str:
-    match = _PATTERN_SECTION.search(text)
+    matches = list(_PATTERN_SECTION.finditer(text))
+    match = matches[-1] if matches else None
     if not match:
-        match = _PATTERN_INLINE_SECTION.search(text)
+        inline_matches = list(_PATTERN_INLINE_SECTION.finditer(text))
+        match = inline_matches[-1] if inline_matches else None
 
     if not match:
         compact = text[:5000]
@@ -625,12 +632,37 @@ def _dedupe_references(references: list[str]) -> list[str]:
     seen: set[str] = set()
     for reference in references:
         cleaned = _collapse_spaces(reference)
+        if not _is_valid_reference_entry(cleaned):
+            logger.warning("Referencia descartada por formato invalido: %r", cleaned[:180])
+            continue
         key = re.sub(r"[\W_]+", "", cleaned.lower())
         if not key or key in seen:
             continue
         seen.add(key)
         deduped.append(cleaned)
     return deduped
+
+
+def _is_valid_reference_entry(reference: str) -> bool:
+    if not reference or len(reference) < 20 or len(reference) > 700:
+        return False
+
+    lowered = reference.lower()
+    if lowered.startswith("referencias bibliogr") or lowered.startswith("bibliogr"):
+        return False
+
+    if "•" in reference or "â€¢" in reference:
+        return False
+
+    if not _PATTERN_YEAR.search(reference):
+        return False
+
+    if _PATTERN_NEW_REF.match(reference):
+        return True
+
+    has_locator = bool(_PATTERN_URL.search(reference) or _PATTERN_DOI.search(reference))
+    starts_like_author = bool(re.match(r"^[^,]{2,80},\s*\S", reference))
+    return has_locator and starts_like_author
 
 
 def _extract_title_from_reference(ref_text: str, year_match: re.Match[str] | None) -> str | None:
@@ -733,9 +765,19 @@ def parsear_referencias_bibliograficas(texto: str) -> list[str]:
     if not section:
         return []
 
+    section = re.sub(
+        r"(?is)^.*?\b(?:REFERENCIAS\s+BIBLIOGR\S*|BIBLIOGR\S*|REFERENCES)\b\s*:?\s*",
+        "",
+        section,
+    )
     section = re.sub(r"\*{1,3}([^*\n]+)\*{1,3}", r"\1", section)
     section = re.sub(r"_{1,3}([^_\n]+)_{1,3}", r"\1", section)
     section = re.sub(r"`[^`\n]+`", "", section)
+    section = re.sub(
+        r"(https?://\S+)\s+([A-Z][^,]{1,80},\s*[A-Z])",
+        r"\1\n\2",
+        section,
+    )
     section = _insert_line_breaks_between_refs(section)
 
     references: list[str] = []
@@ -792,3 +834,4 @@ def refs_a_bibliografia_json(refs: list[str]) -> list[dict]:
         }
         for row in rows
     ]
+

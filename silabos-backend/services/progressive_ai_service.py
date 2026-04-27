@@ -4,22 +4,14 @@ import os
 import re
 from typing import Any
 
-from google import genai
-from google.genai import types
+from services.gemini_service import (
+    DEFAULT_OPENROUTER_AUDIT_MODEL,
+    generate_content,
+)
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
-
-_client: genai.Client | None = None
 _service: "ProgressiveAIService | None" = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client()
-    return _client
 
 
 def _extract_json(text: str) -> str:
@@ -55,45 +47,30 @@ class ProgressiveAIService:
     """
     Servicio IA especifico para el wizard progresivo.
 
-    Usa GEMINI_MODEL por defecto y permite overrides opcionales por step:
-    - PROGRESSIVE_PURPOSE_MODEL
-    - PROGRESSIVE_CONTENT_MODEL
-    - PROGRESSIVE_GRADING_MODEL
-
-    Ninguno es obligatorio.
+    Todas las sugerencias intermedias se enrutan por OpenRouter para
+    reservar Gemini solo para la generacion final critica del silabo.
     """
 
     def __init__(self) -> None:
-        self.client = _get_client()
-        self.default_model = os.getenv("GEMINI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
-        self.purpose_model = (
-            os.getenv("PROGRESSIVE_PURPOSE_MODEL", "").strip() or self.default_model
+        legacy_openrouter_model = os.getenv("OPENROUTER_MODEL", "").strip()
+        audit_model = (
+            os.getenv("OPENROUTER_AUDIT_MODEL", "").strip()
+            or legacy_openrouter_model
+            or DEFAULT_OPENROUTER_AUDIT_MODEL
         )
-        self.content_model = (
-            os.getenv("PROGRESSIVE_CONTENT_MODEL", "").strip() or self.default_model
-        )
-        self.grading_model = (
-            os.getenv("PROGRESSIVE_GRADING_MODEL", "").strip() or self.default_model
+        self.light_model = (
+            os.getenv("OPENROUTER_LIGHT_MODEL", "").strip()
+            or audit_model
         )
 
     async def _generate_json(
         self,
         *,
-        model: str,
+        task: str,
         prompt: str,
-        temperature: float,
-        max_output_tokens: int,
+        force_provider: str | None = None,
     ) -> Any:
-        response = self.client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                response_mime_type="application/json",
-            ),
-        )
-        raw_text = response.text or ""
+        raw_text = await generate_content(prompt, task=task, force_provider=force_provider)
         try:
             return _parse_json_text(raw_text)
         except json.JSONDecodeError:
@@ -104,6 +81,7 @@ class ProgressiveAIService:
         self,
         curso: dict,
         bibliografia: list[str] | None = None,
+        force_provider: str | None = None,
     ) -> list[dict]:
         biblio_ctx = ""
         if bibliografia:
@@ -136,10 +114,9 @@ Responde exactamente este formato:
 ]"""
 
         payload = await self._generate_json(
-            model=self.purpose_model,
+            task="progressive_purpose_suggest",
             prompt=prompt,
-            temperature=0.2,
-            max_output_tokens=2048,
+            force_provider=force_provider,
         )
         return payload if isinstance(payload, list) else []
 
@@ -149,6 +126,7 @@ Responde exactamente este formato:
         desempenos: list[dict],
         bibliografia: list[str] | None = None,
         skills_context: list[dict] | None = None,
+        force_provider: str | None = None,
     ) -> dict:
         desempenos_texto = "\n".join(
             f"- {d.get('statement', d.get('code', ''))}" for d in desempenos[:5]
@@ -194,10 +172,9 @@ REGLAS:
 - Responde SOLO JSON, sin texto adicional"""
 
         payload = await self._generate_json(
-            model=self.content_model,
+            task="progressive_content_suggest",
             prompt=prompt,
-            temperature=0.2,
-            max_output_tokens=2048,
+            force_provider=force_provider,
         )
         if isinstance(payload, dict):
             return payload
@@ -208,6 +185,7 @@ REGLAS:
         metodo: dict,
         curso: dict,
         desempenos: list[dict] | None = None,
+        force_provider: str | None = None,
     ) -> list[dict]:
         desempenos_texto = ""
         if desempenos:
@@ -237,10 +215,9 @@ Formato exacto:
 ]"""
 
         payload = await self._generate_json(
-            model=self.grading_model,
+            task="progressive_grading_suggest",
             prompt=prompt,
-            temperature=0.2,
-            max_output_tokens=2048,
+            force_provider=force_provider,
         )
         return payload if isinstance(payload, list) else []
 
@@ -250,9 +227,9 @@ def get_progressive_ai_service() -> ProgressiveAIService:
     if _service is None:
         _service = ProgressiveAIService()
         logger.info(
-            "ProgressiveAIService inicializado | purpose=%s | content=%s | grading=%s",
-            _service.purpose_model,
-            _service.content_model,
-            _service.grading_model,
+            "ProgressiveAIService inicializado | purpose=openrouter_light(%s) | content=openrouter_light(%s) | grading=openrouter_light(%s)",
+            _service.light_model,
+            _service.light_model,
+            _service.light_model,
         )
     return _service

@@ -65,7 +65,7 @@ export default function Register() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      navigate(user?.role === 'admin' ? '/review' : '/dashboard', { replace: true });
+      navigate(user?.role === 'admin' || user?.role === 'director' || user?.role === 'coordinador' ? '/dashboard' : '/select-context', { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate, user?.role]);
 

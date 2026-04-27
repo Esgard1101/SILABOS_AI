@@ -580,15 +580,16 @@ export default function Step3_Desempenos() {
                 {visiblePerfs.map((performance, index) => {
                   const alignment = alignments[index];
                   return (
-                    <PerformanceRow
-                      key={`${performance.code}-${index}`}
-                      performance={performance}
-                      alignment={alignment}
-                      confirmed={confirmedCodes.includes(performance.code)}
-                      onConfirm={() => handleConfirm(performance)}
-                      onAdjust={() => setEditTarget(performance)}
-                      onObserve={() => handleObserve(performance, alignment)}
-                    />
+                    <React.Fragment key={`${performance.code}-${index}`}>
+                      <PerformanceRow
+                        performance={performance}
+                        alignment={alignment}
+                        confirmed={confirmedCodes.includes(performance.code)}
+                        onConfirm={() => handleConfirm(performance)}
+                        onAdjust={() => setEditTarget(performance)}
+                        onObserve={() => handleObserve(performance, alignment)}
+                      />
+                    </React.Fragment>
                   );
                 })}
               </tbody>

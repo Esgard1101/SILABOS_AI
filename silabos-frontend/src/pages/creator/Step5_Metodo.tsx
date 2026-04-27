@@ -619,12 +619,13 @@ export default function Step5_Metodo() {
 
               <div className="mt-2 grid gap-1.5 md:grid-cols-2">
                 {methods.map((method) => (
-                  <MethodCard
-                    key={method.id}
-                    method={method}
-                    selected={selectedMethodId === String(method.id)}
-                    onClick={() => handleSelect(method)}
-                  />
+                  <React.Fragment key={method.id}>
+                    <MethodCard
+                      method={method}
+                      selected={selectedMethodId === String(method.id)}
+                      onClick={() => handleSelect(method)}
+                    />
+                  </React.Fragment>
                 ))}
               </div>
             </section>

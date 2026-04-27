@@ -15,7 +15,15 @@ def _val(v: Any, fallback: str = "") -> str:
     if v is None:
         return fallback
     s = str(v).strip()
-    return s if s and s != "—" else fallback
+    if not s or s in {"—", "\u00e2\u20ac\u201d", "None", "none", "null", "NULL", "/"}:
+        return fallback
+    return s
+
+
+def _pair(left: Any, right: Any, fallback: str = "—") -> str:
+    parts = [_val(left), _val(right)]
+    visible = [part for part in parts if part]
+    return " / ".join(visible) if visible else fallback
 
 
 def _safe_filename(nombre_curso: str) -> str:
@@ -27,8 +35,17 @@ def _build_context(silabo: dict) -> dict:
     """
     Construye el contexto de exportacion del silabo.
     Sin rowspan: cada fila semanal repite desempeno y habilidades.
+    Matriz programacion: 8 cols (Desempenos|Sem|Fecha|K|H|A|Actividades|Evidencias).
     """
     dg = silabo.get("datos_generales") or {}
+
+    def _list_to_lines(value: Any) -> str:
+        if isinstance(value, list):
+            parts = [str(v).strip() for v in value if str(v or "").strip()]
+            return ", ".join(parts) if parts else "—"
+        if isinstance(value, str):
+            return value.strip() or "—"
+        return "—"
 
     unidades_raw = silabo.get("unidades_tematicas") or []
     desempenos = []
@@ -41,6 +58,16 @@ def _build_context(silabo: dict) -> dict:
             }
         )
 
+    ra_unidades = []
+    for i, unidad in enumerate(unidades_raw):
+        ra_text = _val(unidad.get("ra_unidad")) or _val(unidad.get("logro"))
+        ra_unidades.append(
+            {
+                "codigo": f"RA{i + 1}",
+                "descripcion": ra_text or f"RA{i + 1}",
+            }
+        )
+
     cronograma_map: dict[int, dict] = {}
     for item in silabo.get("cronograma_semanal") or []:
         if isinstance(item, dict) and "semana" in item:
@@ -50,6 +77,7 @@ def _build_context(silabo: dict) -> dict:
                 continue
 
     unidades_ctx = []
+    roman_units = ["I", "II", "III", "IV"]
     for i, unidad in enumerate(unidades_raw):
         desempeno_txt = _val(unidad.get("logro"), f"D{i + 1}")
         habilidades_txt = _val(
@@ -88,14 +116,21 @@ def _build_context(silabo: dict) -> dict:
                     if not conocimientos and isinstance(temas_raw[0], str):
                         conocimientos = ", ".join(str(t) for t in temas_raw)
 
+                desempeno_celda = _val(sem_data.get("desempeno"), f"D{i + 1}. {desempeno_txt}")
+                conocimientos_celda = _list_to_lines(sem_data.get("conocimientos")) if sem_data.get("conocimientos") else (conocimientos or "—")
+                habilidades_celda = _list_to_lines(sem_data.get("habilidades")) if sem_data.get("habilidades") else habilidades_txt
+                actitudes_celda = _list_to_lines(sem_data.get("actitudes"))
+                evidencia_celda = _val(sem_data.get("evidencia") or sem_data.get("producto"), "—")
                 filas.append(
                     {
-                        "desempeno": f"D{i + 1}. {desempeno_txt}",
-                        "habilidades": habilidades_txt,
-                        "semana": f"Sem. {semana}",
-                        "conocimientos": conocimientos or "—",
+                        "desempeno": desempeno_celda,
+                        "habilidades": habilidades_celda,
+                        "actitudes": actitudes_celda,
+                        "semana": f"{semana}",
+                        "fecha": _val(sem_data.get("fecha"), "—"),
+                        "conocimientos": conocimientos_celda,
                         "actividades": _val(sem_data.get("actividad"), "—"),
-                        "evidencias": _val(sem_data.get("producto"), "—"),
+                        "evidencias": evidencia_celda,
                     }
                 )
         else:
@@ -108,7 +143,9 @@ def _build_context(silabo: dict) -> dict:
                 {
                     "desempeno": f"D{i + 1}. {desempeno_txt}",
                     "habilidades": habilidades_txt,
+                    "actitudes": _list_to_lines(unidad.get("actitudes")),
                     "semana": semanas_str or "—",
+                    "fecha": "—",
                     "conocimientos": temas_txt or "—",
                     "actividades": "—",
                     "evidencias": "—",
@@ -121,7 +158,8 @@ def _build_context(silabo: dict) -> dict:
             {
                 "numero": numero,
                 "titulo": titulo,
-                "titulo_completo": f"UNIDAD {numero}: {titulo}",
+                "titulo_completo": f"6.{numero}. UNIDAD {roman_units[i] if i < len(roman_units) else numero}: {titulo}",
+                "ra_unidad": _val(unidad.get("ra_unidad") or unidad.get("logro"), "—"),
                 "desempeno": f"D{i + 1}. {desempeno_txt}",
                 "habilidades": habilidades_txt,
                 "filas": filas,
@@ -137,6 +175,50 @@ def _build_context(silabo: dict) -> dict:
                     "habilidades": fila["habilidades"],
                     "evidencias": fila["evidencias"] or "—",
                     "instrumento": "Rubrica analitica",
+                }
+            )
+
+    matriz_raw = silabo.get("evaluacion_matriz") or []
+    if matriz_raw:
+        eval_filas = []
+        for index, item in enumerate(matriz_raw):
+            if not isinstance(item, dict):
+                continue
+            eval_filas.append(
+                {
+                    "resultado_aprendizaje": _val(
+                        item.get("resultado_aprendizaje")
+                        or item.get("resultadoDeAprendizaje"),
+                        f"RA{index + 1}",
+                    ),
+                    "desempenos": _val(
+                        item.get("desempenos") or item.get("desempeno"),
+                        "—",
+                    ),
+                    "evidencias": _val(
+                        item.get("evidenciasDeAprendizaje") or item.get("evidencias"),
+                        "—",
+                    ),
+                    "instrumentos": _val(item.get("instrumentos"), "—"),
+                }
+            )
+    else:
+        eval_filas = []
+        for index, unidad in enumerate(unidades_ctx):
+            evidencias = []
+            seen = set()
+            for fila in unidad.get("filas", []):
+                evidencia = _val(fila.get("evidencias"), "")
+                key = evidencia.lower()
+                if evidencia and key not in seen:
+                    seen.add(key)
+                    evidencias.append(evidencia)
+            eval_filas.append(
+                {
+                    "resultado_aprendizaje": f"RA{index + 1}",
+                    "desempenos": unidad.get("desempeno") or "—",
+                    "evidencias": "; ".join(evidencias) if evidencias else "—",
+                    "instrumentos": "Rubrica analitica",
                 }
             )
 
@@ -162,26 +244,32 @@ def _build_context(silabo: dict) -> dict:
             {
                 "evidencia": "Tareas",
                 "sigla": "TA",
-                "peso": "40%",
+                "peso": "15%",
                 "cronograma": "Permanente",
             },
             {
                 "evidencia": "Producto Acreditable 1",
                 "sigla": "PA1",
-                "peso": "10%",
-                "cronograma": "Semana 5",
+                "peso": "15%",
+                "cronograma": "Semana 4",
             },
             {
                 "evidencia": "Producto Acreditable 2",
                 "sigla": "PA2",
                 "peso": "20%",
+                "cronograma": "Semana 8",
+            },
+            {
+                "evidencia": "Examen Parcial",
+                "sigla": "EP",
+                "peso": "15%",
                 "cronograma": "Semana 12",
             },
             {
-                "evidencia": "Producto Acreditable 3",
+                "evidencia": "Proyecto Final y Reflexión",
                 "sigla": "PA3",
-                "peso": "30%",
-                "cronograma": "Semana 15",
+                "peso": "35%",
+                "cronograma": "Semana 16",
             },
         ]
 
@@ -199,6 +287,27 @@ def _build_context(silabo: dict) -> dict:
         silabo.get("capacidad_del_curso")
         or (silabo.get("resultados_aprendizaje") or [""])[0]
     )
+    ra_curso = _val(
+        silabo.get("resultado_aprendizaje")
+        or (silabo.get("resultados_aprendizaje") or [""])[0]
+    )
+    responsabilidad_raw = (
+        silabo.get("responsabilidad_social")
+        or silabo.get("responsabilidadSocial")
+        or {}
+    )
+    if isinstance(responsabilidad_raw, dict):
+        responsabilidad_social = _val(
+            responsabilidad_raw.get("actividadPropuesta")
+            or responsabilidad_raw.get("actividad_propuesta")
+            or responsabilidad_raw.get("descripcion"),
+            "Plantear una actividad para el desarrollo de un Proyecto de RSU ligado al proceso formativo del curso.",
+        )
+    else:
+        responsabilidad_social = _val(
+            responsabilidad_raw,
+            "Plantear una actividad para el desarrollo de un Proyecto de RSU ligado al proceso formativo del curso.",
+        )
 
     return {
         "facultad": _val(dg.get("facultad")),
@@ -232,6 +341,8 @@ def _build_context(silabo: dict) -> dict:
         "sumilla": _val(silabo.get("sumilla")),
         "competencia_profesional": competencia,
         "capacidad_del_curso": capacidad,
+        "ra_curso": ra_curso,
+        "ra_unidades": ra_unidades,
         "desempenos": desempenos,
         "unidades": unidades_ctx,
         "eval_filas": eval_filas,
@@ -248,6 +359,7 @@ def _build_context(silabo: dict) -> dict:
             "Las tutorias academicas se realizan de manera presencial o "
             "virtual, conforme a la normativa institucional vigente.",
         ),
+        "responsabilidad_social": responsabilidad_social,
         "referencias": referencias,
         "_filename": _safe_filename(_val(dg.get("nombre_curso"))),
     }
@@ -322,11 +434,11 @@ def _generar_docx_programatico(context: dict) -> bytes:
         ),
         (
             "1.11 Duracion (Inicio / Termino)",
-            f"{context['fecha_inicio']} / {context['fecha_fin']}",
+            _pair(context["fecha_inicio"], context["fecha_fin"]),
         ),
         (
             "1.12 Docente (Nombre / Correo)",
-            f"{context['docente_nombre']} / {context['docente_email']}",
+            _pair(context["docente_nombre"], context["docente_email"]),
         ),
     ]
     for label, value in info_fields:
@@ -337,11 +449,28 @@ def _generar_docx_programatico(context: dict) -> bytes:
     _add_section_title(document, "II. Sumilla")
     document.add_paragraph(context["sumilla"] or "—")
 
-    _add_section_title(document, "III. Competencia Profesional")
-    document.add_paragraph(context["competencia_profesional"] or "—")
+    _add_section_title(document, "III. Resultado de Aprendizaje del Curso")
+    document.add_paragraph(context["ra_curso"] or context["capacidad_del_curso"] or "—")
+    if context["competencia_profesional"]:
+        nota = document.add_paragraph()
+        run = nota.add_run("Competencia profesional asociada: ")
+        run.bold = True
+        nota.add_run(context["competencia_profesional"])
+    if context["capacidad_del_curso"] and context["capacidad_del_curso"] != context["ra_curso"]:
+        nota_cap = document.add_paragraph()
+        run = nota_cap.add_run("Capacidad del curso: ")
+        run.bold = True
+        nota_cap.add_run(context["capacidad_del_curso"])
 
-    _add_section_title(document, "IV. Capacidad del Curso")
-    document.add_paragraph(context["capacidad_del_curso"] or "—")
+    _add_section_title(document, "IV. Resultados de Aprendizaje de las Unidades Didacticas")
+    if context["ra_unidades"]:
+        for ra in context["ra_unidades"]:
+            paragraph = document.add_paragraph(style="List Bullet")
+            run = paragraph.add_run(f"{ra['codigo']}: ")
+            run.bold = True
+            paragraph.add_run(ra["descripcion"])
+    else:
+        document.add_paragraph("—")
 
     _add_section_title(document, "V. Desempenos de las Unidades Didacticas")
     if context["desempenos"]:
@@ -353,21 +482,27 @@ def _generar_docx_programatico(context: dict) -> bytes:
     else:
         document.add_paragraph("—")
 
-    _add_section_title(document, "VI. Programa de Contenidos")
+    _add_section_title(document, "VI. Programacion Academica")
     for unidad in context["unidades"]:
         paragraph = document.add_paragraph()
         run = paragraph.add_run(unidad["titulo_completo"])
         run.bold = True
+        ra_paragraph = document.add_paragraph()
+        run = ra_paragraph.add_run("Resultado de Aprendizaje: ")
+        run.bold = True
+        ra_paragraph.add_run(unidad.get("ra_unidad", "—"))
 
-        unit_table = document.add_table(rows=1, cols=6)
+        unit_table = document.add_table(rows=1, cols=8)
         unit_table.style = "Table Grid"
         unit_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         headers = [
             "Desempenos",
-            "Habilidades requeridas",
-            "Semana",
+            "Sem.",
+            "Fecha",
             "Conocimientos",
-            "Actividades",
+            "Habilidades",
+            "Actitudes",
+            "Actividades de Aprendizaje",
             "Evidencias",
         ]
         for index, header_text in enumerate(headers):
@@ -376,29 +511,31 @@ def _generar_docx_programatico(context: dict) -> bytes:
         for fila in unidad["filas"]:
             row = unit_table.add_row().cells
             _set_cell_text(row[0], fila["desempeno"])
-            _set_cell_text(row[1], fila["habilidades"])
-            _set_cell_text(row[2], fila["semana"])
+            _set_cell_text(row[1], fila["semana"])
+            _set_cell_text(row[2], fila.get("fecha", "—"))
             _set_cell_text(row[3], fila["conocimientos"])
-            _set_cell_text(row[4], fila["actividades"])
-            _set_cell_text(row[5], fila["evidencias"])
+            _set_cell_text(row[4], fila["habilidades"])
+            _set_cell_text(row[5], fila.get("actitudes", "—"))
+            _set_cell_text(row[6], fila["actividades"])
+            _set_cell_text(row[7], fila["evidencias"])
 
     _add_section_title(document, "VII. Sistema de Evaluacion")
     eval_table = document.add_table(rows=1, cols=4)
     eval_table.style = "Table Grid"
     eval_headers = [
+        "Resultado de Aprendizaje",
         "Desempenos",
-        "Habilidades requeridas",
         "Evidencias de Aprendizaje",
-        "Instrumentos de Evaluacion",
+        "Instrumentos",
     ]
     for index, header_text in enumerate(eval_headers):
         _set_cell_text(eval_table.rows[0].cells[index], header_text, bold=True)
     for fila in context["eval_filas"]:
         row = eval_table.add_row().cells
-        _set_cell_text(row[0], fila["desempeno"])
-        _set_cell_text(row[1], fila["habilidades"])
+        _set_cell_text(row[0], fila["resultado_aprendizaje"])
+        _set_cell_text(row[1], fila["desempenos"])
         _set_cell_text(row[2], fila["evidencias"])
-        _set_cell_text(row[3], fila["instrumento"])
+        _set_cell_text(row[3], fila["instrumentos"])
 
     _add_section_title(document, "VIII. Sistema de Calificacion")
     grading_table = document.add_table(rows=1, cols=4)
@@ -426,7 +563,10 @@ def _generar_docx_programatico(context: dict) -> bytes:
     _add_section_title(document, "X. Actividades de Tutoria: Area Academica")
     document.add_paragraph(context["tutoria"] or "—")
 
-    _add_section_title(document, "XI. Referencias")
+    _add_section_title(document, "XI. Responsabilidad Social")
+    document.add_paragraph(context["responsabilidad_social"] or "—")
+
+    _add_section_title(document, "XII. Referencias")
     if context["referencias"]:
         for referencia in context["referencias"]:
             document.add_paragraph(referencia, style="List Bullet")
@@ -636,6 +776,9 @@ def _build_html(ctx: dict) -> str:
     logo_unprg = _img_tag(public_dir / "unprg-logo.png", "Logo UNPRG")
     logo_fachse = _img_tag(public_dir / "logo_fachse.png", "Logo FACHSE")
 
+    def _multiline_html(value: str) -> str:
+        return escape(value or "—").replace("\n", "<br/>")
+
     tablas_vi = []
     for unidad in ctx.get("unidades", []):
         filas = []
@@ -643,12 +786,14 @@ def _build_html(ctx: dict) -> str:
             filas.append(
                 f"""
                 <tr>
-                  <td>{escape(fila['desempeno'])}</td>
-                  <td>{escape(fila['habilidades'])}</td>
+                  <td>{_multiline_html(fila['desempeno'])}</td>
                   <td>{escape(fila['semana'])}</td>
-                  <td>{escape(fila['conocimientos'])}</td>
-                  <td>{escape(fila['actividades'])}</td>
-                  <td>{escape(fila['evidencias'])}</td>
+                  <td>{escape(fila.get('fecha', '—'))}</td>
+                  <td>{_multiline_html(fila['conocimientos'])}</td>
+                  <td>{_multiline_html(fila['habilidades'])}</td>
+                  <td>{_multiline_html(fila.get('actitudes', '—'))}</td>
+                  <td>{_multiline_html(fila['actividades'])}</td>
+                  <td>{_multiline_html(fila['evidencias'])}</td>
                 </tr>
                 """
             )
@@ -656,15 +801,18 @@ def _build_html(ctx: dict) -> str:
         tablas_vi.append(
             f"""
             <div class="unidad-titulo">{escape(unidad.get('titulo_completo', ''))}</div>
+            <p><strong>Resultado de Aprendizaje:</strong> {escape(unidad.get('ra_unidad', '—'))}</p>
             <table>
               <thead>
                 <tr>
                   <th>Desempenos</th>
-                  <th>Habilidades requeridas</th>
-                  <th>Semana (Fecha)</th>
+                  <th>Sem.</th>
+                  <th>Fecha</th>
                   <th>Conocimientos</th>
-                  <th>Actividades</th>
-                  <th>Evidencias de Aprendizaje</th>
+                  <th>Habilidades</th>
+                  <th>Actitudes</th>
+                  <th>Actividades de Aprendizaje</th>
+                  <th>Evidencias</th>
                 </tr>
               </thead>
               <tbody>
@@ -677,10 +825,10 @@ def _build_html(ctx: dict) -> str:
     eval_rows = "".join(
         f"""
         <tr>
-          <td>{escape(fila['desempeno'])}</td>
-          <td>{escape(fila['habilidades'])}</td>
+          <td>{escape(fila['resultado_aprendizaje'])}</td>
+          <td>{escape(fila['desempenos'])}</td>
           <td>{escape(fila['evidencias'])}</td>
-          <td>{escape(fila['instrumento'])}</td>
+          <td>{escape(fila['instrumentos'])}</td>
         </tr>
         """
         for fila in ctx.get("eval_filas", [])
@@ -702,6 +850,11 @@ def _build_html(ctx: dict) -> str:
         f"<li>{escape(d['codigo'])}. {escape(d['descripcion'])}</li>"
         for d in ctx.get("desempenos", [])
     )
+
+    ra_unidades_html = "".join(
+        f"<li><strong>{escape(r['codigo'])}:</strong> {escape(r['descripcion'])}</li>"
+        for r in ctx.get("ra_unidades", [])
+    ) or "<li>Sin unidades configuradas.</li>"
 
     if ctx.get("referencias"):
         refs_html = "".join(
@@ -743,34 +896,36 @@ def _build_html(ctx: dict) -> str:
       <div class="info-row"><div class="info-label">1.7 Semestre Academico</div><div class="info-value">{escape(ctx['semestre'])}</div></div>
       <div class="info-row"><div class="info-label">1.8 Periodo Academico</div><div class="info-value">{escape(ctx['periodo_academico'])}</div></div>
       <div class="info-row"><div class="info-label">1.9 Creditos</div><div class="info-value">{escape(ctx['creditos'])}</div></div>
-      <div class="info-row"><div class="info-label">1.10 Horas Semanales (Teoria / Practica)</div><div class="info-value">{escape(ctx['horas_teoria'])} / {escape(ctx['horas_practica'])}</div></div>
-      <div class="info-row"><div class="info-label">1.11 Duracion (Inicio / Termino)</div><div class="info-value">{escape(ctx['fecha_inicio'])} / {escape(ctx['fecha_fin'])}</div></div>
-      <div class="info-row"><div class="info-label">1.12 Docente (Nombre / Correo)</div><div class="info-value">{escape(ctx['docente_nombre'])} / {escape(ctx['docente_email'])}</div></div>
+      <div class="info-row"><div class="info-label">1.10 Horas Semanales (Teoria / Practica)</div><div class="info-value">{escape(_pair(ctx['horas_teoria'], ctx['horas_practica']))}</div></div>
+      <div class="info-row"><div class="info-label">1.11 Duracion (Inicio / Termino)</div><div class="info-value">{escape(_pair(ctx['fecha_inicio'], ctx['fecha_fin']))}</div></div>
+      <div class="info-row"><div class="info-label">1.12 Docente (Nombre / Correo)</div><div class="info-value">{escape(_pair(ctx['docente_nombre'], ctx['docente_email']))}</div></div>
     </div>
 
     <div class="seccion-titulo">II. Sumilla</div>
     <p>{escape(ctx['sumilla'])}</p>
 
-    <div class="seccion-titulo">III. Competencia Profesional</div>
-    <p>{escape(ctx['competencia_profesional'])}</p>
+    <div class="seccion-titulo">III. Resultado de Aprendizaje del Curso</div>
+    <p><strong>{escape(ctx.get('ra_curso') or ctx.get('capacidad_del_curso') or '—')}</strong></p>
+    {f'<p><em>Competencia profesional asociada:</em> {escape(ctx["competencia_profesional"])}</p>' if ctx.get('competencia_profesional') else ''}
+    {f'<p><em>Capacidad del curso:</em> {escape(ctx["capacidad_del_curso"])}</p>' if ctx.get('capacidad_del_curso') and ctx.get('capacidad_del_curso') != ctx.get('ra_curso') else ''}
 
-    <div class="seccion-titulo">IV. Capacidad del Curso</div>
-    <p>{escape(ctx['capacidad_del_curso'])}</p>
+    <div class="seccion-titulo">IV. Resultados de Aprendizaje de las Unidades Didacticas</div>
+    <ul>{ra_unidades_html}</ul>
 
     <div class="seccion-titulo">V. Desempenos de las Unidades Didacticas</div>
     <ul>{desempenos_html}</ul>
 
-    <div class="seccion-titulo">VI. Programa de Contenidos</div>
+    <div class="seccion-titulo">VI. Programacion Academica</div>
     {''.join(tablas_vi)}
 
     <div class="seccion-titulo">VII. Sistema de Evaluacion</div>
     <table>
       <thead>
         <tr>
+          <th>Resultado de Aprendizaje</th>
           <th>Desempenos</th>
-          <th>Habilidades requeridas</th>
           <th>Evidencias de Aprendizaje</th>
-          <th>Instrumentos de Evaluacion</th>
+          <th>Instrumentos</th>
         </tr>
       </thead>
       <tbody>{eval_rows}</tbody>
@@ -796,7 +951,10 @@ def _build_html(ctx: dict) -> str:
     <div class="seccion-titulo">X. Actividades de Tutoria: Area Academica</div>
     <p>{escape(ctx['tutoria'])}</p>
 
-    <div class="seccion-titulo">XI. Referencias</div>
+    <div class="seccion-titulo">XI. Responsabilidad Social</div>
+    <p>{escape(ctx['responsabilidad_social'])}</p>
+
+    <div class="seccion-titulo">XII. Referencias</div>
     <ul>{refs_html}</ul>
 
     <div class="firmas">

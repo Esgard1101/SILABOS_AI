@@ -16,7 +16,7 @@
 import logging
 import re
 from datetime import date, datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel
 
 from auth.permissions import get_current_user_record
@@ -27,6 +27,28 @@ from services.progressive_ai_service import get_progressive_ai_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Wizard Progresivo v3"])
+
+
+def _validate_force_provider(force_provider: str | None) -> str | None:
+    if force_provider is None:
+        return None
+    value = force_provider.strip().lower()
+    if not value:
+        return None
+    if value not in {"gemini", "openrouter"}:
+        raise HTTPException(400, "force_provider debe ser gemini u openrouter")
+    return value
+
+
+def _ai_unavailable_detail(exc: Exception) -> dict:
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict):
+        return detail
+    return {
+        "code": "AI_PROVIDER_SATURATED",
+        "message": "Nuestros servidores IA no pudieron completar la solicitud.",
+        "retryable": True,
+    }
 
 
 def _sv(request: Request):
@@ -115,6 +137,8 @@ def _build_evaluacion_matriz(
     skill_names: list[str] | None = None,
     habilidades_sugeridas: list[str] | None = None,
     ai_instruments_por_desempeno: list[dict] | None = None,
+    unidades_tematicas: list[dict] | None = None,
+    cronograma_semanal: list[dict] | None = None,
 ) -> list[dict]:
     """One row per desempeño.
     Habilidades priority:  habilidades_por_desempeno → skill_names → habilidades_sugeridas
@@ -124,6 +148,48 @@ def _build_evaluacion_matriz(
     ai_inst_map = {item["desempeno_code"]: item.get("instrumentos", []) for item in (ai_instruments_por_desempeno or [])}
     evidencias_text = "; ".join(r.get("evidencia", "") for r in grading_rows if r.get("evidencia")) or "—"
     catalog_instruments_text = "; ".join(instrument_names) if instrument_names else "—"
+
+    units = unidades_tematicas or []
+    schedule = cronograma_semanal or []
+    if units:
+        result = []
+        for i, unidad in enumerate(units):
+            semanas = _parse_week_range(unidad.get("semanas"))
+            unit_schedule = [
+                row for row in schedule
+                if isinstance(row, dict) and row.get("semana") in semanas
+            ]
+            evidencias = _merge_unique_texts([
+                row.get("evidencia") or row.get("producto")
+                for row in unit_schedule
+                if isinstance(row, dict)
+            ])
+
+            code = _clean_text((desempenos[i] or {}).get("codigo")) if i < len(desempenos) else ""
+            ai_insts = ai_inst_map.get(code, [])
+            desempeno_text = _clean_text(unidad.get("logro")) or (
+                _clean_text((desempenos[i] or {}).get("descripcion"))
+                if i < len(desempenos)
+                else f"Desempeno RA{i + 1}"
+            )
+            instruments_text = (
+                "; ".join(ai_insts)
+                if ai_insts
+                else _specific_instrument_fallback(desempeno_text, i)
+            )
+            evidencias_text_unit = "; ".join(evidencias) if evidencias else evidencias_text
+
+            result.append({
+                "resultado_aprendizaje": f"RA{i + 1}",
+                "resultadoDeAprendizaje": f"RA{i + 1}",
+                "desempeno": desempeno_text,
+                "desempenos": desempeno_text,
+                "evidencias": evidencias_text_unit,
+                "evidenciasDeAprendizaje": evidencias_text_unit,
+                "instrumentos": instruments_text,
+            })
+
+        return result
 
     n = max(len(desempenos), 1)
     skill_buckets = _distribute_items(skill_names, n) if skill_names else []
@@ -143,13 +209,205 @@ def _build_evaluacion_matriz(
         instruments_text = "; ".join(ai_insts) if ai_insts else catalog_instruments_text
 
         result.append({
+            "resultado_aprendizaje": f"RA{i + 1}",
+            "resultadoDeAprendizaje": f"RA{i + 1}",
             "desempeno": d.get("descripcion", ""),
+            "desempenos": d.get("descripcion", ""),
             "habilidades": habs,
             "evidencias": evidencias_text,
+            "evidenciasDeAprendizaje": evidencias_text,
             "instrumentos": instruments_text,
         })
 
     return result
+
+
+def _parse_week_range(value) -> set[int]:
+    parts = re.findall(r"\d+", str(value or ""))
+    if len(parts) >= 2:
+        start, end = int(parts[0]), int(parts[1])
+        return set(range(start, end + 1))
+    if len(parts) == 1:
+        return {int(parts[0])}
+    return set()
+
+
+CANONICAL_GRADING_ROWS = [
+    {"evidencia": "Tareas", "sigla": "TA", "porcentaje": 15, "cronograma": "Permanente"},
+    {"evidencia": "Producto Acreditable 1", "sigla": "PA1", "porcentaje": 15, "cronograma": "Semana 4"},
+    {"evidencia": "Producto Acreditable 2", "sigla": "PA2", "porcentaje": 20, "cronograma": "Semana 8"},
+    {"evidencia": "Examen Parcial", "sigla": "EP", "porcentaje": 15, "cronograma": "Semana 12"},
+    {"evidencia": "Proyecto Final y Reflexión", "sigla": "PA3", "porcentaje": 35, "cronograma": "Semana 16"},
+]
+
+METHOD_EVIDENCE_PRODUCTS = {
+    "ABPro": [
+        "Dossier analítico",
+        "Avance de proyecto / Recurso parcial",
+        "Examen Parcial / Sustentación",
+        "Proyecto final integrador + exposición",
+    ],
+    "ABI": [
+        "Informe analítico de investigación",
+        "Seminario documentado",
+        "Examen Parcial",
+        "Informe de investigación final + sustentación",
+    ],
+    "ABDe": [
+        "Evidencias iniciales y preguntas esenciales",
+        "Recurso de desafío",
+        "Sustentación / Examen Parcial",
+        "Propuesta final de difusión",
+    ],
+    "AEC": [
+        "Informe de caso introductorio",
+        "Sustentación de caso histórico/práctico",
+        "Examen Parcial / Informe evaluativo",
+        "Informe final de caso integrador + exposición",
+    ],
+    "AC": [
+        "Informe grupal",
+        "Dossier cooperativo",
+        "Examen Parcial / Informe cooperativo",
+        "Informe grupal integrador y exposición final",
+    ],
+    "AE": [
+        "Informe reflexivo-aplicado",
+        "Microdiseño sustentado / Avance",
+        "Examen Parcial",
+        "Propuesta integral + exposición",
+    ],
+    "ADI": [
+        "Informe argumentado de fundamentos",
+        "Dossier argumentado / Unidad sustentada",
+        "Examen Parcial",
+        "Propuesta completa argumentada + sustentación",
+    ],
+    "CER": [
+        "Informe de fenomenología",
+        "Dossier de evidencias y razonamiento",
+        "Examen Parcial",
+        "Aplicación contextualizada final",
+    ],
+    "EMR": [
+        "Informe sobre fundamentos realistas",
+        "Propuesta didáctica parcial",
+        "Examen Parcial",
+        "Propuesta integral EMR + sustentación",
+    ],
+    "ABT": [
+        "Informe síntesis de fundamentos",
+        "Producto de taller sustentado",
+        "Examen Parcial",
+        "Propuesta completa de taller + sustentación",
+    ],
+    "ABRP": [
+        "Informe de fundamentación inicial",
+        "Dossier de análisis teórico-problemático",
+        "Examen Parcial / Propuesta de intervención",
+        "Propuesta final de abordaje didáctico + sustentación",
+    ],
+}
+
+
+def _normalize_match_text(value: str) -> str:
+    replacements = str.maketrans("áéíóúÁÉÍÓÚñÑ", "aeiouAEIOUnN")
+    return str(value or "").translate(replacements).lower()
+
+
+def _resolve_evidence_method_key(method_name: str = "", method_code: str = "") -> str:
+    code = _clean_text(method_code)
+    if code in METHOD_EVIDENCE_PRODUCTS:
+        return code
+
+    text = _normalize_match_text(f"{method_code} {method_name}")
+    if "abpro" in text or "proyecto" in text:
+        return "ABPro"
+    if "abi" in text or "investigacion" in text:
+        return "ABI"
+    if "abde" in text or "desafio" in text:
+        return "ABDe"
+    if "aec" in text or "caso" in text:
+        return "AEC"
+    if re.search(r"\bac\b", text) or "cooperativo" in text:
+        return "AC"
+    if re.search(r"\bae\b", text) or "experiencial" in text:
+        return "AE"
+    if "adi" in text or "indagacion" in text:
+        return "ADI"
+    if "cer" in text or ("evidencia" in text and "razonamiento" in text):
+        return "CER"
+    if "emr" in text or "matematica realista" in text:
+        return "EMR"
+    if "abt" in text or "taller" in text:
+        return "ABT"
+    if "abrp" in text or "resolucion de problemas" in text:
+        return "ABRP"
+    return "ABPro"
+
+
+def _canonical_grading_rows(method_name: str = "", method_code: str = "") -> list[dict]:
+    rows = [row.copy() for row in CANONICAL_GRADING_ROWS]
+    if method_name or method_code:
+        products = METHOD_EVIDENCE_PRODUCTS[_resolve_evidence_method_key(method_name, method_code)]
+        for index, evidence_name in enumerate(products, start=1):
+            rows[index]["evidencia"] = evidence_name
+    return rows
+
+
+def _normalize_grading_rows(rows: list[dict] | None) -> list[dict]:
+    cleaned = [row for row in (rows or []) if isinstance(row, dict)]
+    if not cleaned:
+        return _canonical_grading_rows()
+
+    siglas = [_clean_text(row.get("sigla")).upper() for row in cleaned]
+    percentages = []
+    for row in cleaned:
+        try:
+            percentages.append(float(row.get("porcentaje", 0)))
+        except (TypeError, ValueError):
+            percentages.append(0)
+
+    is_legacy_default = siglas == ["TA", "PA1", "PA2"] and percentages == [40, 30, 30]
+    if is_legacy_default or round(sum(percentages), 2) != 100:
+        return _canonical_grading_rows()
+
+    return cleaned
+
+
+def _sanitize_content_items(items: list[str], limit: int | None = None) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in items or []:
+        text = re.sub(r"\s+", " ", str(raw or "").strip(" .;,\n\t"))
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+        if limit and len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+def _format_cell_items(items: list[str], fallback: str = "") -> str:
+    cleaned = _sanitize_content_items(items)
+    return ", ".join(cleaned) if cleaned else fallback
+
+
+def _specific_instrument_fallback(desempeno_text: str, unit_index: int) -> str:
+    topic = _clean_text(desempeno_text, f"RA{unit_index + 1}")
+    topic = re.sub(r"\s+", " ", topic).strip()
+    short_topic = topic[:80].rstrip(" ,.;")
+    options = [
+        f"Rúbrica analítica de desempeño del RA{unit_index + 1}",
+        f"Lista de cotejo de evidencias del RA{unit_index + 1}",
+    ]
+    if short_topic and not short_topic.upper().startswith("RA"):
+        options[0] = f"Rúbrica analítica de {short_topic.lower()}"
+    return "; ".join(options)
 
 
 def _distribute_items(items: list[str], bucket_count: int) -> list[list[str]]:
@@ -177,6 +435,215 @@ def _expand_topics(items: list[str], total: int, fallback_title: str) -> list[st
         else:
             expanded.append(f"{base[-1]} - aplicacion {index - len(base) + 1}")
     return expanded
+
+
+def _split_into_weeks(items: list[str], total_weeks: int = 16, per_week: int = 2) -> list[list[str]]:
+    """Reparte items en N semanas con rotación uniforme.
+
+    Cada semana w recibe `per_week` items distintos: items[(w*per_week + j) % n].
+    Maximiza diversidad entre semanas adyacentes incluso con pool corto.
+    """
+    weeks: list[list[str]] = [[] for _ in range(total_weeks)]
+    cleaned = [str(item).strip() for item in (items or []) if str(item or "").strip()]
+    if not cleaned:
+        return weeks
+    n = len(cleaned)
+    for w in range(total_weeks):
+        for j in range(per_week):
+            cand = cleaned[(w * per_week + j) % n]
+            if cand and cand not in weeks[w]:
+                weeks[w].append(cand)
+    return weeks
+
+
+def _mix_attitudes_per_week(
+    user_pool: list[str],
+    total_weeks: int,
+    phase_for_week: list[str],
+) -> list[list[str]]:
+    """Combina actitudes del docente + defaults por fase con rotación.
+
+    Resultado: cada semana 1-2 actitudes; al menos una "fase-aware".
+    """
+    weeks: list[list[str]] = [[] for _ in range(total_weeks)]
+    user = [str(a).strip() for a in (user_pool or []) if str(a or "").strip()]
+    n_user = len(user)
+    for w in range(total_weeks):
+        phase_default = _default_attitudes_for_phase(phase_for_week[w] if w < len(phase_for_week) else "")
+        primary = phase_default[w % max(len(phase_default), 1)] if phase_default else ""
+        out: list[str] = []
+        if primary:
+            out.append(primary)
+        if n_user:
+            secondary = user[w % n_user]
+            if secondary and secondary not in out:
+                out.append(secondary)
+        weeks[w] = out or ["Responsabilidad académica"]
+    return weeks
+
+
+# Pool de actitudes default por keyword de fase (se mantiene tal cual)
+
+
+# Pool de actitudes default por keyword de fase (cuando docente no carga actitudes propias)
+_ATTITUDES_BY_PHASE_KEYWORD = (
+    (("explor", "identif", "idea", "presentaci", "comprens", "demostr", "context"),
+     ["Curiosidad intelectual", "Apertura a la indagación"]),
+    (("investig", "revisi", "planific", "definici", "selecci", "delimit", "matemat"),
+     ["Rigor académico", "Responsabilidad en el manejo de fuentes"]),
+    (("desarroll", "implement", "ejecut", "produccion", "ejercitaci", "investigaci", "matemati", "analisis", "discuss"),
+     ["Trabajo colaborativo", "Compromiso con el aprendizaje"]),
+    (("evaluac", "presentaci", "difus", "socializ", "verific", "consolid", "reflex", "cierre", "comunicaci"),
+     ["Honestidad intelectual", "Apertura a la mejora continua"]),
+)
+
+
+def _default_attitudes_for_phase(phase_label: str) -> list[str]:
+    if not phase_label:
+        return ["Responsabilidad académica"]
+    lowered = phase_label.lower()
+    for needles, actitudes in _ATTITUDES_BY_PHASE_KEYWORD:
+        if any(n in lowered for n in needles):
+            return actitudes
+    return ["Responsabilidad académica"]
+
+
+def _draft_ra_curso(curso: dict, desempenos: list[dict], method_name: str) -> str:
+    """Fallback determinístico para RA del curso cuando la columna está vacía."""
+    course_name = _clean_text((curso or {}).get("name"))
+    competencia = _clean_text((curso or {}).get("competencia_egreso"))
+    capacidad = _clean_text((curso or {}).get("capacidad"))
+    if competencia:
+        return competencia
+    if capacidad:
+        return capacidad
+    if desempenos:
+        first = desempenos[0].get("descripcion") or desempenos[0].get("statement") or ""
+        return (
+            f"Aplica los aprendizajes del curso de {course_name or 'la asignatura'} mediante "
+            f"{method_name or 'metodologías activas'}, integrando análisis crítico, fundamentación "
+            f"académica y producción de evidencias coherentes con el perfil profesional."
+            f" {first}".strip()
+        )
+    return (
+        f"Desarrolla las competencias del curso de {course_name or 'la asignatura'} "
+        f"con rigor académico, autonomía y responsabilidad ética."
+    )
+
+
+def _draft_ra_unidad(
+    unit_index: int,
+    unit_title: str,
+    knowledge_in_unit: list[str],
+    desempenos: list[dict],
+    method_short: str,
+    phases: list[str],
+) -> str:
+    """Genera RA por unidad determinísticamente desde título + desempeños + fase principal."""
+    if unit_index < len(desempenos):
+        desempeno_text = desempenos[unit_index].get("descripcion") or desempenos[unit_index].get("statement") or ""
+    else:
+        desempeno_text = ""
+    main_topics = ", ".join(knowledge_in_unit[:3]) if knowledge_in_unit else (unit_title or f"Unidad {unit_index + 1}")
+    phase_focus = phases[0] if phases else "el desarrollo del curso"
+    if desempeno_text:
+        return desempeno_text
+    return (
+        f"Aplica los aprendizajes de {main_topics} mediante {method_short or 'metodología activa'}, "
+        f"con énfasis en {phase_focus.lower()}, demostrando coherencia entre análisis y producción académica."
+    )
+
+
+_PRODUCT_KEYWORDS_BY_PHASE = (
+    (("explor", "idea", "identif", "presentaci"),
+     ("árbol", "mapa", "preguntas", "esquema", "lluvia")),
+    (("investig", "revisi", "planific", "definici", "selecci", "matemat"),
+     ("ficha", "matriz", "plan", "marco", "cuadro")),
+    (("desarroll", "implement", "ejecut", "produccion", "ejercitaci", "matemati"),
+     ("borrador", "informe", "prototipo", "guion", "modelo", "producto")),
+    (("evaluac", "presentaci", "difus", "socializ", "verific", "consolid", "cierre", "comunicaci"),
+     ("dossier", "exposici", "informe final", "sustenta", "examen", "ponencia", "portafolio")),
+)
+
+
+_FORMATIVE_EVIDENCE_PATTERNS = {
+    "ABI": [
+        "Matriz de preguntas de investigacion",
+        "Fichas de lectura academica",
+        "Organizador conceptual analitico",
+    ],
+    "ABPro": [
+        "Esquema del proyecto",
+        "Plan de trabajo del proyecto",
+        "Avance revisado del producto",
+    ],
+    "ABDe": [
+        "Matriz de analisis del desafio",
+        "Plan de solucion del desafio",
+        "Prototipo o avance validado",
+    ],
+    "Aprendizaje Cooperativo": [
+        "Organizador cooperativo inicial",
+        "Ficha individual de trabajo",
+        "Producto grupal en revision",
+    ],
+    "Estudio de Casos": [
+        "Ficha de analisis del caso",
+        "Matriz de alternativas de solucion",
+        "Informe preliminar del caso",
+    ],
+}
+
+
+def _formative_evidence_for_week(week: int, method_short: str, topic: str) -> str:
+    week_in_unit = (week - 1) % 4
+    templates = _FORMATIVE_EVIDENCE_PATTERNS.get(method_short) or [
+        "Esquema de analisis",
+        "Ficha de trabajo academico",
+        "Avance con retroalimentacion",
+    ]
+    if week_in_unit < len(templates):
+        return templates[week_in_unit]
+    return f"Avance integrador de {topic}"
+
+
+def _evidence_for_week(
+    week: int,
+    phase_label: str,
+    method_short: str,
+    method_products: list[str],
+    evidences_by_week: dict[int, list[str]],
+    permanent: list[str],
+    grading_rows: list[dict],
+    topic: str,
+) -> str:
+    """Selecciona evidencia por semana priorizando: grading explícito → productos del método por fase → grading cíclico."""
+    explicit = evidences_by_week.get(week)
+    if explicit:
+        return "; ".join(explicit)
+
+    return _formative_evidence_for_week(week, method_short, topic)
+
+    if method_products and phase_label:
+        lowered_phase = phase_label.lower()
+        for phase_needles, prod_needles in _PRODUCT_KEYWORDS_BY_PHASE:
+            if any(n in lowered_phase for n in phase_needles):
+                for prod in method_products:
+                    if any(pk in prod.lower() for pk in prod_needles):
+                        return prod
+
+    if grading_rows:
+        non_permanent = [r for r in grading_rows if "permanente" not in str(r.get("cronograma", "")).lower()]
+        if non_permanent:
+            row = non_permanent[(week - 1) % len(non_permanent)]
+            evidencia_g = _clean_text(row.get("evidencia"))
+            sigla_g = _clean_text(row.get("sigla"))
+            if evidencia_g:
+                return f"{evidencia_g}{f' ({sigla_g})' if sigla_g else ''}"
+
+    if permanent:
+        return permanent[0]
+    return f"Avance de {topic}"
 
 
 # Mapeo nombre → código corto del método (para prefijo "ABPro – Fase: ...")
@@ -270,6 +737,30 @@ def _resolve_action_for_week(
     return _clean_text(actions.get(str(week_number)) or actions.get(week_number))
 
 
+def _normalize_sentence_spacing(text: str) -> str:
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    text = re.sub(r"\s+([,.;:])", r"\1", text)
+    text = re.sub(r"([.;:])(?=\S)", r"\1 ", text)
+    text = re.sub(r":\s*:", ":", text)
+    return text.strip()
+
+
+def _as_sentence(text: str) -> str:
+    text = _normalize_sentence_spacing(text).strip(" ;:")
+    if not text:
+        return ""
+    text = text[0].upper() + text[1:]
+    if text[-1] not in ".!?":
+        text += "."
+    return text
+
+
+def _overlaps_meaningfully(left: str, right: str) -> bool:
+    left_tokens = set(re.findall(r"[a-záéíóúñ]{5,}", _normalize_match_text(left)))
+    right_tokens = set(re.findall(r"[a-záéíóúñ]{5,}", _normalize_match_text(right)))
+    return bool(left_tokens & right_tokens)
+
+
 def _build_methodology_narrative(method_raw: dict | None, course_name: str = "") -> str:
     if not isinstance(method_raw, dict) or not method_raw.get("name"):
         return "Metodología activa centrada en el aprendizaje del estudiante."
@@ -285,13 +776,13 @@ def _build_methodology_narrative(method_raw: dict | None, course_name: str = "")
     parrafos: list[str] = []
     p1 = f"La asignatura{' de ' + course_name if course_name else ''} se desarrollará mediante {name}."
     if proposito:
-        p1 += f" {proposito}"
+        p1 = f"{p1} {_as_sentence(proposito)}"
     elif description:
-        p1 += f" {description}"
-    parrafos.append(p1)
+        p1 = f"{p1} {_as_sentence(description)}"
+    parrafos.append(_as_sentence(p1))
 
     if estrategias:
-        parrafos.append(f"La investigación formativa se desarrollará mediante: {estrategias}")
+        parrafos.append(_as_sentence(f"La investigación formativa se desarrollará mediante {estrategias}"))
     else:
         parrafos.append(
             "La investigación formativa se desarrollará mediante revisión documental, "
@@ -304,7 +795,7 @@ def _build_methodology_narrative(method_raw: dict | None, course_name: str = "")
             partes_rol.append(f"Rol del docente: {rol_doc}")
         if rol_est:
             partes_rol.append(f"Rol del estudiante: {rol_est}")
-        parrafos.append(" ".join(partes_rol))
+        parrafos.append(_as_sentence(" ".join(_as_sentence(parte) for parte in partes_rol)))
     else:
         parrafos.append(
             "El docente actuará como facilitador y orientador del proceso; "
@@ -312,9 +803,9 @@ def _build_methodology_narrative(method_raw: dict | None, course_name: str = "")
         )
 
     if phases:
-        parrafos.append(f"Esta configuración responde a las fases del método: {', '.join(phases)}.")
+        parrafos.append(_as_sentence(f"Esta configuración responde a las fases del método: {', '.join(phases)}"))
 
-    return "\n\n".join(parrafos)
+    return "\n\n".join(_as_sentence(parrafo) for parrafo in parrafos if parrafo)
 
 
 def _validate_method_alignment(
@@ -373,12 +864,26 @@ def _compose_activity(
     topic: str,
     technique: str = "",
 ) -> str:
-    """Formato observado en EjemplosDeSilabos: '**METODO – Fase:** acción específica'."""
-    prefix = f"**{method_short} – {phase_label}:**" if method_short and phase_label else ""
-    cuerpo = action_text or f"desarrollo de {topic}"
-    if technique and technique.lower() not in cuerpo.lower():
-        cuerpo = f"{cuerpo} mediante {technique}"
-    return f"{prefix} {cuerpo}".strip()
+    """Redacta una actividad semanal legible evitando concatenaciones redundantes."""
+    prefix = f"**{method_short} - {phase_label}:**" if method_short and phase_label else ""
+    topic_text = _clean_text(topic, "los contenidos de la semana")
+    phase_text = _clean_text(phase_label, "desarrollo")
+    cuerpo = _clean_text(action_text)
+
+    if not cuerpo:
+        cuerpo = f"Los estudiantes desarrollan {topic_text} en la fase de {phase_text.lower()}"
+
+    technique_text = _clean_text(technique)
+    if technique_text:
+        normalized_body = _normalize_match_text(cuerpo)
+        normalized_technique = _normalize_match_text(technique_text)
+        already_connector = any(connector in normalized_body for connector in (" mediante ", " a traves de ", " con apoyo de "))
+        repeats_technique = normalized_technique in normalized_body or _overlaps_meaningfully(cuerpo, technique_text)
+        if not already_connector and not repeats_technique:
+            cuerpo = f"{cuerpo} mediante {technique_text}"
+
+    cuerpo = _as_sentence(cuerpo)
+    return f"{prefix} {cuerpo}".strip() if prefix else cuerpo
 
 
 def _build_units_and_schedule(
@@ -394,6 +899,8 @@ def _build_units_and_schedule(
     phase_rules: dict | None = None,
     week_dates: list[str] | None = None,
     desempenos_final: list[dict] | None = None,
+    attitudes_pool: list[str] | None = None,
+    method_products: list[str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     unit_count = 4
     weeks_per_unit = 4
@@ -440,6 +947,10 @@ def _build_units_and_schedule(
 
             title = _clean_text((unit_knowledge or [f"Bloque {unit_index + 1}"])[0], f"Bloque {unit_index + 1}")
             performance_text = _perf_for(unit_index) or _clean_text(plan_unit.get("ra_unidad"), title)
+            ra_unidad_plan = _clean_text(plan_unit.get("ra_unidad")) or _draft_ra_unidad(
+                unit_index, title, _merge_unique_texts(unit_knowledge),
+                desempenos_final, method_short, phases,
+            )
             units.append(
                 {
                     "numero": unit_index + 1,
@@ -447,12 +958,14 @@ def _build_units_and_schedule(
                     "semanas": f"{start_week}-{end_week}",
                     "temas": _merge_unique_texts(unit_knowledge)[:weeks_per_unit],
                     "logro": performance_text,
+                    "ra_unidad": ra_unidad_plan,
                     "habilidades_requeridas": ", ".join(_merge_unique_texts(unit_skills)[:3]) or "Desarrollo de habilidades del curso",
                     "actitudes": _merge_unique_texts(unit_attitudes)[:3],
                 }
             )
 
-            for offset, week_row in enumerate(weeks[:weeks_per_unit]):
+            for offset in range(weeks_per_unit):
+                week_row = weeks[offset] if offset < len(weeks) and isinstance(weeks[offset], dict) else {}
                 week = int(week_row.get("week") or (start_week + offset))
                 week_in_unit = (week - 1) % weeks_per_unit
                 knowledge = _as_text_list(week_row.get("knowledge", []))
@@ -471,8 +984,16 @@ def _build_units_and_schedule(
                 perf_code = _clean_text(week_row.get("performance_code", ""))
                 desempeno_text = _perf_for(unit_index, perf_code)
 
-                evidences = evidences_by_week.get(week) or permanent_evidences
-                product = "; ".join(evidences) if evidences else f"Avance de {topic}"
+                product = _evidence_for_week(
+                    week=week,
+                    phase_label=phase_label,
+                    method_short=method_short,
+                    method_products=method_products or [],
+                    evidences_by_week=evidences_by_week,
+                    permanent=permanent_evidences,
+                    grading_rows=grading_rows,
+                    topic=topic,
+                )
                 schedule.append(
                     {
                         "semana": week,
@@ -492,8 +1013,27 @@ def _build_units_and_schedule(
         return units, schedule
 
     # Fallback path: sin content_plan estructurado por semana
+    # Distribuir K/H/A por semana directamente para matchear matriz de EjemplosDeSilabos
+    knowledge_per_week = _split_into_weeks(knowledge_items, total_weeks=total_weeks, per_week=2)
+    skills_per_week = _split_into_weeks(skill_names, total_weeks=total_weeks, per_week=3)
+
+    # Pre-computar fase por semana para alimentar mix de actitudes
+    phase_per_week_global: list[str] = []
+    for week_pre in range(1, total_weeks + 1):
+        u_pre = (week_pre - 1) // weeks_per_unit
+        wiu_pre = (week_pre - 1) % weeks_per_unit
+        ph_lbl, _ = _resolve_phase_for_week(u_pre, wiu_pre, phases, phase_rules)
+        phase_per_week_global.append(ph_lbl)
+
+    attitudes_per_week = _mix_attitudes_per_week(
+        attitudes_pool or [],
+        total_weeks=total_weeks,
+        phase_for_week=phase_per_week_global,
+    )
+
     knowledge_buckets = _distribute_items(knowledge_items, unit_count)
     skill_buckets = _distribute_items(skill_names, unit_count)
+    products_list = method_products or []
 
     for unit_index in range(unit_count):
         start_week = unit_index * weeks_per_unit + 1
@@ -510,6 +1050,10 @@ def _build_units_and_schedule(
         unit_skills = skill_buckets[unit_index] or skill_names[:3]
         skills_text = ", ".join(unit_skills[:3]) if unit_skills else "Desarrollo de habilidades del curso"
 
+        ra_unidad = _draft_ra_unidad(
+            unit_index, title, seed_topics, desempenos_final, method_short, phases,
+        )
+
         units.append(
             {
                 "numero": unit_index + 1,
@@ -517,6 +1061,7 @@ def _build_units_and_schedule(
                 "semanas": f"{start_week}-{end_week}",
                 "temas": topics,
                 "logro": performance_text,
+                "ra_unidad": ra_unidad,
                 "habilidades_requeridas": skills_text,
             }
         )
@@ -524,14 +1069,35 @@ def _build_units_and_schedule(
         for offset, topic in enumerate(topics):
             week = start_week + offset
             week_in_unit = offset
+            week_idx = week - 1
 
             phase_label, _ = _resolve_phase_for_week(unit_index, week_in_unit, phases, phase_rules)
             action_text = _resolve_action_for_week(week, phase_rules)
             technique = techniques[week_in_unit % len(techniques)] if techniques else ""
             activity = _compose_activity(method_short, phase_label, action_text, topic, technique)
 
-            evidences = evidences_by_week.get(week) or permanent_evidences
-            product = "; ".join(evidences) if evidences else f"Avance de {topic}"
+            week_knowledge = knowledge_per_week[week_idx] if week_idx < len(knowledge_per_week) else []
+            if not week_knowledge:
+                week_knowledge = [topic]
+
+            week_skills = skills_per_week[week_idx] if week_idx < len(skills_per_week) else []
+            if not week_skills:
+                week_skills = unit_skills[:2] if unit_skills else []
+
+            week_attitudes = attitudes_per_week[week_idx] if week_idx < len(attitudes_per_week) else []
+            if not week_attitudes:
+                week_attitudes = _default_attitudes_for_phase(phase_label)
+
+            product = _evidence_for_week(
+                week=week,
+                phase_label=phase_label,
+                method_short=method_short,
+                method_products=products_list,
+                evidences_by_week=evidences_by_week,
+                permanent=permanent_evidences,
+                grading_rows=grading_rows,
+                topic=topic,
+            )
 
             schedule.append(
                 {
@@ -540,16 +1106,15 @@ def _build_units_and_schedule(
                     "desempeno": performance_text,
                     "desempeno_code": "",
                     "tema": topic,
-                    "conocimientos": [topic],
-                    "habilidades": unit_skills[:3] if unit_skills else [],
-                    "actitudes": [],
+                    "conocimientos": week_knowledge,
+                    "habilidades": week_skills,
+                    "actitudes": week_attitudes,
                     "actividad": activity,
                     "producto": product,
                     "evidencia": product,
                 }
             )
 
-    _ = total_weeks  # silenciar warning si no se usa
     return units, schedule
 
 
@@ -628,6 +1193,7 @@ async def guardar_step_block(
 async def sugerir_desempenos(
     syllabus_id: str,
     request: Request,
+    force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
     """IA genera desempeños sugeridos desde el propósito del curso."""
@@ -653,10 +1219,16 @@ async def sugerir_desempenos(
     refs = await supabase.obtener_referencias_curso(str(course_id))
 
     try:
-        performances = await progressive_ai.sugerir_desempenos(curso, refs[:6])
+        performances = await progressive_ai.sugerir_desempenos(
+            curso,
+            refs[:6],
+            force_provider=_validate_force_provider(force_provider),
+        )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Error en sugerir_desempenos: %s", exc)
-        performances = []
+        raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
 
     if not performances:
         return APIResponse(
@@ -689,6 +1261,7 @@ async def sugerir_desempenos(
 async def sugerir_contenido(
     syllabus_id: str,
     request: Request,
+    force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
     """IA sugiere conocimientos, actitudes y habilidades desde los desempeños confirmados."""
@@ -720,10 +1293,13 @@ async def sugerir_contenido(
             performances,
             refs[:4],
             skills_context=skills_suggest.get("skills", []),
+            force_provider=_validate_force_provider(force_provider),
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Error en sugerir_contenido: %s", exc)
-        sugerencia = {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": []}
+        raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
 
     def _merge_unique(*lists):
         out, seen = [], set()
@@ -736,25 +1312,27 @@ async def sugerir_contenido(
                     out.append(text_value)
         return out
 
-    sugerencia["conocimientos"] = _merge_unique(
-        (curso or {}).get("temas_conocimientos", [])[:8],
+    sugerencia["conocimientos"] = _sanitize_content_items(_merge_unique(
+        ((curso or {}).get("temas_conocimientos") or [])[:8],
         sugerencia.get("conocimientos", []),
-    )[:8]
+    ), 8)
     catalog_skill_names = [s.get("nombre", "") for s in skills_suggest.get("skills", [])[:8]]
     if catalog_skill_names:
         # RN biblioteca: las habilidades sugeridas deben salir del catálogo maestro cuando hay match.
-        sugerencia["habilidades_sugeridas"] = _merge_unique(catalog_skill_names)[:8]
+        sugerencia["habilidades_sugeridas"] = _sanitize_content_items(_merge_unique(catalog_skill_names), 8)
     else:
-        sugerencia["habilidades_sugeridas"] = _merge_unique(
+        sugerencia["habilidades_sugeridas"] = _sanitize_content_items(_merge_unique(
             (curso or {}).get("habilidades_desempenos", [])[:8],
             sugerencia.get("habilidades_sugeridas", []),
-        )[:8]
+        ), 8)
     sugerencia.setdefault("actitudes", [])
     if len(sugerencia["actitudes"]) < 3:
-        sugerencia["actitudes"] = _merge_unique(
+        sugerencia["actitudes"] = _sanitize_content_items(_merge_unique(
             sugerencia["actitudes"],
             ["Responsabilidad académica", "Rigor en el trabajo colaborativo", "Apertura a la mejora continua"],
-        )[:4]
+        ), 4)
+    else:
+        sugerencia["actitudes"] = _sanitize_content_items(sugerencia["actitudes"], 4)
 
     await supabase.guardar_ai_suggestion(
         syllabus_id=syllabus_id,
@@ -771,6 +1349,7 @@ async def sugerir_contenido(
 async def sugerir_metodo_progresivo(
     syllabus_id: str,
     request: Request,
+    force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
     """IA rankea métodos basados en propósito + contenido del draft."""
@@ -838,7 +1417,10 @@ async def sugerir_metodo_progresivo(
 
     try:
         resultado = await gemini.sugerir_metodo(
-            curso=curso, metodos_base=metodos_base, skill_context=skill_context
+            curso=curso,
+            metodos_base=metodos_base,
+            skill_context=skill_context,
+            force_provider=_validate_force_provider(force_provider),
         )
         mid = resultado.get("method_id")
         metodo_encontrado = next((m for m in metodos_base if str(m["id"]) == str(mid)), metodos_base[0])
@@ -863,7 +1445,7 @@ async def sugerir_metodo_progresivo(
         }
     except Exception as exc:
         logger.warning("Error en sugerir_metodo progresivo: %s", exc)
-        sugerencia = fallback
+        raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
 
     await supabase.guardar_ai_suggestion(
         syllabus_id=syllabus_id,
@@ -880,57 +1462,43 @@ async def sugerir_metodo_progresivo(
 async def sugerir_calificacion(
     syllabus_id: str,
     request: Request,
+    force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
-    """IA sugiere tabla de calificación basada en el método seleccionado."""
+    """Sugiere nombres de evidencias por metodo sin alterar pesos ni cronograma."""
     sv = _sv(request)
     supabase = _require_db(sv)
     user_id = str(current_user["id"])
-    progressive_ai = get_progressive_ai_service()
 
     draft = await supabase.obtener_draft_progresivo(syllabus_id)
     if not draft:
         raise HTTPException(404, "Draft no encontrado")
 
     payload = draft.get("payload_json") or {}
-    course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
     method_block = payload.get("method", {})
     method_id = method_block.get("selected_method_id")
-
-    curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
-    performances = payload.get("purpose", {}).get("performances", [])
-
-    metodo_dict: dict = {}
+    method_name = _clean_text(method_block.get("selected_method_name"))
+    method_code = _clean_text(method_block.get("method_code") or method_block.get("selected_method_code"))
     if method_id:
-        metodo_raw = await supabase.obtener_teaching_method(str(method_id))
-        if metodo_raw:
-            # Check for pre-configured grading template
-            if metodo_raw.get("grading_template_json"):
-                template = metodo_raw["grading_template_json"]
-                return APIResponse(
-                    success=True,
-                    data={"rows": template, "origin": "method_template"},
-                    error=None,
-                )
-            metodo_dict = {"name": metodo_raw.get("name", ""), "id": str(method_id)}
+        method_raw = await supabase.obtener_teaching_method(str(method_id))
+        if method_raw:
+            method_name = _clean_text(method_raw.get("name")) or method_name
+            method_code = _clean_text(method_raw.get("code")) or method_code
 
-    if not metodo_dict:
-        metodo_dict = {"name": method_block.get("selected_method_name", ""), "id": str(method_id or "")}
-
-    try:
-        rows = await progressive_ai.sugerir_calificacion(metodo_dict, curso or {}, performances)
-    except Exception as exc:
-        logger.warning("Error en sugerir_calificacion: %s", exc)
-        rows = [
-            {"evidencia": "Tareas", "sigla": "TA", "porcentaje": 40, "cronograma": "Permanente"},
-            {"evidencia": "Producto Acreditable 1", "sigla": "PA1", "porcentaje": 30, "cronograma": "Semana 8"},
-            {"evidencia": "Producto Acreditable 2", "sigla": "PA2", "porcentaje": 30, "cronograma": "Semana 15"},
-        ]
+    rows = _canonical_grading_rows(method_name, method_code)
+    method_key = _resolve_evidence_method_key(method_name, method_code)
 
     await supabase.guardar_ai_suggestion(
         syllabus_id=syllabus_id,
         step_key="grading",
-        input_json={"method_id": str(method_id)},
+        input_json={
+            "method_id": str(method_id),
+            "method_name": method_name,
+            "method_code": method_code,
+            "method_key": method_key,
+            "rule": "evidence_names_only_keep_structure",
+            "products": METHOD_EVIDENCE_PRODUCTS[method_key],
+        },
         output_json={"rows": rows},
         user_id=user_id,
     )
@@ -942,6 +1510,7 @@ async def sugerir_calificacion(
 async def ensamblar_final(
     syllabus_id: str,
     request: Request,
+    force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
     """
@@ -950,6 +1519,7 @@ async def ensamblar_final(
     """
     sv = _sv(request)
     supabase = _require_db(sv)
+    force_provider = _validate_force_provider(force_provider)
     user_id = str(current_user["id"])
 
     draft = await supabase.obtener_draft_progresivo(syllabus_id)
@@ -969,7 +1539,7 @@ async def ensamblar_final(
     # Deterministic assembly
     performances = purpose.get("performances", [])
 
-    grading_rows = grading.get("rows", [])
+    grading_rows = _normalize_grading_rows(grading.get("rows", []))
     criterios = [
         {
             "nombre": r.get("evidencia", ""),
@@ -995,12 +1565,14 @@ async def ensamblar_final(
     ]
     method_id = method.get("selected_method_id")
     method_raw = await supabase.obtener_teaching_method(str(method_id)) if method_id else None
-    method_name = method.get("selected_method_name", "") or _clean_text((method_raw or {}).get("name"))
+    # Preferir DB (fresh) sobre payload (potencialmente stale por cambio de método)
+    method_name = _clean_text((method_raw or {}).get("name")) or method.get("selected_method_name", "")
     method_code = _clean_text((method_raw or {}).get("code"))
     method_short = _short_method_name(method_name, method_code)
     phases = _as_text_list((method_raw or {}).get("phases"))
     techniques = _as_text_list((method_raw or {}).get("tecnicas_didacticas"))
     phase_rules = (method_raw or {}).get("phase_rules_json") or {}
+    method_products = _as_text_list((method_raw or {}).get("productos_tipicos"))
     method_instruments = await supabase.listar_instrumentos_metodo(str(method_id)) if method_id else []
     instrument_names = [_clean_text(i.get("name")) for i in method_instruments if _clean_text(i.get("name"))]
 
@@ -1032,9 +1604,13 @@ async def ensamblar_final(
                 method_name=method_name,
                 course_name=curso.get("name", "") if curso else "",
                 sumilla=curso.get("sumilla", "") if curso else "",
+                force_provider=force_provider,
             )
+        except HTTPException:
+            raise
         except Exception as exc:
             logger.warning("sugerir_instrumentos_por_desempeno failed: %s", exc)
+            raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
 
     week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16)
 
@@ -1051,6 +1627,8 @@ async def ensamblar_final(
         phase_rules=phase_rules,
         week_dates=week_dates,
         desempenos_final=desempenos_final,
+        attitudes_pool=attitudes,
+        method_products=method_products,
     )
 
     method_warnings = _validate_method_alignment(cronograma_semanal, method_short, phases)
@@ -1072,7 +1650,8 @@ async def ensamblar_final(
     )
     bibliography_sources = _as_text_list(bibliography.get("sources_consulted", []))
     competencia = curso.get("competencia_egreso", "") if curso else ""
-    resultado = curso.get("resultado_aprendizaje", "") if curso else ""
+    resultado_raw = curso.get("resultado_aprendizaje", "") if curso else ""
+    resultado = _clean_text(resultado_raw) or _draft_ra_curso(curso or {}, desempenos_final, method_name)
     metodologia_text = _build_methodology_narrative(
         method_raw,
         course_name=curso.get("name", "") if curso else "",
@@ -1104,7 +1683,7 @@ async def ensamblar_final(
         "competencias": [competencia] if competencia else [],
         "competencia_egreso": curso.get("competencia_egreso", "") if curso else "",
         "resultados_aprendizaje": [resultado] if resultado else [],
-        "resultado_aprendizaje": curso.get("resultado_aprendizaje", "") if curso else "",
+        "resultado_aprendizaje": resultado,
         "capacidad_del_curso": curso.get("capacidad", "") if curso else "",
         "desempenos": desempenos_final,
         "performances_origin": purpose.get("performances_origin", "none"),
@@ -1121,6 +1700,20 @@ async def ensamblar_final(
             "Las tutorias academicas se realizan de manera presencial o virtual, "
             "segun la programacion institucional vigente."
         ),
+        "responsabilidad_social": {
+            "actividadPropuesta": "",
+            "descripcion": (
+                "Plantear una actividad para el desarrollo de un Proyecto de RSU "
+                "ligado al proceso formativo del curso"
+            ),
+        },
+        "responsabilidadSocial": {
+            "actividadPropuesta": "",
+            "descripcion": (
+                "Plantear una actividad para el desarrollo de un Proyecto de RSU "
+                "ligado al proceso formativo del curso"
+            ),
+        },
         "method_id": method_id,
         "method_short_name": method_short,
         "methodology_json": {
@@ -1146,7 +1739,8 @@ async def ensamblar_final(
         },
         "evaluacion_matriz": _build_evaluacion_matriz(
             desempenos_final, habilidades_por_desempeno, grading_rows, instrument_names,
-            skill_names, habilidades_sugeridas, ai_instruments_por_desempeno
+            skill_names, habilidades_sugeridas, ai_instruments_por_desempeno,
+            unidades_tematicas, cronograma_semanal
         ),
         "bibliografia": refs_a_bibliografia_json(bibliography_refs),
         "bibliography": bibliography_refs,

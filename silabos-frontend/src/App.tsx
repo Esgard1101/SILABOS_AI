@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -34,23 +34,21 @@ import Step4_Contenido from './pages/creator/Step4_Contenido';
 import Step5_Metodo from './pages/creator/Step5_Metodo';
 import Step6_Cierre from './pages/creator/Step6_Cierre';
 
-// Guard que exige contexto activo (programa seleccionado)
-// Solo redirige si no hay contexto — no toca el auth guard
 function ContextGuard({ children }: { children: React.ReactNode }) {
   const { isContextSet } = useAppContext();
   if (!isContextSet) return <Navigate to="/select-context" replace />;
   return <>{children}</>;
 }
 
+const MANAGEMENT_ROLES = ['admin', 'director', 'coordinador'];
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public standalone pages (own layout) */}
         <Route path="/" element={<Landing />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Main app flow — wrapped in MasterLayout (split-screen + right panel) */}
         <Route element={<MasterLayout />}>
           <Route path="/login" element={<Login />} />
           <Route
@@ -65,17 +63,84 @@ export default function App() {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <ContextGuard>
-                  <Dashboard />
-                </ContextGuard>
+                <Dashboard />
               </ProtectedRoute>
             }
           />
-          {/* Multi-route creator wizard */}
           <Route
-            path="/creator"
-            element={<Navigate to="/creator/repositorio" replace />}
+            path="/syllabi"
+            element={
+              <ProtectedRoute>
+                <SyllabusList />
+              </ProtectedRoute>
+            }
           />
+          <Route
+            path="/catalog"
+            element={
+              <ProtectedRoute>
+                <Catalog />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/review"
+            element={
+              <ProtectedRoute roles={MANAGEMENT_ROLES}>
+                <Review />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <Analytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <AdminUsers />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/sumillas"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <AdminSumillas />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/methods"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <AdminTeachingMethods />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/skills"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <AdminSkills />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/curriculum"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <AdminCurriculum />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/creator" element={<Navigate to="/creator/repositorio" replace />} />
           <Route
             element={
               <ProtectedRoute>
@@ -105,85 +170,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/syllabi"
-            element={
-              <ProtectedRoute>
-                <ContextGuard>
-                  <SyllabusList />
-                </ContextGuard>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/catalog"
-            element={
-              <ProtectedRoute>
-                <ContextGuard>
-                  <Catalog />
-                </ContextGuard>
-              </ProtectedRoute>
-            }
-          />
         </Route>
-
-        {/* Admin routes — keep AppShell (own full layout), inherit new CSS palette only */}
-        <Route
-          path="/analytics"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <Analytics />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/review"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <Review />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/users"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <AdminUsers />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/sumillas"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <AdminSumillas />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/methods"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <AdminTeachingMethods />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/skills"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <AdminSkills />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/curriculum"
-          element={
-            <ProtectedRoute roles={['admin']}>
-              <AdminCurriculum />
-            </ProtectedRoute>
-          }
-        />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

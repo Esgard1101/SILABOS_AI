@@ -4,11 +4,57 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from services.gemini_service import GeminiService
+from services.gemini_service import GeminiService, TASK_CONFIGS
+
+
+class FakeOpenRouterResponse:
+    def __init__(self, status_code: int, *, text: str = "", json_data=None):
+        self.status_code = status_code
+        self.text = text
+        self._json_data = json_data or {}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+            raise httpx.HTTPStatusError(
+                "OpenRouter error",
+                request=request,
+                response=self,
+            )
+
+    def json(self):
+        return self._json_data
+
+
+class FakeAsyncClient:
+    def __init__(self, responses, recorded_payloads):
+        self._responses = responses
+        self._recorded_payloads = recorded_payloads
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url, headers=None, json=None):
+        self._recorded_payloads.append(json)
+        return self._responses.pop(0)
+
+
+class FakeAsyncClientFactory:
+    def __init__(self, responses, recorded_payloads):
+        self._responses = responses
+        self._recorded_payloads = recorded_payloads
+
+    def __call__(self, *args, **kwargs):
+        return FakeAsyncClient(self._responses, self._recorded_payloads)
 
 
 class GeminiServiceRoutingTests(unittest.TestCase):
@@ -48,6 +94,24 @@ class GeminiServiceRoutingTests(unittest.TestCase):
         self.assertEqual(service.openrouter_audit_model, "legacy-model")
         self.assertEqual(service.openrouter_light_model, "legacy-model")
 
+    def test_openrouter_light_tasks_do_not_require_native_json_mode(self):
+        light_tasks = (
+            "search_query_build",
+            "search_result_filter",
+            "bibliography_format",
+            "method_suggest",
+            "progressive_purpose_suggest",
+            "progressive_content_suggest",
+            "progressive_grading_suggest",
+        )
+
+        for task_name in light_tasks:
+            with self.subTest(task=task_name):
+                self.assertFalse(TASK_CONFIGS[task_name].json_mode)
+
+    def test_openrouter_audit_keeps_native_json_mode(self):
+        self.assertTrue(TASK_CONFIGS["syllabus_validate"].json_mode)
+
 
 class GeminiServiceValidationTests(unittest.IsolatedAsyncioTestCase):
     @patch("services.gemini_service._get_client", return_value=Mock())
@@ -83,6 +147,86 @@ class GeminiServiceValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["score"], 0)
         self.assertFalse(result["aprobado"])
         self.assertEqual(result["observaciones"][0]["nivel"], "error")
+
+
+class GeminiServiceOpenRouterCompatibilityTests(unittest.IsolatedAsyncioTestCase):
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "OPENROUTER_API_KEY": "test-key",
+            "OPENROUTER_AUDIT_MODEL": "tencent/hy3-preview:free",
+        },
+        clear=False,
+    )
+    async def test_retries_without_native_json_mode_when_provider_rejects_response_format(
+        self,
+        _mock_client,
+    ):
+        service = GeminiService()
+        recorded_payloads = []
+        responses = [
+            FakeOpenRouterResponse(
+                400,
+                text='{"error":{"message":"Provider returned error","metadata":{"raw":"{\\"code\\":20024,\\"message\\":\\"Json mode is not supported for this model.\\"}"}}}',
+            ),
+            FakeOpenRouterResponse(
+                200,
+                json_data={
+                    "model": "tencent/hy3-preview:free",
+                    "choices": [{"message": {"content": '{"score": 91, "observaciones": [], "sugerencias": [], "aprobado": true}'}}],
+                    "usage": {"total_tokens": 123},
+                },
+            ),
+        ]
+
+        with patch(
+            "services.gemini_service.httpx.AsyncClient",
+            new=FakeAsyncClientFactory(responses, recorded_payloads),
+        ):
+            raw_text = await service.generate_text("syllabus_validate", "Valida este silabo")
+
+        self.assertIn('"score": 91', raw_text)
+        self.assertEqual(len(recorded_payloads), 2)
+        self.assertIn("response_format", recorded_payloads[0])
+        self.assertNotIn("response_format", recorded_payloads[1])
+        self.assertIn("tencent/hy3-preview:free", service.openrouter_no_native_json_models)
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "OPENROUTER_API_KEY": "test-key",
+            "OPENROUTER_AUDIT_MODEL": "tencent/hy3-preview:free",
+        },
+        clear=False,
+    )
+    async def test_skips_response_format_for_models_already_marked_incompatible(
+        self,
+        _mock_client,
+    ):
+        service = GeminiService()
+        service.openrouter_no_native_json_models.add("tencent/hy3-preview:free")
+        recorded_payloads = []
+        responses = [
+            FakeOpenRouterResponse(
+                200,
+                json_data={
+                    "model": "tencent/hy3-preview:free",
+                    "choices": [{"message": {"content": '{"score": 88, "observaciones": [], "sugerencias": [], "aprobado": true}'}}],
+                    "usage": {"total_tokens": 111},
+                },
+            ),
+        ]
+
+        with patch(
+            "services.gemini_service.httpx.AsyncClient",
+            new=FakeAsyncClientFactory(responses, recorded_payloads),
+        ):
+            await service.generate_text("syllabus_validate", "Valida este silabo")
+
+        self.assertEqual(len(recorded_payloads), 1)
+        self.assertNotIn("response_format", recorded_payloads[0])
 
 
 if __name__ == "__main__":

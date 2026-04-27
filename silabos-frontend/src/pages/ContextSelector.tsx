@@ -98,7 +98,7 @@ export default function ContextSelector() {
 
   useEffect(() => {
     if (isContextSet) {
-      navigate('/dashboard', { replace: true });
+      navigate('/creator', { replace: true });
     }
   }, [isContextSet, navigate]);
 

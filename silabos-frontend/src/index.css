@@ -241,3 +241,52 @@ samp,
   height: 100vh;
   overflow: hidden;
 }
+
+.dashboard-dark .app-panel,
+.dashboard-dark .app-metric {
+  border-color: rgba(212, 163, 81, 0.2);
+  background: rgba(10, 39, 83, 0.94);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
+}
+
+.dashboard-dark .app-kicker,
+.dashboard-dark .text-\[var\(--brand-600\)\] {
+  color: var(--master-gold);
+}
+
+.dashboard-dark .text-slate-950,
+.dashboard-dark .text-slate-900,
+.dashboard-dark .text-slate-700 {
+  color: #ffffff;
+}
+
+.dashboard-dark .text-\[var\(--text-soft\)\],
+.dashboard-dark .text-slate-500 {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.dashboard-dark .app-chip,
+.dashboard-dark .app-chip-muted {
+  border-color: rgba(212, 163, 81, 0.22);
+  color: #f6d28a;
+  background: rgba(212, 163, 81, 0.12);
+}
+
+.dashboard-dark .bg-\[var\(--brand-50\)\] {
+  background: rgba(212, 163, 81, 0.14);
+}
+
+.dashboard-dark .text-\[var\(--brand-700\)\] {
+  color: #f6d28a;
+}
+
+.dashboard-dark button.bg-white,
+.dashboard-dark .bg-white {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-dark button.bg-white:hover {
+  border-color: rgba(212, 163, 81, 0.42);
+  color: #f6d28a;
+}
