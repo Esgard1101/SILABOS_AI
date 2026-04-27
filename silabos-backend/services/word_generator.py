@@ -39,11 +39,18 @@ def _format_hours(theory: Any, practice: Any, fallback: str = "â€”") -> str
 
 
 def _sanitize_sentence_spacing(text: Any) -> str:
-    value = str(text or "")
-    value = re.sub(r"\s+", " ", value).strip()
-    value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])\.([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r". \1", value)
-    value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])([!?])([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r"\1 \2", value)
-    return value
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", raw) if part.strip()]
+    if not paragraphs:
+        paragraphs = [raw.strip()] if raw.strip() else []
+    cleaned: list[str] = []
+    for paragraph in paragraphs:
+        value = re.sub(r"\s+", " ", paragraph).strip()
+        value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])\.([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r". \1", value)
+        value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])([!?])([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r"\1 \2", value)
+        if value:
+            cleaned.append(value)
+    return "\n\n".join(cleaned)
 
 
 def _safe_filename(nombre_curso: str) -> str:
@@ -390,6 +397,15 @@ def _add_section_title(document, title: str) -> None:
     paragraph = document.add_paragraph()
     run = paragraph.add_run(title)
     run.bold = True
+
+
+def _add_paragraph_block(document, text: str) -> None:
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", str(text or "")) if part.strip()]
+    if not paragraphs:
+        document.add_paragraph("â€”")
+        return
+    for paragraph in paragraphs:
+        document.add_paragraph(paragraph)
 
 
 def _set_cell_text(cell, text: str, *, bold: bool = False) -> None:

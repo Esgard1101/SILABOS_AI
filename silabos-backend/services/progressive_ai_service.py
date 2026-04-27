@@ -6,7 +6,7 @@ from typing import Any
 
 from services.gemini_service import (
     DEFAULT_OPENROUTER_AUDIT_MODEL,
-    generate_content,
+    _get_router_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -14,33 +14,37 @@ logger = logging.getLogger(__name__)
 _service: "ProgressiveAIService | None" = None
 
 
-def _extract_json(text: str) -> str:
-    text = re.sub(r"```(?:json)?\s*", "", text or "")
-    text = re.sub(r"```", "", text)
-    text = text.strip()
-    starts = [(text.find("["), "["), (text.find("{"), "{")]
-    starts = [(idx, ch) for idx, ch in starts if idx != -1]
-    if starts:
-        first_idx, first_char = min(starts, key=lambda item: item[0])
-        end_char = "]" if first_char == "[" else "}"
-        end_idx = text.rfind(end_char)
-        if end_idx != -1 and end_idx > first_idx:
-            return text[first_idx : end_idx + 1]
-    return text
+def _join_context_items(items: list[Any], limit: int = 8) -> str:
+    lines: list[str] = []
+    for item in (items or [])[:limit]:
+        if isinstance(item, dict):
+            text = item.get("descripcion") or item.get("statement") or item.get("ra_unidad") or item.get("titulo") or ""
+        else:
+            text = str(item or "")
+        text = re.sub(r"\s+", " ", str(text).strip())
+        if text:
+            lines.append(f"- {text}")
+    return "\n".join(lines) or "- No especificado"
 
 
-def _parse_json_text(text: str) -> Any:
-    cleaned = _extract_json(text)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        decoder = json.JSONDecoder()
-        starts = [idx for idx in (cleaned.find("["), cleaned.find("{")) if idx != -1]
-        if not starts:
-            raise
-        start_idx = min(starts)
-        obj, _end = decoder.raw_decode(cleaned[start_idx:])
-        return obj
+def _normalize_prose_paragraphs(value: Any, expected: int) -> str:
+    text = re.sub(r"^\s*[-*]\s+", "", str(value or "").strip(), flags=re.MULTILINE)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"(?<=[a-z0-9])\.([A-ZÁÉÍÓÚÑ])", r". \1", text)
+    parts = [part.strip() for part in re.split(r"\n\s*\n", str(value or "").strip()) if part.strip()]
+    if len(parts) < expected:
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        if sentences:
+            chunk = max(1, len(sentences) // expected)
+            rebuilt: list[str] = []
+            cursor = 0
+            for idx in range(expected):
+                take = chunk if idx < expected - 1 else len(sentences) - cursor
+                rebuilt.append(" ".join(sentences[cursor : cursor + take]).strip())
+                cursor += take
+            parts = [p for p in rebuilt if p]
+    parts = parts[:expected]
+    return "\n\n".join(parts)
 
 
 class ProgressiveAIService:
@@ -62,11 +66,20 @@ class ProgressiveAIService:
         prompt: str,
         force_provider: str | None = None,
     ) -> Any:
-        raw_text = await generate_content(prompt, task=task, force_provider=force_provider)
+        service = _get_router_service()
         try:
-            return _parse_json_text(raw_text)
-        except json.JSONDecodeError:
-            logger.warning("No se pudo parsear JSON del step progresivo | raw=%r", raw_text[:800])
+            return await service.generate_json(
+                task,
+                prompt,
+                force_provider=force_provider,
+                max_retries=3,
+            )
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "Step progresivo agoto reintentos JSON | tarea=%s | error=%s",
+                task,
+                exc,
+            )
             raise
 
     async def sugerir_desempenos(
@@ -237,6 +250,118 @@ Formato:
             force_provider=force_provider,
         )
         return payload if isinstance(payload, list) else []
+
+    async def redactar_metodologia(
+        self,
+        *,
+        curso: dict,
+        metodo: str,
+        ra_curso: str,
+        ra_unidades: list[dict],
+        desempenos: list[dict],
+        contenidos: list[dict],
+        force_provider: str | None = None,
+    ) -> str:
+        prompt = f"""Asume el rol de especialista en didactica universitaria y diseno curricular por competencias.
+Vas a redactar exclusivamente el componente del silabo denominado: "Metodologia y actividades de investigacion formativa".
+
+Debes construir este componente de manera coherente con: la sumilla, la competencia oficial, el resultado de aprendizaje del curso, los resultados de las unidades, los desempenos, los contenidos y el metodo seleccionado ({metodo}).
+
+SUMILLA: {str(curso.get("sumilla", ""))[:900]}
+COMPETENCIA OFICIAL: {str(curso.get("competencia_egreso", ""))[:500]}
+RESULTADO DE APRENDIZAJE DEL CURSO: {ra_curso}
+RESULTADOS DE UNIDAD:
+{_join_context_items(ra_unidades, 4)}
+DESEMPENOS:
+{_join_context_items(desempenos, 6)}
+CONTENIDOS:
+{_join_context_items(contenidos, 10)}
+
+OBJETIVO:
+Redacta una explicacion academica, clara y bien articulada, desarrollando:
+1. Por que el metodo es pertinente para este curso.
+2. Como se concreta en el desarrollo del curso.
+3. El rol del docente.
+4. El rol del estudiante.
+5. Como se desarrollara la investigacion formativa.
+
+INSTRUCCIONES OBLIGATORIAS:
+- No redactes una definicion generica del metodo. Explica como operara en este curso.
+- Justifica la pertinencia del metodo en funcion del proposito del curso.
+- No uses vinetas ni numeracion. Redacta en prosa continua, organizada en parrafos.
+- La redaccion debe quedar lista para el silabo, estilo academico.
+
+ESTRUCTURA:
+Parrafo 1: Presenta el metodo y explica su pertinencia para el curso.
+Parrafo 2: Explica como se desarrollara concretamente y relacionalo con las actividades.
+Parrafo 3: Explica el rol del docente y del estudiante.
+Parrafo 4: Explica la investigacion formativa y cierra mostrando coherencia general.
+
+SALIDA ESPERADA:
+Devuelve la respuesta estrictamente en formato JSON valido, utilizando una unica clave llamada "metodologia_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 4 parrafos. NO uses vinetas."""
+
+        payload = await self._generate_json(
+            task="progressive_methodology_text",
+            prompt=prompt,
+            force_provider=force_provider,
+        )
+        if isinstance(payload, dict):
+            return _normalize_prose_paragraphs(payload.get("metodologia_texto", ""), 4)
+        return ""
+
+    async def redactar_tutoria(
+        self,
+        *,
+        curso: dict,
+        metodo: str,
+        ra_curso: str,
+        desempenos: list[dict],
+        contenidos: list[dict],
+        force_provider: str | None = None,
+    ) -> str:
+        prompt = f"""Asume el rol de especialista en tutoria universitaria y diseno curricular.
+Vas a redactar exclusivamente el componente: "Actividades de tutoria: area academica".
+
+Debes construir este componente de manera coherente con la sumilla, resultados de aprendizaje, desempenos, contenidos y el metodo del curso.
+
+SUMILLA: {str(curso.get("sumilla", ""))[:900]}
+RESULTADO DE APRENDIZAJE DEL CURSO: {ra_curso}
+METODO DEL CURSO: {metodo}
+DESEMPENOS:
+{_join_context_items(desempenos, 6)}
+CONTENIDOS:
+{_join_context_items(contenidos, 10)}
+
+OBJETIVO:
+Redacta un texto academico que explique la tutoria, desarrollando:
+1. El sentido de la tutoria en este curso.
+2. Acciones del docente.
+3. Que la tutoria se desarrollara segun las necesidades que vayan surgiendo.
+4. Tecnicas a utilizar.
+5. Relaciona la tutoria con dificultades reales del curso, como comprension, productos, oralidad, analisis, argumentacion o aplicacion.
+
+INSTRUCCIONES OBLIGATORIAS:
+- No la redactes como lista administrativa ni frase generica.
+- Explica explicitamente que sera flexible a necesidades emergentes.
+- Menciona tecnicas concretas, por ejemplo entrevistas, revision de avances y retroalimentacion focalizada.
+- No uses vinetas ni numeracion. Prosa continua.
+
+ESTRUCTURA:
+Parrafo 1: Finalidad de la tutoria academica dentro del curso.
+Parrafo 2: Acciones concretas de tutoria que realizara el docente.
+Parrafo 3: Tecnicas a emplear y declaracion explicita de que la tutoria se ajustara a las necesidades que surjan.
+
+SALIDA ESPERADA:
+Devuelve la respuesta estrictamente en formato JSON valido, utilizando una unica clave llamada "tutoria_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 3 parrafos. NO uses vinetas."""
+
+        payload = await self._generate_json(
+            task="progressive_tutoria_text",
+            prompt=prompt,
+            force_provider=force_provider,
+        )
+        if isinstance(payload, dict):
+            return _normalize_prose_paragraphs(payload.get("tutoria_texto", ""), 3)
+        return ""
 
 
 def get_progressive_ai_service() -> ProgressiveAIService:

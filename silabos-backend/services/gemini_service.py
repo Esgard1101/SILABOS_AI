@@ -138,6 +138,18 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         max_output_tokens=2048,
         json_mode=True,
     ),
+    "progressive_methodology_text": TaskConfig(
+        provider="gemini",
+        temperature=0.25,
+        max_output_tokens=2048,
+        json_mode=True,
+    ),
+    "progressive_tutoria_text": TaskConfig(
+        provider="gemini",
+        temperature=0.25,
+        max_output_tokens=1536,
+        json_mode=True,
+    ),
 }
 
 
@@ -175,16 +187,83 @@ def _normalize_text_from_message(content: Any) -> str:
     return str(content or "")
 
 
+_STIFFENED_JSON_SUFFIX = (
+    "\n\n[CRITICO: Tu respuesta anterior causo un JSONDecodeError. "
+    "DEBES responder EXCLUSIVAMENTE con el array/objeto JSON valido. "
+    "Cero markdown, cero comentarios, cero texto antes o despues. "
+    "Comienza directamente con '{' o '[' y termina con '}' o ']'.]"
+)
+
+
 def _extraer_json(texto: str) -> str:
+    """Bulletproof JSON extractor.
+
+    Strips code fences, picks the FIRST opening bracket ({ or [),
+    and walks balanced depth (string-aware) to find its matching close,
+    so trailing junk after valid JSON is dropped.
+    """
+    if not texto:
+        return ""
     texto = re.sub(r"```(?:json)?\s*", "", texto)
     texto = re.sub(r"```", "", texto)
     texto = texto.strip()
-    for inicio_char, fin_char in [("{", "}"), ("[", "]")]:
-        inicio = texto.find(inicio_char)
-        fin = texto.rfind(fin_char)
-        if inicio != -1 and fin != -1 and fin > inicio:
-            return texto[inicio : fin + 1]
-    return texto
+
+    candidates: list[tuple[int, str, str]] = []
+    idx_obj = texto.find("{")
+    if idx_obj != -1:
+        candidates.append((idx_obj, "{", "}"))
+    idx_arr = texto.find("[")
+    if idx_arr != -1:
+        candidates.append((idx_arr, "[", "]"))
+    if not candidates:
+        return texto
+
+    start, open_ch, close_ch = min(candidates, key=lambda item: item[0])
+
+    depth = 0
+    in_string = False
+    escape = False
+    end = -1
+    for i in range(start, len(texto)):
+        ch = texto[i]
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == open_ch:
+            depth += 1
+        elif ch == close_ch:
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end == -1:
+        return texto[start:]
+    return texto[start : end + 1]
+
+
+def _safe_json_loads(raw_text: str) -> Any:
+    """Parse JSON from messy LLM output. Tries balanced extractor first,
+    falls back to raw_decode (ignores trailing junk)."""
+    cleaned = _extraer_json(raw_text or "")
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        starts = [idx for idx in (cleaned.find("{"), cleaned.find("[")) if idx != -1]
+        if not starts:
+            raise
+        start_idx = min(starts)
+        obj, _end = decoder.raw_decode(cleaned[start_idx:])
+        return obj
 
 
 def _usage_to_loggable(usage: Any) -> Any:
@@ -649,9 +728,74 @@ class GeminiService:
         task_name: str,
         prompt: str,
         force_provider: str | None = None,
+        max_retries: int = 3,
     ) -> dict | list:
-        result = await self._run_task(task_name, prompt, force_provider=force_provider)
-        return json.loads(_extraer_json(result.text))
+        """Run an IA task and parse JSON output with bulletproof recovery.
+
+        On JSONDecodeError, retries up to ``max_retries`` total attempts with:
+          - stiffened prompt suffix (CRITICAL JSON-only directive)
+          - alternating provider (gemini <-> openrouter) starting attempt 2
+
+        Raises ``json.JSONDecodeError`` if all attempts fail.
+        """
+        config = _task_config(task_name)
+        default_provider = "gemini" if config.provider == "gemini" else "openrouter"
+        last_error: json.JSONDecodeError | None = None
+        last_raw: str = ""
+
+        for attempt in range(max_retries):
+            if attempt == 0:
+                provider_for_attempt = force_provider
+                attempt_prompt = prompt
+            else:
+                base_provider = (force_provider or default_provider).lower()
+                if attempt % 2 == 1:
+                    provider_for_attempt = "openrouter" if base_provider == "gemini" else "gemini"
+                else:
+                    provider_for_attempt = base_provider
+                attempt_prompt = prompt + _STIFFENED_JSON_SUFFIX
+
+            try:
+                result = await self._run_task(
+                    task_name,
+                    attempt_prompt,
+                    force_provider=provider_for_attempt,
+                )
+            except AIProviderError:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(
+                    "generate_json provider error en attempt %s/%s tarea=%s; reintentando",
+                    attempt + 1,
+                    max_retries,
+                    task_name,
+                )
+                continue
+
+            last_raw = result.text
+            try:
+                return _safe_json_loads(result.text)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                logger.warning(
+                    "JSONDecodeError attempt %s/%s tarea=%s proveedor=%s | error=%s | raw_head=%r",
+                    attempt + 1,
+                    max_retries,
+                    task_name,
+                    result.provider,
+                    exc,
+                    (result.text or "")[:300],
+                )
+                continue
+
+        logger.error(
+            "generate_json agoto reintentos | tarea=%s | ultimo_raw=%r",
+            task_name,
+            (last_raw or "")[:500],
+        )
+        if last_error is not None:
+            raise last_error
+        raise json.JSONDecodeError("IA no devolvio JSON parseable", last_raw or "", 0)
 
     async def generar_silabo(self, datos_curso: dict, contexto_curricular: str = "") -> dict:
         try:
@@ -687,7 +831,7 @@ class GeminiService:
         repair_prompt = _build_validation_repair_prompt(raw_response)
         try:
             repaired_text = await self.generate_text("syllabus_validate", repair_prompt)
-            payload = json.loads(_extraer_json(repaired_text))
+            payload = _safe_json_loads(repaired_text)
             normalized = _normalize_validation_payload(payload)
             validated = ValidacionData.model_validate(normalized)
             return validated.model_dump()
@@ -701,7 +845,7 @@ class GeminiService:
 
         try:
             raw_text = await self.generate_text("syllabus_validate", prompt)
-            payload = json.loads(_extraer_json(raw_text))
+            payload = _safe_json_loads(raw_text)
             normalized = _normalize_validation_payload(payload)
             validated = ValidacionData.model_validate(normalized)
             logger.info("Validacion completada. Score: %s", validated.score)

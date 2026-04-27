@@ -1,4 +1,4 @@
-# Router del Wizard Progresivo v3
+﻿# Router del Wizard Progresivo v3
 # Endpoints para draft progresivo, autosave por bloque y sugerencias IA
 #
 # POST   /api/syllabi/progressive                           — crear o recuperar draft
@@ -13,6 +13,7 @@
 # GET    /api/methods/{id}/evidences                        — evidencias compatibles
 # GET    /api/methods/{id}/instruments                      — instrumentos compatibles
 
+import json
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -587,7 +588,14 @@ def _build_deterministic_content_plan(
         units.append(
             {
                 "unit_number": unit_index + 1,
-                "ra_unidad": f"Resultado de aprendizaje de la unidad {unit_index + 1}",
+                "ra_unidad": _draft_ra_unidad(
+                    unit_index,
+                    topics[unit_index * 4],
+                    topics[unit_index * 4 : unit_index * 4 + 4],
+                    desempenos_final,
+                    "metodologia activa",
+                    [],
+                ),
                 "weeks": weeks,
             }
         )
@@ -696,18 +704,12 @@ def _draft_ra_unidad(
     method_short: str,
     phases: list[str],
 ) -> str:
-    """Genera RA por unidad determinísticamente desde título + desempeños + fase principal."""
-    if unit_index < len(desempenos):
-        desempeno_text = desempenos[unit_index].get("descripcion") or desempenos[unit_index].get("statement") or ""
-    else:
-        desempeno_text = ""
+    """Genera RA por unidad sin copiar literalmente el desempeno."""
     main_topics = ", ".join(knowledge_in_unit[:3]) if knowledge_in_unit else (unit_title or f"Unidad {unit_index + 1}")
     phase_focus = phases[0] if phases else "el desarrollo del curso"
-    if desempeno_text:
-        return desempeno_text
     return (
-        f"Aplica los aprendizajes de {main_topics} mediante {method_short or 'metodología activa'}, "
-        f"con énfasis en {phase_focus.lower()}, demostrando coherencia entre análisis y producción académica."
+        f"Integra los fundamentos de {main_topics} mediante {method_short or 'metodologia activa'}, "
+        f"con enfasis en {phase_focus.lower()}, para sustentar el desempeno esperado de la unidad."
     )
 
 
@@ -1132,10 +1134,16 @@ def _build_units_and_schedule(
 
             title = _clean_text((unit_knowledge or [f"Bloque {unit_index + 1}"])[0], f"Bloque {unit_index + 1}")
             performance_text = _perf_for(unit_index) or _clean_text(plan_unit.get("ra_unidad"), title)
-            ra_unidad_plan = _clean_text(plan_unit.get("ra_unidad")) or _draft_ra_unidad(
+            ra_unidad_plan = _clean_text(plan_unit.get("ra_unidad"))
+            if (
+                not ra_unidad_plan
+                or _normalize_match_text(ra_unidad_plan) == _normalize_match_text(performance_text)
+                or _normalize_match_text(ra_unidad_plan).startswith("resultado de aprendizaje de la unidad")
+            ):
+                ra_unidad_plan = _draft_ra_unidad(
                 unit_index, title, _merge_unique_texts(unit_knowledge),
                 desempenos_final, method_short, phases,
-            )
+                )
             units.append(
                 {
                     "numero": unit_index + 1,
@@ -1820,6 +1828,20 @@ async def ensamblar_final(
             )
         except HTTPException:
             raise
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "sugerir_instrumentos_por_desempeno: JSON invalido tras 3 reintentos: %s",
+                exc,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "AI_FORMAT_ERROR",
+                    "message": "Error de formato en IA tras 3 intentos. Reintente la operacion.",
+                    "retryable": True,
+                    "task": "suggest_instruments",
+                },
+            ) from exc
         except Exception as exc:
             logger.warning("sugerir_instrumentos_por_desempeno failed: %s", exc)
             raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
@@ -1877,6 +1899,40 @@ async def ensamblar_final(
         method_raw,
         course_name=curso.get("name", "") if curso else "",
     )
+    tutoria_text = (
+        "Las tutorias academicas se desarrollaran de manera flexible durante el curso, "
+        "atendiendo dificultades de comprension, elaboracion de productos y sustentacion de evidencias."
+    )
+    try:
+        progressive_ai = get_progressive_ai_service()
+        contexto_contenidos = [
+            {"titulo": row.get("tema") or ", ".join(_as_text_list(row.get("conocimientos", [])))}
+            for row in cronograma_semanal[:16]
+            if isinstance(row, dict)
+        ]
+        metodologia_ai = await progressive_ai.redactar_metodologia(
+            curso=curso or {},
+            metodo=method_name,
+            ra_curso=resultado,
+            ra_unidades=unidades_tematicas,
+            desempenos=desempenos_final,
+            contenidos=contexto_contenidos,
+            force_provider=force_provider,
+        )
+        tutoria_ai = await progressive_ai.redactar_tutoria(
+            curso=curso or {},
+            metodo=method_name,
+            ra_curso=resultado,
+            desempenos=desempenos_final,
+            contenidos=contexto_contenidos,
+            force_provider=force_provider,
+        )
+        if metodologia_ai:
+            metodologia_text = metodologia_ai
+        if tutoria_ai:
+            tutoria_text = tutoria_ai
+    except Exception as exc:
+        logger.warning("No se pudo redactar metodologia/tutoria con IA; usando fallback: %s", exc)
 
     final = {
         "_assembled": True,
@@ -1922,10 +1978,7 @@ async def ensamblar_final(
         "unidades_tematicas": unidades_tematicas,
         "cronograma_semanal": cronograma_semanal,
         "metodologia": metodologia_text,
-        "tutoria": (
-            "Las tutorias academicas se realizan de manera presencial o virtual, "
-            "segun la programacion institucional vigente."
-        ),
+        "tutoria": tutoria_text,
         "responsabilidad_social": {
             "actividadPropuesta": rsu_text,
             "descripcion": rsu_text,
@@ -2061,3 +2114,4 @@ async def listar_instrumentos_metodo(
     supabase = _require_db(_sv(request))
     items = await supabase.listar_instrumentos_metodo(method_id)
     return APIResponse(success=True, data={"items": items}, error=None)
+
