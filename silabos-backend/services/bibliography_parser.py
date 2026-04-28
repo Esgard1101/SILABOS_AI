@@ -482,9 +482,8 @@ def normalize_reference_metadata(
 
     title = _pick_first_text(reference.get("title"), fallback.get("title"))
     ref_text = _pick_first_text(reference.get("ref_text"), fallback.get("ref_text"), reference.get("apa_format"))
-    authors = normalize_authors(reference.get("authors"))
-    if not authors:
-        authors = normalize_authors(fallback.get("authors"))
+    fallback_authors = normalize_authors(fallback.get("authors"))
+    authors = fallback_authors or normalize_authors(reference.get("authors"))
 
     year = normalize_year(reference.get("year"))
     if year is None:

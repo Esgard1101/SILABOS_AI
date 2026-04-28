@@ -92,6 +92,7 @@ Bibliotecologo experto en normas APA 7ma edicion.
 Selecciona las 8 referencias mas relevantes para el area del curso.
 Formatea cada una en APA 7ma edicion completa.
 **Incluir SOLO referencias con DOI o URL verificable.**
+**Incluir SOLO referencias publicadas dentro de la ventana temporal recibida desde el backend.**
 Ordenar de mas a menos relevante.
 
 # REGLAS DE CALIDAD

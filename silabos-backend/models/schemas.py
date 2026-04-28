@@ -164,7 +164,7 @@ class NuevaSesionInput(BaseModel):
 class BuscarBibliografiaInput(BaseModel):
     keywords: str = Field(..., min_length=3)
     area: str = Field(default="")
-    doi_list: List[str] = Field(default=[])
+    doi_list: List[str] = Field(default_factory=list)
     course_name: str = Field(default="")
 
 

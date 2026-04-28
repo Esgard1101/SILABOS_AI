@@ -5,6 +5,7 @@
 
 import difflib
 import logging
+from datetime import date
 
 import httpx
 
@@ -12,18 +13,52 @@ logger = logging.getLogger(__name__)
 
 # Polite pool — email de contacto para headers User-Agent
 _CONTACT_EMAIL = "silabos-ai@unprg.edu.pe"
+_RECENT_YEARS_WINDOW = 5
+
+
+def _recent_publication_window(today: date | None = None) -> tuple[int, date]:
+    """Return the inclusive publication window for recent academic sources."""
+    today = today or date.today()
+    return today.year - _RECENT_YEARS_WINDOW + 1, today
+
+
+def _coerce_year(value) -> int | None:
+    try:
+        year = int(str(value or "").strip()[:4])
+    except (TypeError, ValueError):
+        return None
+    return year if 1000 <= year <= 9999 else None
+
+
+def _is_recent_reference(reference: dict, min_year: int, max_year: int) -> bool:
+    year = _coerce_year(reference.get("year"))
+    return year is not None and min_year <= year <= max_year
+
+
+def _filter_recent_references(references: list[dict], min_year: int, max_year: int) -> list[dict]:
+    recent = [ref for ref in references if _is_recent_reference(ref, min_year, max_year)]
+    dropped = len(references) - len(recent)
+    if dropped:
+        logger.info(
+            "Filtro bibliografico reciente: %s referencias descartadas fuera de %s-%s",
+            dropped,
+            min_year,
+            max_year,
+        )
+    return recent
 
 
 # ──────────────────────────────────────────────
 # Capa 1 — OpenAlex
 # ──────────────────────────────────────────────
 
-async def _search_openalex(keywords: str, area: str) -> list[dict]:
+async def _search_openalex(keywords: str, area: str, min_year: int, max_date: date) -> list[dict]:
     """Busca en OpenAlex (gratis, sin API key)."""
     try:
         query = f"{keywords} {area}".strip()
         params = {
             "search": query,
+            "filter": f"from_publication_date:{min_year}-01-01,to_publication_date:{max_date.isoformat()}",
             "sort": "cited_by_count:desc",
             "per-page": 5,
             "select": "id,title,authorships,publication_year,doi,primary_location",
@@ -143,7 +178,7 @@ async def _search_scielo(keywords: str) -> list[dict]:
 # Capa 3 — Crossref
 # ──────────────────────────────────────────────
 
-async def _search_crossref(keywords: str) -> list[dict]:
+async def _search_crossref(keywords: str, min_year: int, max_date: date) -> list[dict]:
     """Busca en Crossref (gratis, sin API key)."""
     try:
         headers = {"User-Agent": f"SilabosAI/2.0 (mailto:{_CONTACT_EMAIL})"}
@@ -155,6 +190,7 @@ async def _search_crossref(keywords: str) -> list[dict]:
                     "query.bibliographic": keywords,
                     "rows": 5,
                     "sort": "relevance",
+                    "filter": f"from-pub-date:{min_year}-01-01,until-pub-date:{max_date.isoformat()}",
                     "select": "title,author,published,DOI,URL,abstract",
                 },
                 headers=headers,
@@ -283,7 +319,7 @@ def _deduplicate(references: list[dict]) -> list[dict]:
 async def search_bibliography(
     keywords: str,
     area: str = "",
-    doi_list: list[str] = [],
+    doi_list: list[str] | None = None,
 ) -> list[dict]:
     """
     Búsqueda bibliográfica en cascada: OpenAlex → SciELO → Crossref.
@@ -291,21 +327,32 @@ async def search_bibliography(
     Devuelve lista deduplicada de hasta 15 referencias.
     """
     all_results: list[dict] = []
+    doi_list = doi_list or []
+    min_year, max_date = _recent_publication_window()
+    max_year = max_date.year
+
+    logger.info(
+        "Filtro temporal bibliografico activo: fuentes publicadas entre %s-01-01 y %s",
+        min_year,
+        max_date.isoformat(),
+    )
 
     # Capa 1
-    all_results.extend(await _search_openalex(keywords, area))
+    all_results.extend(await _search_openalex(keywords, area, min_year, max_date))
 
     # Capa 2
     all_results.extend(await _search_scielo(keywords))
 
     # Capa 3
-    all_results.extend(await _search_crossref(keywords))
+    all_results.extend(await _search_crossref(keywords, min_year, max_date))
 
     # Resolver DOIs manuales (máximo 3)
     for doi in doi_list[:3]:
         resolved = await resolve_doi(doi)
         if resolved:
             all_results.append(resolved)
+
+    all_results = _filter_recent_references(all_results, min_year, max_year)
 
     if not all_results:
         logger.warning(f"Ninguna fuente bibliográfica devolvió resultados para '{keywords}'")
