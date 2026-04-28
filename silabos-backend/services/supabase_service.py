@@ -38,6 +38,30 @@ def _normalize_database_url(database_url: str) -> str:
     return database_url
 
 
+def _flatten_text_items(value) -> list[str]:
+    """Extrae texto desde JSONB legacy string[] o desde objetos {codigo, items}."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text_value = value.strip()
+        return [text_value] if text_value else []
+    if isinstance(value, (int, float, bool)):
+        return [str(value)]
+    if isinstance(value, list):
+        flattened: list[str] = []
+        for item in value:
+            flattened.extend(_flatten_text_items(item))
+        return flattened
+    if isinstance(value, dict):
+        if isinstance(value.get("items"), list):
+            return _flatten_text_items(value.get("items"))
+        flattened: list[str] = []
+        for item in value.values():
+            flattened.extend(_flatten_text_items(item))
+        return flattened
+    return []
+
+
 class SupabaseService:
     """
     Servicio de base de datos con SQLAlchemy síncrono + psycopg2.
@@ -166,6 +190,14 @@ class SupabaseService:
                     """
                     CREATE INDEX IF NOT EXISTS idx_course_bibliography_refs_doc_id
                     ON course_bibliography_refs (doc_id)
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    ALTER TABLE IF EXISTS syllabus_units
+                    ADD COLUMN IF NOT EXISTS required_skills JSONB NOT NULL DEFAULT '[]'::jsonb
                     """
                 )
             )
@@ -2003,7 +2035,10 @@ class SupabaseService:
             fila = sesion.execute(
                 text("""
                     SELECT c.id, c.name, c.code, c.credits, c.cycle, c.is_common, c.scope,
-                           c.program_id, c.sumilla, c.competencia_egreso, c.resultado_aprendizaje, c.capacidad,
+                           c.program_id, c.sumilla,
+                           COALESCE(NULLIF(c.competencia, ''), c.competencia_egreso) AS competencia_egreso,
+                           c.competencia,
+                           c.resultado_aprendizaje, c.capacidad,
                            c.hours_theory, c.hours_practice, c.prerequisites, c.tipo_curso, c.naturaleza,
                            c.temas_conocimientos, c.habilidades_desempenos, c.actividades_metodo,
                            p.name AS program_name,
@@ -2863,14 +2898,33 @@ class SupabaseService:
         return item
 
     def _listar_performances_curso_sync(self, course_id: str, include_archived: bool = False) -> list:
-        where_arch = "" if include_archived else "AND (is_archived = false OR is_archived IS NULL)"
+        where_arch = "" if include_archived else "AND (p.is_archived = false OR p.is_archived IS NULL)"
         with self._Session() as sesion:
             filas = sesion.execute(
                 text(f"""
-                    SELECT id, course_id, code, statement, display_order, is_archived
-                    FROM performances
-                    WHERE course_id = :course_id {where_arch}
-                    ORDER BY display_order ASC
+                    SELECT
+                        p.id,
+                        p.course_id,
+                        p.code,
+                        p.statement,
+                        p.display_order,
+                        p.is_archived,
+                        COALESCE((
+                            SELECT jsonb_agg(item)
+                            FROM jsonb_array_elements(COALESCE(c.temas_conocimientos, '[]'::jsonb)) AS t,
+                                 jsonb_array_elements(COALESCE(t->'items', '[]'::jsonb)) AS item
+                            WHERE t->>'codigo' = p.code
+                        ), '[]'::jsonb) AS conocimientos,
+                        COALESCE((
+                            SELECT jsonb_agg(item)
+                            FROM jsonb_array_elements(COALESCE(c.habilidades_desempenos, '[]'::jsonb)) AS h,
+                                 jsonb_array_elements(COALESCE(h->'items', '[]'::jsonb)) AS item
+                            WHERE h->>'codigo' = p.code
+                        ), '[]'::jsonb) AS habilidades
+                    FROM performances p
+                    JOIN courses c ON c.id = p.course_id
+                    WHERE p.course_id = :course_id {where_arch}
+                    ORDER BY p.display_order ASC
                 """),
                 {"course_id": course_id},
             ).mappings().all()
@@ -2882,6 +2936,132 @@ class SupabaseService:
         except Exception as e:
             logger.error(f"Error al listar performances {course_id}: {e}")
             return []
+
+    def _prefill_syllabus_units_sync(
+        self,
+        syllabus_id: str,
+        course_id: str,
+        week_dates: list[str],
+    ) -> dict:
+        performances = self._listar_performances_curso_sync(course_id, include_archived=False)
+        if not performances:
+            return {"units": [], "contents": [], "warning": "Curso sin desempenos oficiales"}
+
+        total_weeks = 16
+        count = max(len(performances), 1)
+        base = total_weeks // count
+        extra = total_weeks % count
+        ranges = []
+        start = 1
+        for index in range(count):
+            end = start + base + (1 if index < extra else 0) - 1
+            ranges.append((start, end))
+            start = end + 1
+
+        units: list[dict] = []
+        contents: list[dict] = []
+
+        with self._Session() as sesion:
+            sesion.execute(
+                text("DELETE FROM syllabus_units WHERE syllabus_id = CAST(:sid AS UUID)"),
+                {"sid": syllabus_id},
+            )
+            for index, perf in enumerate(performances):
+                start_week, end_week = ranges[index]
+                skills = perf.get("habilidades") or []
+                knowledge = perf.get("conocimientos") or []
+                unit_id = str(uuid.uuid4())
+                title = f"Unidad {index + 1}: {str(perf.get('statement') or '')[:80]}"
+                sesion.execute(
+                    text("""
+                        INSERT INTO syllabus_units
+                            (id, syllabus_id, performance_id, unit_number, title, required_skills)
+                        VALUES
+                            (CAST(:id AS UUID), CAST(:sid AS UUID), CAST(:pid AS UUID),
+                             :unit_number, :title, CAST(:required_skills AS JSONB))
+                    """),
+                    {
+                        "id": unit_id,
+                        "sid": syllabus_id,
+                        "pid": perf.get("id"),
+                        "unit_number": index + 1,
+                        "title": title,
+                        "required_skills": json.dumps(skills, ensure_ascii=False),
+                    },
+                )
+                unit_payload = {
+                    "id": unit_id,
+                    "performance_id": perf.get("id"),
+                    "performance_code": perf.get("code"),
+                    "unit_number": index + 1,
+                    "title": title,
+                    "required_skills": skills,
+                    "weeks": f"{start_week}-{end_week}",
+                }
+                units.append(unit_payload)
+
+                week_count = end_week - start_week + 1
+                for offset, week in enumerate(range(start_week, end_week + 1)):
+                    selected = [
+                        str(item)
+                        for item_pos, item in enumerate(knowledge)
+                        if int(item_pos * week_count / max(len(knowledge), 1)) == offset
+                    ] if knowledge else []
+                    if not selected and knowledge:
+                        selected = [str(knowledge[min(offset, len(knowledge) - 1)])]
+                    if len(selected) > 2:
+                        selected = selected[:2]
+                    content_id = str(uuid.uuid4())
+                    date_range = week_dates[week - 1] if 0 <= week - 1 < len(week_dates) else "---"
+                    content = {
+                        "id": content_id,
+                        "unit_id": unit_id,
+                        "week": week,
+                        "date_range": date_range,
+                        "knowledge": selected,
+                        "activities": "Por definir",
+                        "learning_evidence": "Por definir",
+                    }
+                    sesion.execute(
+                        text("""
+                            INSERT INTO syllabus_contents
+                                (id, unit_id, week, date_range, knowledge, required_skills, activities, learning_evidence)
+                            VALUES
+                                (CAST(:id AS UUID), CAST(:unit_id AS UUID), :week, :date_range,
+                                 :knowledge, :required_skills, :activities, :learning_evidence)
+                        """),
+                        {
+                            "id": content_id,
+                            "unit_id": unit_id,
+                            "week": week,
+                            "date_range": date_range,
+                            "knowledge": "; ".join(selected) if selected else "Por definir",
+                            "required_skills": "",
+                            "activities": "Por definir",
+                            "learning_evidence": "Por definir",
+                        },
+                    )
+                    contents.append(content)
+            sesion.commit()
+
+        return {"units": units, "contents": contents}
+
+    async def prefill_syllabus_units(
+        self,
+        syllabus_id: str,
+        course_id: str,
+        week_dates: list[str],
+    ) -> dict:
+        try:
+            return await self._ejecutar(
+                self._prefill_syllabus_units_sync,
+                syllabus_id,
+                course_id,
+                week_dates,
+            )
+        except Exception as e:
+            logger.error(f"Error al precargar unidades oficiales {syllabus_id}: {e}")
+            return {}
 
     def _recalcular_performance_codes_sync(self, sesion, course_id: str) -> None:
         sesion.execute(
@@ -3246,11 +3426,13 @@ class SupabaseService:
                     {"course_id": course_id},
                 ).mappings().first()
             if course_row:
+                temas = _flatten_text_items(course_row.get("temas_conocimientos"))
+                habilidades = _flatten_text_items(course_row.get("habilidades_desempenos"))
                 course_terms = " ".join(
                     [
                         str(course_row.get("name") or ""),
-                        " ".join(course_row.get("temas_conocimientos") or []),
-                        " ".join(course_row.get("habilidades_desempenos") or []),
+                        " ".join(temas),
+                        " ".join(habilidades),
                     ]
                 )
                 tokens.extend([t for t in course_terms.lower().replace(",", " ").split() if len(t) >= 5][:10])

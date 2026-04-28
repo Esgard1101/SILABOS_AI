@@ -96,12 +96,24 @@ def _clean_text(value, fallback: str = "") -> str:
 
 
 def _as_text_list(values) -> list[str]:
-    if not isinstance(values, list):
+    if values is None:
         return []
+    if isinstance(values, str):
+        text = _clean_text(values)
+        return [text] if text else []
+    if not isinstance(values, list):
+        if isinstance(values, dict):
+            values = [values]
+        else:
+            text = _clean_text(values)
+            return [text] if text else []
 
     result: list[str] = []
     for value in values:
         if isinstance(value, dict):
+            if isinstance(value.get("items"), list):
+                result.extend(_as_text_list(value.get("items")))
+                continue
             text = _clean_text(
                 value.get("name")
                 or value.get("nombre")
@@ -130,6 +142,63 @@ def _merge_unique_texts(*groups) -> list[str]:
             merged.append(item)
 
     return merged
+
+
+def _build_responsabilidad_social_activity(
+    curso: dict | None,
+    performances: list | None = None,
+    conocimientos: list | None = None,
+    habilidades: list | None = None,
+) -> str:
+    course_name = _clean_text((curso or {}).get("name"), "el curso")
+    knowledge_items = _sanitize_content_items(_as_text_list(conocimientos), 4)
+    if not knowledge_items:
+        knowledge_items = _sanitize_content_items(_as_text_list((curso or {}).get("temas_conocimientos")), 4)
+    skill_items = _sanitize_content_items(_as_text_list(habilidades), 3)
+    if not skill_items:
+        skill_items = _sanitize_content_items(_as_text_list((curso or {}).get("habilidades_desempenos")), 3)
+    performance_items = [
+        _clean_text(item.get("statement") or item.get("descripcion"))
+        for item in (performances or [])
+        if isinstance(item, dict)
+    ]
+    performance_text = _sanitize_content_items(performance_items, 1)
+
+    topic_text = "; ".join(knowledge_items[:2]) or course_name
+    skill_text = "; ".join(skill_items[:2]) or "las habilidades previstas en el desempeño oficial"
+    purpose_text = performance_text[0] if performance_text else f"aplicar los aprendizajes de {course_name}"
+
+    return (
+        f"Como actividad de responsabilidad social, los estudiantes identificarán una necesidad concreta del entorno universitario o comunitario relacionada con {topic_text}, "
+        f"en coherencia con el propósito del curso {course_name}.\n"
+        f"Organizados en equipos, recogerán información breve del contexto y la interpretarán a partir del desempeño oficial: {purpose_text}.\n"
+        f"Con base en ese análisis, diseñarán una acción formativa, demostrativa o de orientación que ponga en práctica {skill_text} ante destinatarios reales.\n"
+        "La actividad se cerrará con una evidencia verificable, como informe breve, material educativo, registro de intervención o socialización de resultados, evitando acciones decorativas o aisladas."
+    )
+
+
+def _official_week_activity(topic: str, skills: list[str], week_offset: int) -> str:
+    topic_text = _clean_text(topic, "los contenidos de la semana")
+    skill_text = "; ".join(_sanitize_content_items(skills, 2))
+    suffix = f", poniendo en práctica {skill_text}" if skill_text else ""
+    patterns = [
+        f"Revisión guiada de {topic_text}, con diálogo de saberes y registro de ideas clave{suffix}.",
+        f"Análisis de situaciones o ejemplos vinculados con {topic_text}, orientado a reconocer criterios de aplicación{suffix}.",
+        f"Trabajo colaborativo para organizar, contrastar y explicar {topic_text} mediante un producto breve de aula{suffix}.",
+        f"Socialización de avances y retroalimentación docente sobre la comprensión y aplicación de {topic_text}{suffix}.",
+    ]
+    return patterns[week_offset % len(patterns)]
+
+
+def _official_week_evidence(topic: str, week_offset: int) -> str:
+    topic_text = _clean_text(topic, "los contenidos trabajados")
+    patterns = [
+        f"Ficha de análisis sobre {topic_text}.",
+        f"Organizador o ejercicio resuelto sobre {topic_text}.",
+        f"Producto breve de aplicación relacionado con {topic_text}.",
+        f"Registro de socialización y mejora de la evidencia sobre {topic_text}.",
+    ]
+    return patterns[week_offset % len(patterns)]
 
 
 def _build_evaluacion_matriz(
@@ -187,6 +256,7 @@ def _build_evaluacion_matriz(
                 "resultadoDeAprendizaje": f"RA{i + 1}",
                 "desempeno": desempeno_text,
                 "desempenos": desempeno_text,
+                "habilidades": unidad.get("habilidades_requeridas", []),
                 "evidencias": evidencias_text_unit,
                 "evidenciasDeAprendizaje": evidencias_text_unit,
                 "instrumentos": instruments_text,
@@ -508,10 +578,10 @@ def _content_plan_topics(plan_units: list[dict]) -> list[str]:
     return [topic for topic in topics if topic]
 
 
-def _content_plan_is_usable(plan_units: list[dict]) -> bool:
-    if len(plan_units or []) < 4:
+def _content_plan_is_usable(plan_units: list[dict], expected_units: int = 4) -> bool:
+    if len(plan_units or []) < expected_units:
         return False
-    topics = _content_plan_topics(plan_units[:4])
+    topics = _content_plan_topics(plan_units[:expected_units])
     if len(topics) < 16:
         return False
     normalized = {re.sub(r"[\W_]+", "", topic.lower()) for topic in topics}
@@ -560,18 +630,19 @@ def _build_deterministic_content_plan(
     skill_names: list[str],
     attitudes: list[str] | None,
     desempenos_final: list[dict],
+    unit_count: int = 4,
 ) -> dict:
     topics = _progressive_topic_sequence(knowledge_items, 16)
     skills = _sanitize_skill_items(skill_names, 12) or ["Analizar fundamentos del curso", "Aplicar procedimientos academicos"]
     attitudes_pool = _sanitize_content_items(attitudes or [], 8) or ["Responsabilidad academica", "Rigor en el trabajo colaborativo"]
     units = []
-    for unit_index in range(4):
+    ranges = _unit_week_ranges(unit_count, 16)
+    for unit_index, (start_week, end_week) in enumerate(ranges):
         weeks = []
         perf_code = f"D{unit_index + 1}"
         if unit_index < len(desempenos_final):
             perf_code = _clean_text(desempenos_final[unit_index].get("codigo"), perf_code)
-        for offset in range(4):
-            week = unit_index * 4 + offset + 1
+        for week in range(start_week, end_week + 1):
             weeks.append(
                 {
                     "week": week,
@@ -590,8 +661,8 @@ def _build_deterministic_content_plan(
                 "unit_number": unit_index + 1,
                 "ra_unidad": _draft_ra_unidad(
                     unit_index,
-                    topics[unit_index * 4],
-                    topics[unit_index * 4 : unit_index * 4 + 4],
+                    topics[start_week - 1],
+                    topics[start_week - 1 : end_week],
                     desempenos_final,
                     "metodologia activa",
                     [],
@@ -600,6 +671,129 @@ def _build_deterministic_content_plan(
             }
         )
     return {"units": units, "warnings": ["content_plan regenerado por baja diversidad tematica"]}
+
+
+def _unit_week_ranges(unit_count: int, total_weeks: int = 16) -> list[tuple[int, int]]:
+    """Reparte las 16 semanas segun la cantidad oficial de desempenos/unidades."""
+    count = max(1, int(unit_count or 1))
+    base = total_weeks // count
+    extra = total_weeks % count
+    ranges: list[tuple[int, int]] = []
+    start = 1
+    for index in range(count):
+        length = base + (1 if index < extra else 0)
+        end = start + length - 1
+        ranges.append((start, end))
+        start = end + 1
+    return ranges
+
+
+def _official_performance_payload(items: list[dict]) -> list[dict]:
+    payload = []
+    for index, item in enumerate(items or []):
+        payload.append(
+            {
+                "id": item.get("id"),
+                "code": item.get("code") or f"D{index + 1}",
+                "codigo": item.get("code") or f"D{index + 1}",
+                "label": f"D{index + 1}",
+                "statement": item.get("statement", ""),
+                "display_order": item.get("display_order") or index + 1,
+                "origin": "official",
+                "conocimientos": _as_text_list(item.get("conocimientos", [])),
+                "habilidades": _as_text_list(item.get("habilidades", [])),
+            }
+        )
+    return payload
+
+
+def _content_prefill_from_official_performances(
+    performances: list[dict],
+    week_dates: list[str] | None = None,
+) -> dict:
+    official = _official_performance_payload(performances)
+    ranges = _unit_week_ranges(len(official), 16)
+    units = []
+    schedule = []
+    all_knowledge = []
+    all_skills = []
+    habilidades_por_desempeno = []
+
+    for index, perf in enumerate(official):
+        start_week, end_week = ranges[index]
+        conocimientos = _as_text_list(perf.get("conocimientos", []))
+        habilidades = _as_text_list(perf.get("habilidades", []))
+        all_knowledge.extend(conocimientos)
+        all_skills.extend(habilidades)
+        habilidades_por_desempeno.append(
+            {
+                "desempeno_code": perf["code"],
+                "habilidades": habilidades,
+            }
+        )
+
+        week_count = end_week - start_week + 1
+        weeks = []
+        for offset, week in enumerate(range(start_week, end_week + 1)):
+            selected = [
+                item
+                for item_pos, item in enumerate(conocimientos)
+                if int(item_pos * week_count / max(len(conocimientos), 1)) == offset
+            ] if conocimientos else []
+            if not selected and conocimientos:
+                selected = [conocimientos[min(offset, len(conocimientos) - 1)]]
+            selected = selected[:2]
+            topic = "; ".join(selected) or (conocimientos[0] if conocimientos else perf["statement"])
+            date_range = week_dates[week - 1] if week_dates and 0 <= week - 1 < len(week_dates) else "---"
+            activity = _official_week_activity(topic, habilidades, offset)
+            evidence = _official_week_evidence(topic, offset)
+            weeks.append(
+                {
+                    "week": week,
+                    "unit_number": index + 1,
+                    "performance_code": perf["code"],
+                    "knowledge": selected,
+                    "skills": [{"skill_id": None, "name": skill} for skill in habilidades],
+                    "date_range": date_range,
+                }
+            )
+            schedule.append(
+                {
+                    "semana": week,
+                    "fecha": date_range,
+                    "desempeno": perf["statement"],
+                    "desempeno_code": perf["code"],
+                    "conocimientos": selected,
+                    "habilidades": habilidades,
+                    "actividad": activity,
+                    "evidencia": evidence,
+                    "producto": evidence,
+                }
+            )
+
+        units.append(
+            {
+                "unit_number": index + 1,
+                "numero": index + 1,
+                "titulo": conocimientos[0] if conocimientos else f"Unidad {index + 1}",
+                "semanas": f"{start_week}-{end_week}",
+                "performance_code": perf["code"],
+                "logro": perf["statement"],
+                "required_skills": habilidades,
+                "habilidades_requeridas": habilidades,
+                "weeks": weeks,
+            }
+        )
+
+    return {
+        "performances": official,
+        "knowledge_items": _merge_unique_texts(all_knowledge),
+        "habilidades_sugeridas": _merge_unique_texts(all_skills),
+        "habilidades_por_desempeno": habilidades_por_desempeno,
+        "content_plan": {"units": units, "warnings": []},
+        "unidades_tematicas": units,
+        "cronograma_semanal": schedule,
+    }
 
 
 def _split_into_weeks(items: list[str], total_weeks: int = 16, per_week: int = 2) -> list[list[str]]:
@@ -619,58 +813,6 @@ def _split_into_weeks(items: list[str], total_weeks: int = 16, per_week: int = 2
             if cand and cand not in weeks[w]:
                 weeks[w].append(cand)
     return weeks
-
-
-def _mix_attitudes_per_week(
-    user_pool: list[str],
-    total_weeks: int,
-    phase_for_week: list[str],
-) -> list[list[str]]:
-    """Combina actitudes del docente + defaults por fase con rotación.
-
-    Resultado: cada semana 1-2 actitudes; al menos una "fase-aware".
-    """
-    weeks: list[list[str]] = [[] for _ in range(total_weeks)]
-    user = [str(a).strip() for a in (user_pool or []) if str(a or "").strip()]
-    n_user = len(user)
-    for w in range(total_weeks):
-        phase_default = _default_attitudes_for_phase(phase_for_week[w] if w < len(phase_for_week) else "")
-        primary = phase_default[w % max(len(phase_default), 1)] if phase_default else ""
-        out: list[str] = []
-        if primary:
-            out.append(primary)
-        if n_user:
-            secondary = user[w % n_user]
-            if secondary and secondary not in out:
-                out.append(secondary)
-        weeks[w] = out or ["Responsabilidad académica"]
-    return weeks
-
-
-# Pool de actitudes default por keyword de fase (se mantiene tal cual)
-
-
-# Pool de actitudes default por keyword de fase (cuando docente no carga actitudes propias)
-_ATTITUDES_BY_PHASE_KEYWORD = (
-    (("explor", "identif", "idea", "presentaci", "comprens", "demostr", "context"),
-     ["Curiosidad intelectual", "Apertura a la indagación"]),
-    (("investig", "revisi", "planific", "definici", "selecci", "delimit", "matemat"),
-     ["Rigor académico", "Responsabilidad en el manejo de fuentes"]),
-    (("desarroll", "implement", "ejecut", "produccion", "ejercitaci", "investigaci", "matemati", "analisis", "discuss"),
-     ["Trabajo colaborativo", "Compromiso con el aprendizaje"]),
-    (("evaluac", "presentaci", "difus", "socializ", "verific", "consolid", "reflex", "cierre", "comunicaci"),
-     ["Honestidad intelectual", "Apertura a la mejora continua"]),
-)
-
-
-def _default_attitudes_for_phase(phase_label: str) -> list[str]:
-    if not phase_label:
-        return ["Responsabilidad académica"]
-    lowered = phase_label.lower()
-    for needles, actitudes in _ATTITUDES_BY_PHASE_KEYWORD:
-        if any(n in lowered for n in needles):
-            return actitudes
-    return ["Responsabilidad académica"]
 
 
 def _draft_ra_curso(curso: dict, desempenos: list[dict], method_name: str) -> str:
@@ -1081,13 +1223,13 @@ def _build_units_and_schedule(
     attitudes_pool: list[str] | None = None,
     method_products: list[str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    unit_count = 4
-    weeks_per_unit = 4
-    total_weeks = unit_count * weeks_per_unit
+    desempenos_final = desempenos_final or []
+    unit_count = max(len(desempenos_final), len(performances), 1)
+    total_weeks = 16
+    week_ranges = _unit_week_ranges(unit_count, total_weeks)
     evidences_by_week, permanent_evidences = _extract_week_targets(grading_rows)
     method_short = _short_method_name(method_name, method_code)
     dates = week_dates if week_dates and len(week_dates) >= total_weeks else ["---"] * total_weeks
-    desempenos_final = desempenos_final or []
 
     def _date_for(week: int) -> str:
         idx = week - 1
@@ -1108,29 +1250,27 @@ def _build_units_and_schedule(
     schedule: list[dict] = []
 
     plan_units = (content_plan or {}).get("units", []) if isinstance(content_plan, dict) else []
-    if not _content_plan_is_usable(plan_units):
+    if not _content_plan_is_usable(plan_units, unit_count):
         repaired_plan = _build_deterministic_content_plan(
             knowledge_items=knowledge_items,
             skill_names=skill_names,
             attitudes=attitudes_pool,
             desempenos_final=desempenos_final,
+            unit_count=unit_count,
         )
         plan_units = repaired_plan.get("units", [])
     if plan_units:
         for unit_index, plan_unit in enumerate(plan_units[:unit_count]):
             weeks = plan_unit.get("weeks", []) if isinstance(plan_unit, dict) else []
-            start_week = unit_index * weeks_per_unit + 1
-            end_week = start_week + weeks_per_unit - 1
+            start_week, end_week = week_ranges[unit_index]
             unit_knowledge: list[str] = []
             unit_skills: list[str] = []
-            unit_attitudes: list[str] = []
             for week_row in weeks:
                 unit_knowledge.extend(_as_text_list(week_row.get("knowledge", [])))
                 unit_skills.extend([
                     _normalize_skill_phrase(skill.get("name", "")) if isinstance(skill, dict) else _normalize_skill_phrase(skill)
                     for skill in week_row.get("skills", [])
                 ])
-                unit_attitudes.extend(_as_text_list(week_row.get("attitudes", [])))
 
             title = _clean_text((unit_knowledge or [f"Bloque {unit_index + 1}"])[0], f"Bloque {unit_index + 1}")
             performance_text = _perf_for(unit_index) or _clean_text(plan_unit.get("ra_unidad"), title)
@@ -1144,29 +1284,29 @@ def _build_units_and_schedule(
                 unit_index, title, _merge_unique_texts(unit_knowledge),
                 desempenos_final, method_short, phases,
                 )
+            week_count = end_week - start_week + 1
             units.append(
                 {
                     "numero": unit_index + 1,
                     "titulo": title,
                     "semanas": f"{start_week}-{end_week}",
-                    "temas": _merge_unique_texts(unit_knowledge)[:weeks_per_unit],
+                    "temas": _merge_unique_texts(unit_knowledge)[:week_count],
                     "logro": performance_text,
                     "ra_unidad": ra_unidad_plan,
-                    "habilidades_requeridas": ", ".join(_merge_unique_texts(unit_skills)[:3]) or "Desarrollo de habilidades del curso",
-                    "actitudes": _merge_unique_texts(unit_attitudes)[:3],
+                    "habilidades_requeridas": _merge_unique_texts(unit_skills)[:6] or ["Desarrollo de habilidades del curso"],
+                    "required_skills": _merge_unique_texts(unit_skills)[:6] or ["Desarrollo de habilidades del curso"],
                 }
             )
 
-            for offset in range(weeks_per_unit):
+            for offset in range(week_count):
                 week_row = weeks[offset] if offset < len(weeks) and isinstance(weeks[offset], dict) else {}
                 week = int(week_row.get("week") or (start_week + offset))
-                week_in_unit = (week - 1) % weeks_per_unit
+                week_in_unit = offset
                 knowledge = _as_text_list(week_row.get("knowledge", []))
                 skills = [
                     _normalize_skill_phrase(skill.get("name", "")) if isinstance(skill, dict) else _normalize_skill_phrase(skill)
                     for skill in week_row.get("skills", [])
                 ]
-                attitudes = _as_text_list(week_row.get("attitudes", []))
                 topic = "; ".join(knowledge) or title
 
                 phase_label, _ = _resolve_phase_for_week(unit_index, week_in_unit, phases, phase_rules)
@@ -1196,7 +1336,6 @@ def _build_units_and_schedule(
                         "tema": topic,
                         "conocimientos": knowledge,
                         "habilidades": skills,
-                        "actitudes": attitudes,
                         "actividad": activity,
                         "producto": product,
                         "evidencia": product,
@@ -1206,35 +1345,20 @@ def _build_units_and_schedule(
         return units, schedule
 
     # Fallback path: sin content_plan estructurado por semana
-    # Distribuir K/H/A por semana directamente para matchear matriz de EjemplosDeSilabos
+    # Distribuir conocimientos y habilidades por semana para la matriz oficial.
     knowledge_per_week = _split_into_weeks(knowledge_items, total_weeks=total_weeks, per_week=2)
     skills_per_week = _split_into_weeks(skill_names, total_weeks=total_weeks, per_week=3)
-
-    # Pre-computar fase por semana para alimentar mix de actitudes
-    phase_per_week_global: list[str] = []
-    for week_pre in range(1, total_weeks + 1):
-        u_pre = (week_pre - 1) // weeks_per_unit
-        wiu_pre = (week_pre - 1) % weeks_per_unit
-        ph_lbl, _ = _resolve_phase_for_week(u_pre, wiu_pre, phases, phase_rules)
-        phase_per_week_global.append(ph_lbl)
-
-    attitudes_per_week = _mix_attitudes_per_week(
-        attitudes_pool or [],
-        total_weeks=total_weeks,
-        phase_for_week=phase_per_week_global,
-    )
 
     knowledge_buckets = _distribute_items(knowledge_items, unit_count)
     skill_buckets = _distribute_items(skill_names, unit_count)
     products_list = method_products or []
 
-    for unit_index in range(unit_count):
-        start_week = unit_index * weeks_per_unit + 1
-        end_week = start_week + weeks_per_unit - 1
+    for unit_index, (start_week, end_week) in enumerate(week_ranges):
         seed_topics = knowledge_buckets[unit_index]
         fallback_title = f"Bloque {unit_index + 1}"
         title = _clean_text(seed_topics[0] if seed_topics else fallback_title, fallback_title)
-        topics = _expand_topics(seed_topics, weeks_per_unit, title)
+        week_count = end_week - start_week + 1
+        topics = _expand_topics(seed_topics, week_count, title)
 
         performance_text = _perf_for(unit_index)
         if not performance_text:
@@ -1255,7 +1379,8 @@ def _build_units_and_schedule(
                 "temas": topics,
                 "logro": performance_text,
                 "ra_unidad": ra_unidad,
-                "habilidades_requeridas": skills_text,
+                "habilidades_requeridas": unit_skills[:6] or [skills_text],
+                "required_skills": unit_skills[:6] or [skills_text],
             }
         )
 
@@ -1277,10 +1402,6 @@ def _build_units_and_schedule(
             if not week_skills:
                 week_skills = unit_skills[:2] if unit_skills else []
 
-            week_attitudes = attitudes_per_week[week_idx] if week_idx < len(attitudes_per_week) else []
-            if not week_attitudes:
-                week_attitudes = _default_attitudes_for_phase(phase_label)
-
             product = _evidence_for_week(
                 week=week,
                 phase_label=phase_label,
@@ -1301,7 +1422,6 @@ def _build_units_and_schedule(
                     "tema": topic,
                     "conocimientos": week_knowledge,
                     "habilidades": week_skills,
-                    "actitudes": week_attitudes,
                     "actividad": activity,
                     "producto": product,
                     "evidencia": product,
@@ -1384,6 +1504,128 @@ async def guardar_step_block(
     return APIResponse(success=True, data=resultado, error=None)
 
 
+@router.get("/syllabi/{syllabus_id}/course-data", response_model=APIResponse)
+async def obtener_course_data_wizard(
+    syllabus_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Devuelve curso + desempenos oficiales enriquecidos para precargar el wizard."""
+    supabase = _require_db(_sv(request))
+    draft = await supabase.obtener_draft_progresivo(syllabus_id, str(current_user["id"]))
+    if not draft:
+        raise HTTPException(404, "Draft no encontrado")
+
+    payload = draft.get("payload_json") or {}
+    course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
+    if not course_id:
+        raise HTTPException(400, "No se encontró course_id en el draft")
+
+    curso = await supabase.obtener_curso(str(course_id))
+    if not curso:
+        raise HTTPException(404, "Curso no encontrado")
+
+    performances = await supabase.listar_performances_curso(str(course_id), include_archived=False)
+    return APIResponse(
+        success=True,
+        data={
+            "course": curso,
+            "performances": _official_performance_payload(performances),
+        },
+        error=None,
+    )
+
+
+@router.get("/syllabi/{syllabus_id}/performances-summary", response_model=APIResponse)
+async def obtener_performances_summary(
+    syllabus_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Seccion V: lista D1, D2... con codigo y texto oficial."""
+    supabase = _require_db(_sv(request))
+    draft = await supabase.obtener_draft_progresivo(syllabus_id, str(current_user["id"]))
+    if not draft:
+        raise HTTPException(404, "Draft no encontrado")
+
+    payload = draft.get("payload_json") or {}
+    course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
+    if not course_id:
+        raise HTTPException(400, "No se encontró course_id en el draft")
+
+    performances = await supabase.listar_performances_curso(str(course_id), include_archived=False)
+    summary = [
+        {
+            "label": f"D{index + 1}",
+            "code": item.get("code") or f"D{index + 1}",
+            "statement": item.get("statement", ""),
+        }
+        for index, item in enumerate(performances)
+    ]
+    return APIResponse(success=True, data={"performances": summary}, error=None)
+
+
+@router.post("/syllabi/{syllabus_id}/units/prefill", response_model=APIResponse)
+async def prefill_units_from_official_data(
+    syllabus_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Precarga purpose/content y tablas normalizadas desde performances oficiales."""
+    supabase = _require_db(_sv(request))
+    user_id = str(current_user["id"])
+    draft = await supabase.obtener_draft_progresivo(syllabus_id, user_id)
+    if not draft:
+        raise HTTPException(404, "Draft no encontrado")
+
+    payload = draft.get("payload_json") or {}
+    course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
+    if not course_id:
+        raise HTTPException(400, "No se encontró course_id en el draft")
+
+    performances = await supabase.listar_performances_curso(str(course_id), include_archived=False)
+    if not performances:
+        return APIResponse(
+            success=True,
+            data={"units": [], "performances": [], "warning": "Curso sin desempenos oficiales"},
+            error=None,
+        )
+
+    fecha_inicio = _clean_text((payload.get("datos_generales") or {}).get("fecha_inicio"))
+    week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16, start_date=fecha_inicio)
+    prefill = _content_prefill_from_official_performances(performances, week_dates)
+    curso = await supabase.obtener_curso(str(course_id)) or {}
+
+    purpose_block = {
+        "performances": prefill["performances"],
+        "performances_origin": "official",
+        "competencia": curso.get("competencia_egreso", ""),
+        "capacidad": curso.get("capacidad", ""),
+    }
+    content_block = {
+        "knowledge_items": prefill["knowledge_items"],
+        "habilidades_sugeridas": prefill["habilidades_sugeridas"],
+        "habilidades_por_desempeno": prefill["habilidades_por_desempeno"],
+        "content_plan": prefill["content_plan"],
+        "content_mode": "official_prefill",
+    }
+
+    await supabase.guardar_step_block(syllabus_id, "purpose", purpose_block, user_id)
+    await supabase.guardar_step_block(syllabus_id, "content", content_block, user_id)
+    normalized = await supabase.prefill_syllabus_units(syllabus_id, str(course_id), week_dates)
+
+    return APIResponse(
+        success=True,
+        data={
+            "performances": prefill["performances"],
+            "unidades_tematicas": prefill["unidades_tematicas"],
+            "cronograma_semanal": prefill["cronograma_semanal"],
+            "normalized": normalized,
+        },
+        error=None,
+    )
+
+
 @router.post("/syllabi/{syllabus_id}/steps/purpose/suggest-performances", response_model=APIResponse)
 async def sugerir_desempenos(
     syllabus_id: str,
@@ -1409,6 +1651,22 @@ async def sugerir_desempenos(
     curso = await supabase.obtener_curso(str(course_id))
     if not curso:
         raise HTTPException(404, "Curso no encontrado")
+
+    official_performances = await supabase.listar_performances_curso(str(course_id), include_archived=False)
+    if official_performances:
+        performances = _official_performance_payload(official_performances)
+        await supabase.guardar_ai_suggestion(
+            syllabus_id=syllabus_id,
+            step_key="purpose",
+            input_json={"course_id": str(course_id), "source": "official"},
+            output_json={"performances": performances},
+            user_id=user_id,
+        )
+        return APIResponse(
+            success=True,
+            data={"performances": performances, "origin": "official"},
+            error=None,
+        )
 
     # Refs bibliográficas del draft para enriquecer el contexto
     refs = await supabase.obtener_referencias_curso(str(course_id))
@@ -1459,7 +1717,7 @@ async def sugerir_contenido(
     force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
-    """IA sugiere conocimientos, actitudes y habilidades desde los desempeños confirmados."""
+    """IA sugiere conocimientos y habilidades desde los desempenos confirmados."""
     sv = _sv(request)
     supabase = _require_db(sv)
     user_id = str(current_user["id"])
@@ -1473,6 +1731,48 @@ async def sugerir_contenido(
     course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
     purpose_block = payload.get("purpose", {})
     performances = purpose_block.get("performances", [])
+
+    official_with_content = [
+        p for p in performances
+        if isinstance(p, dict) and (p.get("conocimientos") or p.get("habilidades"))
+    ]
+    if official_with_content:
+        curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
+        fecha_inicio = _clean_text((payload.get("datos_generales") or {}).get("fecha_inicio"))
+        week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16, start_date=fecha_inicio)
+        prefill = _content_prefill_from_official_performances(official_with_content, week_dates)
+        try:
+            rsu_ai = await progressive_ai.sugerir_responsabilidad_social(
+                curso,
+                official_with_content,
+                prefill["knowledge_items"],
+                prefill["habilidades_sugeridas"],
+                force_provider=_validate_force_provider(force_provider),
+            )
+        except Exception as exc:
+            logger.warning("Error al sugerir RSU con IA: %s", exc)
+            rsu_ai = ""
+        sugerencia = {
+            "conocimientos": prefill["knowledge_items"],
+            "habilidades_sugeridas": prefill["habilidades_sugeridas"],
+            "habilidades_por_desempeno": prefill["habilidades_por_desempeno"],
+            "content_plan": prefill["content_plan"],
+            "responsabilidad_social": rsu_ai or _build_responsabilidad_social_activity(
+                curso,
+                official_with_content,
+                prefill["knowledge_items"],
+                prefill["habilidades_sugeridas"],
+            ),
+            "origin": "official",
+        }
+        await supabase.guardar_ai_suggestion(
+            syllabus_id=syllabus_id,
+            step_key="content",
+            input_json={"performances_count": len(performances), "source": "official"},
+            output_json=sugerencia,
+            user_id=user_id,
+        )
+        return APIResponse(success=True, data=sugerencia, error=None)
 
     curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
     refs = await supabase.obtener_referencias_curso(str(course_id)) if course_id else []
@@ -1508,7 +1808,7 @@ async def sugerir_contenido(
         return out
 
     sugerencia["conocimientos"] = _sanitize_content_items(_merge_unique(
-        ((curso or {}).get("temas_conocimientos") or [])[:8],
+        _as_text_list((curso or {}).get("temas_conocimientos"))[:8],
         sugerencia.get("conocimientos", []),
     ), 8)
     catalog_skill_names = [s.get("nombre", "") for s in skills_suggest.get("skills", [])[:8]]
@@ -1517,33 +1817,39 @@ async def sugerir_contenido(
         sugerencia["habilidades_sugeridas"] = _sanitize_skill_items(_merge_unique(catalog_skill_names), 8)
     else:
         sugerencia["habilidades_sugeridas"] = _sanitize_skill_items(_merge_unique(
-            (curso or {}).get("habilidades_desempenos", [])[:8],
+            _as_text_list((curso or {}).get("habilidades_desempenos"))[:8],
             sugerencia.get("habilidades_sugeridas", []),
         ), 8)
-    sugerencia.setdefault("actitudes", [])
-    if len(sugerencia["actitudes"]) < 3:
-        sugerencia["actitudes"] = _sanitize_content_items(_merge_unique(
-            sugerencia["actitudes"],
-            ["Responsabilidad académica", "Rigor en el trabajo colaborativo", "Apertura a la mejora continua"],
-        ), 4)
-    else:
-        sugerencia["actitudes"] = _sanitize_content_items(sugerencia["actitudes"], 4)
+    sugerencia.pop("actitudes", None)
     if not _clean_text(sugerencia.get("responsabilidad_social")):
-        temas_rsu = ", ".join(sugerencia.get("conocimientos", [])[:2]) or curso.get("name", "el curso")
-        sugerencia["responsabilidad_social"] = (
-            f"Desarrollar una actividad de transferencia comunitaria donde los estudiantes apliquen {temas_rsu} "
-            "para atender una necesidad concreta del entorno local."
+        try:
+            sugerencia["responsabilidad_social"] = await progressive_ai.sugerir_responsabilidad_social(
+                curso or {},
+                performances,
+                sugerencia.get("conocimientos", []),
+                sugerencia.get("habilidades_sugeridas", []),
+                force_provider=_validate_force_provider(force_provider),
+            )
+        except Exception as exc:
+            logger.warning("Error al sugerir RSU con IA: %s", exc)
+            sugerencia["responsabilidad_social"] = ""
+    if not _clean_text(sugerencia.get("responsabilidad_social")):
+        sugerencia["responsabilidad_social"] = _build_responsabilidad_social_activity(
+            curso or {},
+            performances,
+            sugerencia.get("conocimientos", []),
+            sugerencia.get("habilidades_sugeridas", []),
         )
     plan_units = (
         (sugerencia.get("content_plan") or {}).get("units", [])
         if isinstance(sugerencia.get("content_plan"), dict)
         else []
     )
-    if not _content_plan_is_usable(plan_units):
+    if not _content_plan_is_usable(plan_units, max(len(performances or []), 1)):
         sugerencia["content_plan"] = _build_deterministic_content_plan(
             knowledge_items=sugerencia.get("conocimientos", []),
             skill_names=sugerencia.get("habilidades_sugeridas", []),
-            attitudes=sugerencia.get("actitudes", []),
+            attitudes=None,
             desempenos_final=[
                 {
                     "codigo": p.get("code", f"D{i + 1}") if isinstance(p, dict) else f"D{i + 1}",
@@ -1551,6 +1857,7 @@ async def sugerir_contenido(
                 }
                 for i, p in enumerate(performances or [])
             ],
+            unit_count=max(len(performances or []), 1),
         )
 
     await supabase.guardar_ai_suggestion(
@@ -1775,6 +2082,18 @@ async def ensamblar_final(
     habilidades_por_desempeno = content.get("habilidades_por_desempeno", [])
     habilidades_sugeridas = content.get("habilidades_sugeridas", [])
     content_plan = content.get("content_plan", {})
+    official_content = [
+        p for p in performances
+        if isinstance(p, dict) and (p.get("conocimientos") or p.get("habilidades"))
+    ]
+    if official_content and (not knowledge_items or not habilidades_por_desempeno):
+        fecha_inicio_prefill = _clean_text((payload.get("datos_generales") or {}).get("fecha_inicio"))
+        week_dates_prefill = _compute_week_dates(draft.get("semester", ""), total_weeks=16, start_date=fecha_inicio_prefill)
+        official_prefill = _content_prefill_from_official_performances(official_content, week_dates_prefill)
+        knowledge_items = knowledge_items or official_prefill["knowledge_items"]
+        habilidades_sugeridas = habilidades_sugeridas or official_prefill["habilidades_sugeridas"]
+        habilidades_por_desempeno = habilidades_por_desempeno or official_prefill["habilidades_por_desempeno"]
+        content_plan = content_plan or official_prefill["content_plan"]
     datos_generales_payload = payload.get("datos_generales", {}) or {}
     selected_skill_ids = content.get("selected_skill_ids", [])
     skills_raw = await supabase.listar_skills_raw_por_ids(selected_skill_ids) if selected_skill_ids else []
@@ -1971,7 +2290,6 @@ async def ensamblar_final(
         "performances_origin": purpose.get("performances_origin", "none"),
         "contenido": {
             "conocimientos": knowledge_items,
-            "actitudes": attitudes,
             "habilidades_seleccionadas": selected_skill_ids,
             "habilidades_nombres": skill_names,
         },
@@ -2114,4 +2432,3 @@ async def listar_instrumentos_metodo(
     supabase = _require_db(_sv(request))
     items = await supabase.listar_instrumentos_metodo(method_id)
     return APIResponse(success=True, data={"items": items}, error=None)
-

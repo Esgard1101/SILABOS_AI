@@ -27,6 +27,29 @@ def _join_context_items(items: list[Any], limit: int = 8) -> str:
     return "\n".join(lines) or "- No especificado"
 
 
+def _flatten_text_items(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = re.sub(r"\s+", " ", value.strip())
+        return [text] if text else []
+    if isinstance(value, (int, float, bool)):
+        return [str(value)]
+    if isinstance(value, list):
+        flattened: list[str] = []
+        for item in value:
+            flattened.extend(_flatten_text_items(item))
+        return flattened
+    if isinstance(value, dict):
+        if isinstance(value.get("items"), list):
+            return _flatten_text_items(value.get("items"))
+        flattened: list[str] = []
+        for item in value.values():
+            flattened.extend(_flatten_text_items(item))
+        return flattened
+    return []
+
+
 def _normalize_prose_paragraphs(value: Any, expected: int) -> str:
     text = re.sub(r"^\s*[-*]\s+", "", str(value or "").strip(), flags=re.MULTILINE)
     text = re.sub(r"\s+", " ", text)
@@ -139,8 +162,8 @@ Formato:
         biblio_ctx = ""
         if bibliografia:
             biblio_ctx = "\nREFERENCIAS:\n" + "\n".join(f"- {r}" for r in bibliografia[:4])
-        temas_ctx = "\n".join(f"- {t}" for t in (curso.get("temas_conocimientos") or [])[:12])
-        habilidades_ctx = "\n".join(f"- {h}" for h in (curso.get("habilidades_desempenos") or [])[:12])
+        temas_ctx = "\n".join(f"- {t}" for t in _flatten_text_items(curso.get("temas_conocimientos"))[:12])
+        habilidades_ctx = "\n".join(f"- {h}" for h in _flatten_text_items(curso.get("habilidades_desempenos"))[:12])
         skills_ctx = "\n".join(
             f"- {s.get('id_habilidad') or s.get('id')}: {s.get('nombre')} | verbo={s.get('verbo_principal', '')} | nivel={s.get('nivel_cognitivo', '')}"
             for s in (skills_context or [])[:20]
@@ -151,6 +174,7 @@ Deriva contenido formativo y un plan semanal de 16 semanas para el curso.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:450]}
+CONTEXTO TERRITORIAL: Universidad Nacional Pedro Ruiz Gallo, ubicada en el departamento de Lambayeque, Peru.
 TEMAS OFICIALES:
 {temas_ctx or "- Sin enriquecimiento de temas"}
 HABILIDADES OFICIALES:
@@ -164,9 +188,8 @@ DESEMPENOS:
 Responde exactamente este JSON:
 {{
   "conocimientos": ["Tema 1", "Tema 2"],
-  "actitudes": ["Actitud 1", "Actitud 2"],
   "habilidades_sugeridas": ["Analizar objeto", "Aplicar procedimiento"],
-  "responsabilidad_social": "Una oracion con una actividad RSU vinculada al curso.",
+  "responsabilidad_social": "Actividad RSU en 4 a 5 lineas, vinculada al proposito del curso y a la aplicacion social del aprendizaje.",
   "content_plan": {{
     "units": [
       {{
@@ -178,8 +201,7 @@ Responde exactamente este JSON:
             "unit_number": 1,
             "performance_code": "D1",
             "knowledge": ["Tema unico y secuencial de la semana 1"],
-            "skills": [{{"skill_id": null, "name": "Analizar fundamentos del tema"}}],
-            "attitudes": ["Responsabilidad academica"]
+            "skills": [{{"skill_id": null, "name": "Analizar fundamentos del tema"}}]
           }}
         ]
       }}
@@ -190,10 +212,11 @@ Responde exactamente este JSON:
 REGLAS:
 - conocimientos: 8 a 12 temas especificos. Nunca empieces con verbo.
 - habilidades_sugeridas: 4 a 8 habilidades; todas deben iniciar con verbo en infinitivo terminado en -ar, -er o -ir.
-- content_plan: EXACTAMENTE 4 unidades con EXACTAMENTE 4 semanas cada una, semanas 1 a 16.
+- content_plan: una unidad por desempeno oficial. Distribuye exactamente 16 semanas entre las unidades.
+- No incluyas actitudes ni resultados de aprendizaje; la plantilla vigente no los usa en el programa de contenidos.
 - Cada semana debe tener un tema de knowledge unico, secuencial y de complejidad creciente. Prohibido repetir o fragmentar el mismo concepto.
 - Unidad 1 introductoria; unidades 2 y 3 de profundizacion; unidad 4 de aplicacion/integracion.
-- responsabilidad_social: exactamente 1 oracion con actividad RSU vinculada a los temas y a la comunidad.
+- responsabilidad_social: 4 a 5 lineas. Debe plantear una actividad concreta del mundo real vinculada al proposito del curso o a la aplicacion social del aprendizaje en el departamento de Lambayeque. No debe ser decorativa ni aislada: debe incluir contexto local, accion estudiantil, aplicacion de conocimientos/habilidades y evidencia verificable.
 - Responde SOLO JSON, sin texto adicional."""
 
         payload = await self._generate_json(
@@ -206,11 +229,64 @@ REGLAS:
             return payload
         return {
             "conocimientos": [],
-            "actitudes": [],
             "habilidades_sugeridas": [],
             "responsabilidad_social": "",
             "content_plan": {"units": []},
         }
+
+    async def sugerir_responsabilidad_social(
+        self,
+        curso: dict,
+        desempenos: list[dict],
+        conocimientos: list[str] | None = None,
+        habilidades: list[str] | None = None,
+        force_provider: str | None = None,
+    ) -> str:
+        desempenos_texto = "\n".join(
+            f"- [{d.get('code') or d.get('codigo') or f'D{i + 1}'}] {d.get('statement') or d.get('descripcion') or ''}"
+            for i, d in enumerate((desempenos or [])[:5])
+        )
+        conocimientos_ctx = "\n".join(f"- {item}" for item in (conocimientos or [])[:10])
+        habilidades_ctx = "\n".join(f"- {item}" for item in (habilidades or [])[:10])
+
+        prompt = f"""Eres especialista en diseno curricular universitario y responsabilidad social universitaria en Peru.
+Redacta una actividad de Responsabilidad Social Universitaria para un silabo de la Universidad Nacional Pedro Ruiz Gallo.
+
+CONTEXTO TERRITORIAL OBLIGATORIO:
+- La universidad se ubica en el departamento de Lambayeque, Peru.
+- La actividad debe aterrizarse a una necesidad realista del entorno universitario, comunitario, educativo, cultural, ambiental, ciudadano o productivo de Lambayeque.
+- No menciones lugares especificos si no son necesarios; no inventes instituciones aliadas.
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:550]}
+COMPETENCIA: {str(curso.get("competencia_egreso") or curso.get("competencia") or "")[:350]}
+CAPACIDAD: {str(curso.get("capacidad") or "")[:350]}
+
+DESEMPENOS OFICIALES:
+{desempenos_texto or "- No especificados"}
+
+CONOCIMIENTOS:
+{conocimientos_ctx or "- No especificados"}
+
+HABILIDADES:
+{habilidades_ctx or "- No especificadas"}
+
+REGLAS:
+- Escribe 4 a 5 lineas, en tono institucional y natural.
+- Propón una actividad concreta del mundo real, vinculada al proposito del curso o a la aplicacion social del aprendizaje.
+- Debe incluir: necesidad/contexto local en Lambayeque, accion de los estudiantes, aplicacion de conocimientos/habilidades y evidencia verificable.
+- No debe sonar decorativa, ceremonial ni aislada.
+- No uses bullets ni numeracion.
+- Responde SOLO JSON valido: {{"responsabilidad_social": "texto"}}"""
+
+        payload = await self._generate_json(
+            task="progressive_rsu_suggest",
+            prompt=prompt,
+            force_provider=force_provider,
+        )
+        if isinstance(payload, dict):
+            return str(payload.get("responsabilidad_social") or "").strip()
+        return ""
 
     async def sugerir_calificacion(
         self,

@@ -567,6 +567,8 @@ export interface PerformanceDB {
   statement: string;
   display_order?: number;
   is_archived?: boolean;
+  conocimientos?: string[];
+  habilidades?: string[];
 }
 
 // ── Admin — Method-Skill Links ─────────────────────────────────────────────
@@ -651,8 +653,13 @@ export type WorkflowState = Record<string, WorkflowBlockState>;
 
 export interface SuggestedPerformance {
   code: string;
+  codigo?: string;
+  label?: string;
   statement: string;
+  display_order?: number;
   origin: 'official' | 'ai_suggested' | 'teacher_edited_from_ai';
+  conocimientos?: string[];
+  habilidades?: string[];
 }
 
 export interface PurposeBlock {
@@ -772,21 +779,25 @@ export interface ContentPlanWeek {
   performance_code?: string;
   knowledge: string[];
   skills: ContentPlanSkill[];
-  attitudes: string[];
+  attitudes?: string[];
+  date_range?: string;
 }
 
 export interface ContentUnit {
   unit_number: number;
   ra_unidad?: string;
+  performance_code?: string;
+  required_skills?: string[];
   weeks: ContentPlanWeek[];
 }
 
 export interface ContentSuggestion {
   conocimientos: string[];
-  actitudes: string[];
+  actitudes?: string[];
   habilidades_sugeridas: string[];
   habilidades_por_desempeno: HabilidadPorDesempeno[];
   responsabilidad_social?: string;
+  origin?: 'official' | 'ai_suggested';
   content_plan?: {
     units?: ContentUnit[];
     warnings?: string[];

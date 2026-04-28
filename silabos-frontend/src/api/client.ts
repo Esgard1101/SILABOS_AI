@@ -772,6 +772,27 @@ export const api = {
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive`,
     ),
 
+  getWizardCourseData: (syllabusId: string) =>
+    request<APIResponse<{
+      course: import('./types').CourseDetail;
+      performances: import('./types').SuggestedPerformance[];
+    }>>(`/api/syllabi/${encodeURIComponent(syllabusId)}/course-data`),
+
+  getPerformancesSummary: (syllabusId: string) =>
+    request<APIResponse<{
+      performances: Array<{ label: string; code: string; statement: string }>;
+    }>>(`/api/syllabi/${encodeURIComponent(syllabusId)}/performances-summary`),
+
+  prefillSyllabusUnits: (syllabusId: string) =>
+    request<APIResponse<{
+      performances: import('./types').SuggestedPerformance[];
+      unidades_tematicas: unknown[];
+      cronograma_semanal: unknown[];
+      normalized?: unknown;
+    }>>(`/api/syllabi/${encodeURIComponent(syllabusId)}/units/prefill`, {
+      method: 'POST',
+    }),
+
   saveProgressiveStep: (syllabusId: string, stepKey: string, blockData: Record<string, unknown>) =>
     request<APIResponse>(`/api/syllabi/${encodeURIComponent(syllabusId)}/steps/${stepKey}`, {
       method: 'PATCH',

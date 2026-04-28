@@ -41,14 +41,13 @@ interface ContentRow {
   fecha: string;
   conocimientos: string;
   habilidades: string;
-  actitudes: string;
   actividades: string;
   evidencias: string;
 }
 
 interface EvaluationRow {
-  resultadoAprendizaje: string;
   desempenos: string;
+  habilidades: string;
   evidencias: string;
   instrumentos: string;
 }
@@ -232,10 +231,24 @@ function parseWeekNumbers(rawWeeks?: string): number[] {
 }
 
 function joinList(value: unknown, fallback: string = '—'): string {
+  const flatten = (raw: unknown): string[] => {
+    if (raw === null || raw === undefined) return [];
+    if (typeof raw === 'string' || typeof raw === 'number') {
+      const text = String(raw).trim();
+      return text ? [text] : [];
+    }
+    if (Array.isArray(raw)) return raw.flatMap(flatten);
+    if (typeof raw === 'object') {
+      const item = raw as Record<string, unknown>;
+      if (Array.isArray(item.items)) return flatten(item.items);
+      const text = item.name || item.nombre || item.descripcion || item.statement || item.label;
+      return text ? flatten(text) : [];
+    }
+    return [];
+  };
+
   if (Array.isArray(value)) {
-    const parts = value
-      .map((v) => (typeof v === 'string' ? v : String(v ?? '')).trim())
-      .filter(Boolean);
+    const parts = flatten(value);
     return parts.length ? parts.join(', ') : fallback;
   }
   if (typeof value === 'string') {
@@ -247,7 +260,7 @@ function joinList(value: unknown, fallback: string = '—'): string {
 function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSection[] {
   const units = syllabus.unidades_tematicas || [];
   const schedule = syllabus.cronograma_semanal || [];
-  const romanUnits = ['I', 'II', 'III', 'IV'];
+  const romanUnits = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
   if (units.length === 0) {
     return [
@@ -263,7 +276,6 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
             fecha: '—',
             conocimientos: '—',
             habilidades: '—',
-            actitudes: '—',
             actividades: '—',
             evidencias: '—',
           },
@@ -275,7 +287,10 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
   return units.map((unidad, index) => {
     const parsedWeeks = parseWeekNumbers(unidad.semanas);
     const matchingRows = schedule.filter((item) => parsedWeeks.includes(item.semana));
-    const habilidadesUnit = displayValue(unidad.habilidades_requeridas || unidad.logro || '—');
+    const habilidadesUnit = joinList(
+      (unidad as UnidadTematica & { required_skills?: unknown }).required_skills || unidad.habilidades_requeridas,
+      displayValue(unidad.logro || '—'),
+    );
 
     const rows: ContentRow[] = matchingRows.length
       ? matchingRows.map((item) => ({
@@ -283,8 +298,7 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
           semana: `Semana ${displayValue(item.semana)}`,
           fecha: displayValue(item.fecha || '—'),
           conocimientos: joinList(item.conocimientos, displayValue(item.tema)),
-          habilidades: joinList(item.habilidades, habilidadesUnit),
-          actitudes: joinList(item.actitudes),
+          habilidades: habilidadesUnit,
           actividades: displayValue(item.actividad),
           evidencias: displayValue(item.evidencia || item.producto),
         }))
@@ -295,7 +309,6 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
             fecha: '—',
             conocimientos: unidad.temas?.length ? unidad.temas.join(', ') : '—',
             habilidades: habilidadesUnit,
-            actitudes: '—',
             actividades: '—',
             evidencias: '—',
           },
@@ -314,22 +327,29 @@ function buildUnitSections(syllabus: SyllabusData, desempenos: string[]): UnitSe
 function buildEvaluationRows(unitSections: UnitSection[], matriz?: EvaluacionMatrizRow[]): EvaluationRow[] {
   if (matriz && matriz.length > 0) {
     return matriz.map((item, index) => ({
-      resultadoAprendizaje: item.resultado_aprendizaje || item.resultadoDeAprendizaje || `RA${index + 1}`,
       desempenos: item.desempenos || item.desempeno || '—',
+      habilidades: joinList((item as EvaluacionMatrizRow & { habilidades?: unknown }).habilidades, '—'),
       evidencias: item.evidenciasDeAprendizaje || item.evidencias || '—',
       instrumentos: item.instrumentos || '—',
     }));
   }
 
-  return unitSections.map((section, index) => ({
-    resultadoAprendizaje: `RA${index + 1}`,
-    desempenos: section.rows[0]?.desempeno || '—',
-    evidencias: section.rows
+  return unitSections.flatMap((section) => {
+    const skills = section.habilidades
+      .split(/\r?\n|,|;/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const evidencias = section.rows
       .map((row) => row.evidencias)
       .filter((evidencia) => evidencia !== '—')
-      .join('; ') || '—',
-    instrumentos: '—',
-  }));
+      .join('; ') || '—';
+    return (skills.length ? skills : ['—']).map((skill) => ({
+      desempenos: section.rows[0]?.desempeno || '—',
+      habilidades: skill,
+      evidencias,
+      instrumentos: '—',
+    }));
+  });
 }
 
 function buildGradingRows(criteria?: CriterioEvaluacion[]) {
@@ -405,10 +425,10 @@ const defaultTutoria = `Durante el desarrollo de la asignatura se brinda al estu
 const sidebarSections = [
   { id: 'info-general', label: 'I. Información General', icon: Info },
   { id: 'sumilla', label: 'II. Sumilla', icon: FileText },
-  { id: 'ra-curso', label: 'III. Resultado de Aprendizaje del Curso', icon: GraduationCap },
-  { id: 'ra-unidades', label: 'IV. RA de Unidades Didácticas', icon: ClipboardList },
+  { id: 'competencia', label: 'III. Competencia Profesional', icon: GraduationCap },
+  { id: 'capacidad', label: 'IV. Capacidad del Curso', icon: ClipboardList },
   { id: 'desempenos', label: 'V. Desempeños', icon: GitBranch },
-  { id: 'programa-contenidos', label: 'VI. Programación Académica', icon: ScrollText },
+  { id: 'programa-contenidos', label: 'VI. Programa de Contenidos', icon: ScrollText },
   { id: 'sistema-evaluacion', label: 'VII. Sistema de Evaluación', icon: BarChart },
   { id: 'sistema-calificacion', label: 'VIII. Sistema de Calificación', icon: Sigma },
   { id: 'metodologia', label: 'IX. Metodología', icon: FlaskConical },
@@ -686,6 +706,7 @@ export default function SyllabusEditor() {
         if (ui !== unitIdx) return unit;
         return {
           ...unit,
+          habilidades: field === 'habilidades' && rowIdx === 0 ? value : unit.habilidades,
           rows: unit.rows.map((row, ri) => (ri !== rowIdx ? row : { ...row, [field]: value })),
         };
       });
@@ -704,7 +725,6 @@ export default function SyllabusEditor() {
           tema: row.conocimientos,
           conocimientos: splitLines(row.conocimientos),
           habilidades: splitLines(row.habilidades),
-          actitudes: splitLines(row.actitudes),
           actividad: row.actividades,
           producto: row.evidencias,
           evidencia: row.evidencias,
@@ -1041,36 +1061,16 @@ export default function SyllabusEditor() {
             <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
           </section>
 
-          <section id="ra-curso" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">III. Resultado de Aprendizaje del Curso</h3>
-            <p className="text-sm leading-7 font-semibold">{displayValue(syllabus.resultado_aprendizaje || syllabus.resultados_aprendizaje?.[0])}</p>
-            {(competenciaProfesional && competenciaProfesional !== '—') && (
-              <p className="mt-3 text-xs italic text-slate-600">
-                <span className="font-semibold not-italic">Competencia profesional asociada:</span> {competenciaProfesional}
-              </p>
-            )}
-            {(capacidadDelCurso && capacidadDelCurso !== '—') && (
-              <p className="mt-1 text-xs italic text-slate-600">
-                <span className="font-semibold not-italic">Capacidad del curso:</span> {capacidadDelCurso}
-              </p>
-            )}
+          <section id="competencia" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">III. Competencia Profesional</h3>
+            <p className="text-sm leading-7">{competenciaProfesional}</p>
+            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
           </section>
 
-          <section id="ra-unidades" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">IV. Resultados de Aprendizaje de las Unidades Didácticas</h3>
-            <div className="space-y-2 text-sm">
-              {(syllabus.unidades_tematicas || []).map((unidad: UnidadTematica, index: number) => {
-                const ra = unidad.ra_unidad || unidad.logro || '—';
-                return (
-                  <p key={`ra-u-${index}`}>
-                    <span className="font-bold">RA{index + 1}:</span> {displayValue(ra)}
-                  </p>
-                );
-              })}
-              {(!syllabus.unidades_tematicas || syllabus.unidades_tematicas.length === 0) && (
-                <p className="italic text-slate-500">Sin unidades configuradas.</p>
-              )}
-            </div>
+          <section id="capacidad" className="mb-8 scroll-mt-24">
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">IV. Capacidad del Curso</h3>
+            <p className="text-sm leading-7">{capacidadDelCurso}</p>
+            <p className="mt-3 text-sm italic">(Tal y conforme está en el Plan de Estudios vigente)</p>
           </section>
 
           <section id="desempenos" className="mb-8 scroll-mt-24">
@@ -1083,61 +1083,62 @@ export default function SyllabusEditor() {
           </section>
 
           <section id="programa-contenidos" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VI. Programación Académica</h3>
+            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">VI. Programa de Contenidos</h3>
             <div className="space-y-6">
               {editableUnits.map((section, unitIdx) => (
                 <div key={section.id}>
                   <h4 className="font-bold text-sm mb-2">{section.title}</h4>
-                  <p className="mb-2 text-xs leading-5">
-                    <span className="font-semibold">Resultado de Aprendizaje:</span> {section.resultadoAprendizaje}
-                  </p>
                   <table className="w-full border border-slate-300 border-collapse text-[10.5px] table-fixed">
                     <colgroup>
-                      <col style={{ width: '15%' }} />
-                      <col style={{ width: '5%' }} />
-                      <col style={{ width: '7%' }} />
-                      <col style={{ width: '14%' }} />
-                      <col style={{ width: '13%' }} />
-                      <col style={{ width: '11%' }} />
+                      <col style={{ width: '17%' }} />
+                      <col style={{ width: '17%' }} />
+                      <col style={{ width: '10%' }} />
                       <col style={{ width: '20%' }} />
-                      <col style={{ width: '15%' }} />
+                      <col style={{ width: '20%' }} />
+                      <col style={{ width: '16%' }} />
                     </colgroup>
                     <thead>
                       <tr className="bg-slate-50">
                         <th className="border border-slate-300 p-1.5 text-left">Desempeños</th>
-                        <th className="border border-slate-300 p-1.5 text-left">Sem.</th>
-                        <th className="border border-slate-300 p-1.5 text-left">Fecha</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Habilidades requeridas</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Semana (Fecha)</th>
                         <th className="border border-slate-300 p-1.5 text-left">Conocimientos</th>
-                        <th className="border border-slate-300 p-1.5 text-left">Habilidades</th>
-                        <th className="border border-slate-300 p-1.5 text-left">Actitudes</th>
-                        <th className="border border-slate-300 p-1.5 text-left">Actividades de Aprendizaje</th>
-                        <th className="border border-slate-300 p-1.5 text-left">Evidencias</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Actividades</th>
+                        <th className="border border-slate-300 p-1.5 text-left">Evidencias de Aprendizaje</th>
                       </tr>
                     </thead>
                     <tbody>
                       {section.rows.map((row, rowIndex) => (
                         <tr key={`${section.id}-${rowIndex}`}>
+                          {rowIndex === 0 && (
+                            <td rowSpan={section.rows.length} className="border border-slate-300 p-1.5 align-top">
+                              <EditableField
+                                value={row.desempeno}
+                                onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'desempeno', v)}
+                                placeholder="Desempeño..."
+                                multiline
+                              />
+                            </td>
+                          )}
+                          {rowIndex === 0 && (
+                            <td rowSpan={section.rows.length} className="border border-slate-300 p-1.5 align-top whitespace-pre-line">
+                              <EditableField
+                                value={section.habilidades}
+                                onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'habilidades', v)}
+                                placeholder="Habilidades requeridas..."
+                                multiline
+                              />
+                            </td>
+                          )}
                           <td className="border border-slate-300 p-1.5 align-top">
                             <EditableField
-                              value={row.desempeno}
-                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'desempeno', v)}
-                              placeholder="Desempeño..."
-                              multiline
-                            />
-                          </td>
-                          <td className="border border-slate-300 p-1.5 align-top">
-                            <EditableField
-                              value={row.semana}
-                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'semana', v)}
-                              placeholder="Sem."
-                              multiline
-                            />
-                          </td>
-                          <td className="border border-slate-300 p-1.5 align-top">
-                            <EditableField
-                              value={row.fecha}
-                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'fecha', v)}
-                              placeholder="Fecha"
+                              value={`${row.semana}\n${row.fecha}`}
+                              onChange={(v) => {
+                                const [semana, ...fechaParts] = v.split(/\r?\n/);
+                                updateUnitCell(unitIdx, rowIndex, 'semana', semana || '—');
+                                updateUnitCell(unitIdx, rowIndex, 'fecha', fechaParts.join('\n') || '—');
+                              }}
+                              placeholder={'Sem. 1\ndd/mm al dd/mm'}
                               multiline
                             />
                           </td>
@@ -1146,22 +1147,6 @@ export default function SyllabusEditor() {
                               value={row.conocimientos}
                               onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'conocimientos', v)}
                               placeholder="Conocimientos..."
-                              multiline
-                            />
-                          </td>
-                          <td className="border border-slate-300 p-1.5 align-top whitespace-pre-line">
-                            <EditableField
-                              value={row.habilidades}
-                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'habilidades', v)}
-                              placeholder="Habilidades..."
-                              multiline
-                            />
-                          </td>
-                          <td className="border border-slate-300 p-1.5 align-top whitespace-pre-line">
-                            <EditableField
-                              value={row.actitudes}
-                              onChange={(v) => updateUnitCell(unitIdx, rowIndex, 'actitudes', v)}
-                              placeholder="Actitudes..."
                               multiline
                             />
                           </td>
@@ -1195,8 +1180,8 @@ export default function SyllabusEditor() {
             <table className="w-full border border-slate-300 border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="border border-slate-300 p-2 text-left">Resultado de Aprendizaje</th>
                   <th className="border border-slate-300 p-2 text-left">Desempeños</th>
+                  <th className="border border-slate-300 p-2 text-left">Habilidades requeridas</th>
                   <th className="border border-slate-300 p-2 text-left">Evidencias de Aprendizaje</th>
                   <th className="border border-slate-300 p-2 text-left">Instrumentos de Evaluación</th>
                 </tr>
@@ -1204,8 +1189,8 @@ export default function SyllabusEditor() {
               <tbody>
                 {evaluationRows.map((row, index) => (
                   <tr key={`evaluation-${index}`}>
-                    <td className="border border-slate-300 p-2">{row.resultadoAprendizaje}</td>
                     <td className="border border-slate-300 p-2">{row.desempenos}</td>
+                    <td className="border border-slate-300 p-2">{row.habilidades}</td>
                     <td className="border border-slate-300 p-2">{row.evidencias}</td>
                     <td className="border border-slate-300 p-2">{row.instrumentos}</td>
                   </tr>

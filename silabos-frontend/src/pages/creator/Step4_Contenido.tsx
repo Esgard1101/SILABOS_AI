@@ -16,7 +16,7 @@ import { api } from '../../api/client';
 import type { HabilidadPorDesempeno, SkillDB, SuggestedPerformance } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 
-type ContentKind = 'knowledge' | 'skills' | 'attitudes';
+type ContentKind = 'knowledge' | 'skills';
 
 interface ContentSkill {
   skill_id: string | null;
@@ -29,7 +29,6 @@ interface ContentWeek {
   performance_code: string;
   knowledge: string[];
   skills: ContentSkill[];
-  attitudes: string[];
 }
 
 interface ContentUnit {
@@ -41,20 +40,37 @@ interface ContentUnit {
 const ICONS: Record<ContentKind | 'relation', string> = {
   knowledge: '/ICONCONOCIMIENTOS.png',
   skills: '/ICONhabilidades.png',
-  attitudes: '/ICONactitudes.png',
   relation: '/ICONRELACIONCONPROPOSITO.png',
 };
 
 const CONTENT_LIMITS: Record<ContentKind, number> = {
   knowledge: 40,
   skills: 30,
-  attitudes: 15,
 };
 
-function cleanItems(items: Array<string | null | undefined>, limit = 8): string[] {
+function flattenTextItems(items: unknown[]): string[] {
+  const out: string[] = [];
+  for (const raw of items || []) {
+    if (Array.isArray(raw)) {
+      out.push(...flattenTextItems(raw));
+    } else if (raw && typeof raw === 'object') {
+      const item = raw as Record<string, unknown>;
+      if (Array.isArray(item.items)) out.push(...flattenTextItems(item.items));
+      else if (typeof item.name === 'string') out.push(item.name);
+      else if (typeof item.nombre === 'string') out.push(item.nombre);
+      else if (typeof item.descripcion === 'string') out.push(item.descripcion);
+      else if (typeof item.statement === 'string') out.push(item.statement);
+    } else if (typeof raw === 'string' || typeof raw === 'number') {
+      out.push(String(raw));
+    }
+  }
+  return out;
+}
+
+function cleanItems(items: unknown[], limit = 8): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of items) {
+  for (const raw of flattenTextItems(items)) {
     const item = String(raw || '').trim();
     const key = item.toLowerCase();
     if (!item || seen.has(key)) continue;
@@ -102,32 +118,43 @@ function progressiveKnowledgeForWeek(items: string[], absoluteWeek: number): str
   ];
 }
 
+function unitWeekRanges(unitCount: number, totalWeeks = 16): Array<[number, number]> {
+  const count = Math.max(1, unitCount || 1);
+  const base = Math.floor(totalWeeks / count);
+  const extra = totalWeeks % count;
+  const ranges: Array<[number, number]> = [];
+  let start = 1;
+  for (let index = 0; index < count; index += 1) {
+    const end = start + base + (index < extra ? 1 : 0) - 1;
+    ranges.push([start, end]);
+    start = end + 1;
+  }
+  return ranges;
+}
+
 function buildContentPlan({
   performances,
   conocimientos,
   habilidades,
   habilidadesPorDesempeno,
-  actitudes,
   skillIdByName,
-  unitOutcomes,
 }: {
   performances: SuggestedPerformance[];
   conocimientos: string[];
   habilidades: string[];
   habilidadesPorDesempeno: HabilidadPorDesempeno[];
-  actitudes: string[];
   skillIdByName: Map<string, string>;
-  unitOutcomes: string[];
 }): { units: ContentUnit[]; warnings: string[] } {
   const warnings: string[] = [];
   const perfFallback = performances.length
     ? performances
     : [{ code: 'D1', statement: 'Desempeño pendiente de validación', origin: 'ai_suggested' as const }];
 
-  const units: ContentUnit[] = Array.from({ length: 4 }, (_, unitIndex) => {
+  const ranges = unitWeekRanges(perfFallback.length);
+  const units: ContentUnit[] = ranges.map(([startWeek, endWeek], unitIndex) => {
     const unitNumber = unitIndex + 1;
-    const weeks: ContentWeek[] = Array.from({ length: 4 }, (_, weekIndex) => {
-      const absoluteWeek = unitIndex * 4 + weekIndex + 1;
+    const weeks: ContentWeek[] = Array.from({ length: endWeek - startWeek + 1 }, (_, weekIndex) => {
+      const absoluteWeek = startWeek + weekIndex;
       const perf = perfFallback[Math.min(unitIndex, perfFallback.length - 1)] || perfFallback[0];
       const performanceCode = perf.code || `D${unitNumber}`;
       const perfSkills = skillNamesByPerformance(habilidadesPorDesempeno, performanceCode);
@@ -137,13 +164,9 @@ function buildContentPlan({
         habilidades[(absoluteWeek - 1) % Math.max(habilidades.length, 1)],
         habilidades[(absoluteWeek) % Math.max(habilidades.length, 1)],
       ], 2);
-      const attitudesWeek = cleanItems([
-        actitudes[(absoluteWeek - 1) % Math.max(actitudes.length, 1)],
-      ], 2);
 
       if (!knowledge.length) warnings.push(`U${unitNumber}-S${weekIndex + 1}: falta conocimiento`);
       if (!skillText.length) warnings.push(`U${unitNumber}-S${weekIndex + 1}: falta habilidad`);
-      if (!attitudesWeek.length) warnings.push(`U${unitNumber}-S${weekIndex + 1}: falta actitud`);
 
       return {
         week: absoluteWeek,
@@ -151,13 +174,12 @@ function buildContentPlan({
         performance_code: performanceCode,
         knowledge,
         skills: skillText.map((name) => ({ skill_id: skillIdByName.get(name.toLowerCase()) || null, name })),
-        attitudes: attitudesWeek,
       };
     });
 
     return {
       unit_number: unitNumber,
-      ra_unidad: unitOutcomes[unitIndex] || `Resultado de aprendizaje de la unidad ${unitNumber}`,
+      ra_unidad: '',
       weeks,
     };
   });
@@ -439,8 +461,6 @@ export default function Step4_Contenido() {
     setSelectedSkillIds,
     conocimientos,
     setConocimientos,
-    actitudes,
-    setActitudes,
     contentNotes,
     setContentNotes,
     responsabilidadSocial,
@@ -465,11 +485,6 @@ export default function Step4_Contenido() {
     () => cleanItems([...officialSkills, ...habilidadesSugeridas], CONTENT_LIMITS.skills),
     [officialSkills, habilidadesSugeridas],
   );
-  const unitOutcomes = useMemo(() => {
-    const resultado = courseDetail?.resultado_aprendizaje || courseDetail?.competencia_egreso || '';
-    return draftPerformances.slice(0, 4).map((perf) => perf.statement || resultado).concat(resultado ? [resultado] : []);
-  }, [courseDetail?.competencia_egreso, courseDetail?.resultado_aprendizaje, draftPerformances]);
-
   const contentPlan = useMemo(
     () =>
       buildContentPlan({
@@ -477,16 +492,13 @@ export default function Step4_Contenido() {
         conocimientos: enrichedKnowledge,
         habilidades: enrichedSkills,
         habilidadesPorDesempeno,
-        actitudes,
         skillIdByName,
-        unitOutcomes,
       }),
-    [actitudes, draftPerformances, enrichedKnowledge, enrichedSkills, habilidadesPorDesempeno, skillIdByName, unitOutcomes],
+    [draftPerformances, enrichedKnowledge, enrichedSkills, habilidadesPorDesempeno, skillIdByName],
   );
 
-  const hasContent = enrichedKnowledge.length > 0 && enrichedSkills.length > 0 && actitudes.length > 0;
+  const hasContent = enrichedKnowledge.length > 0 && enrichedSkills.length > 0;
   const balanceOk = contentPlan.warnings.length === 0;
-
   useEffect(() => {
     let ignore = false;
     const load = async () => {
@@ -531,10 +543,9 @@ export default function Step4_Contenido() {
       const d = res.data;
       if (d) {
         if (d.conocimientos?.length) setConocimientos((prev) => cleanItems([...prev, ...d.conocimientos], CONTENT_LIMITS.knowledge));
-        if (d.actitudes?.length) setActitudes((prev) => cleanItems([...prev, ...d.actitudes], CONTENT_LIMITS.attitudes));
         if (d.habilidades_sugeridas?.length) setHabilidadesSugeridas((prev) => cleanItems([...prev, ...d.habilidades_sugeridas], CONTENT_LIMITS.skills));
         if (d.habilidades_por_desempeno?.length) setHabilidadesPorDesempeno(d.habilidades_por_desempeno);
-        if (d.responsabilidad_social) setResponsabilidadSocial(d.responsabilidad_social);
+        if (d.responsabilidad_social?.trim()) setResponsabilidadSocial(d.responsabilidad_social.trim());
         setContentMode('proposal');
         showToast('Propuesta de contenido generada', 'success');
       }
@@ -569,8 +580,7 @@ export default function Step4_Contenido() {
         habilidades_por_desempeno: habilidadesPorDesempeno,
         selected_skill_ids: selectedSkillIds,
         knowledge_items: enrichedKnowledge,
-        attitudes: actitudes,
-        responsabilidad_social: responsabilidadSocial,
+        responsabilidad_social: responsabilidadSocial.trim(),
         content_plan: { units: contentPlan.units, warnings: contentPlan.warnings },
         content_mode: 'confirmed',
         teacher_notes: contentNotes,
@@ -598,7 +608,7 @@ export default function Step4_Contenido() {
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4A351]">CONTENIDO DERIVADO</p>
           <h1 className="font-playfair text-[1.8rem] font-bold leading-none text-white">Propuesta de contenido formativo</h1>
           <p className="mt-2 max-w-3xl text-[11px] leading-4 text-white/62">
-            Conocimientos, habilidades y actitudes derivadas del propósito validado, fuentes y desempeños confirmados.
+            Conocimientos y habilidades derivadas del propósito validado, fuentes y desempeños oficiales.
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -611,7 +621,7 @@ export default function Step4_Contenido() {
               <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[#69D27D]" />
               <div>
                 <p className="text-[12px] font-bold text-white">Propósito validado</p>
-                <p className="mt-1 text-[10px] leading-4 text-white/58">{draftPerformances.length} desempeños confirmados o sugeridos.</p>
+                <p className="mt-1 text-[10px] leading-4 text-white/58">{draftPerformances.length} desempeños oficiales confirmados.</p>
               </div>
             </div>
           </button>
@@ -632,7 +642,7 @@ export default function Step4_Contenido() {
         <div className="flex items-center gap-2">
           {modeBadge && <span className={`rounded-full px-2.5 py-0.5 text-[9px] font-bold ${modeBadge.cls}`}>{modeBadge.label}</span>}
           <span className={`rounded-full px-2.5 py-0.5 text-[9px] font-bold ${balanceOk ? 'bg-[#69D27D]/12 text-[#8BE2A5]' : 'bg-[#D4A351]/12 text-[#F2C260]'}`}>
-            {balanceOk ? 'K/H/A balanceado' : `${contentPlan.warnings.length} alertas K/H/A`}
+            {balanceOk ? 'K/H balanceado' : `${contentPlan.warnings.length} alertas K/H`}
           </span>
         </div>
         <button
@@ -646,7 +656,7 @@ export default function Step4_Contenido() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         <ContentCard
           kind="knowledge"
           title="Conocimientos"
@@ -679,21 +689,6 @@ export default function Step4_Contenido() {
             markEditing();
           }}
         />
-        <ContentCard
-          kind="attitudes"
-          title="Actitudes"
-          subtitle="¿Qué disposiciones debe demostrar?"
-          accent="text-[#9DB7D5]"
-          items={actitudes}
-          onAdd={(value) => {
-            setActitudes((prev) => cleanItems([...prev, value], CONTENT_LIMITS.attitudes));
-            markEditing();
-          }}
-          onRemove={(value) => {
-            setActitudes((prev) => prev.filter((item) => item.trim().toLowerCase() !== value.trim().toLowerCase()));
-            markEditing();
-          }}
-        />
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_330px]">
@@ -710,13 +705,13 @@ export default function Step4_Contenido() {
             <div>
               <h3 className="text-[13px] font-bold text-white">Relación con el propósito</h3>
               <p className="mt-1 text-[10px] leading-4 text-white/58">
-                Cada semana guarda K/H/A separados para alimentar la matriz final por desempeño, semana y evidencia.
+                Cada semana guarda conocimientos y habilidades para alimentar la matriz final por desempeño, semana y evidencia.
               </p>
             </div>
           </div>
           <div className="mt-3 rounded-lg border border-white/10 bg-[#041A3A] p-3">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Vista semanal lista</p>
-            <p className="mt-1 text-[11px] text-white/65">4 unidades × 4 semanas × K/H/A</p>
+            <p className="mt-1 text-[11px] text-white/65">{contentPlan.units.length} unidades × 16 semanas × K/H</p>
             <p className="mt-1 text-[10px] text-white/40">Se guarda como <span className="font-mono">content_plan.units[].weeks[]</span>.</p>
           </div>
         </section>
@@ -726,10 +721,13 @@ export default function Step4_Contenido() {
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Responsabilidad Social Universitaria</label>
         <textarea
           className="mb-3 w-full resize-none rounded-xl border border-white/10 bg-[#0A2753] px-3 py-2 text-[11px] text-white outline-none focus:border-[#D4A351]/40"
-          rows={2}
-          placeholder="Actividad RSU vinculada a los temas del curso..."
+          rows={5}
+          placeholder="Actividad RSU concreta, vinculada al propósito del curso y a la aplicación social del aprendizaje..."
           value={responsabilidadSocial}
-          onChange={(event) => setResponsabilidadSocial(event.target.value)}
+          onChange={(event) => {
+            setResponsabilidadSocial(event.target.value);
+            markEditing();
+          }}
         />
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Observaciones del docente</label>
         <textarea

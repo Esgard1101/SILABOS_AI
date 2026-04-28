@@ -1045,8 +1045,7 @@ Genera exactamente este JSON (sin markdown ni texto adicional):
     {{"desempeno_code": "D1", "habilidades": ["Habilidad específica 1a", "Habilidad específica 1b"]}},
     {{"desempeno_code": "D2", "habilidades": ["Habilidad específica 2a"]}}
   ],
-  "conocimientos": ["Conocimiento 1", "Conocimiento 2", "Conocimiento 3", "Conocimiento 4"],
-  "actitudes": ["Actitud 1", "Actitud 2", "Actitud 3"]
+  "conocimientos": ["Conocimiento 1", "Conocimiento 2", "Conocimiento 3", "Conocimiento 4"]
 }}
 
 REGLAS OBLIGATORIAS:
@@ -1055,7 +1054,7 @@ REGLAS OBLIGATORIAS:
 - Cada habilidad inicia con un VERBO cognitivo de Bloom (analizar, diseñar, aplicar, evaluar, crear, comparar, resolver, etc.)
 - Las habilidades son observables y medibles, no genéricas
 - conocimientos: 4-6 temas conceptuales específicos del área del curso
-- actitudes: 3-4 disposiciones valorativas o éticas relevantes
+- No incluyas actitudes ni resultados de aprendizaje; la plantilla vigente no los usa en el programa de contenidos.
 - Responde SOLO el JSON, sin explicaciones"""
 
         resultado = await self.generate_json("suggest_content", prompt)
@@ -1065,7 +1064,7 @@ REGLAS OBLIGATORIAS:
             flat = [h for item in hpd for h in item.get("habilidades", [])]
             resultado["habilidades_sugeridas"] = flat
             return resultado
-        return {"conocimientos": [], "actitudes": [], "habilidades_sugeridas": [], "habilidades_por_desempeno": []}
+        return {"conocimientos": [], "habilidades_sugeridas": [], "habilidades_por_desempeno": []}
 
     async def sugerir_calificacion(
         self,

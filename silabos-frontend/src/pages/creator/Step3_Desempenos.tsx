@@ -4,20 +4,16 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  Edit2,
   Info,
   Loader2,
   MessageCircle,
   ShieldCheck,
-  Sparkles,
-  X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { CourseDetail, PerformanceDB, SuggestedPerformance } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 
-type Tab = 'oficiales' | 'sugeridos';
 type AlignmentState = 'aligned' | 'partial' | 'weak';
 
 interface AlignmentResult {
@@ -60,14 +56,34 @@ const STOP_WORDS = new Set([
   'considerando',
 ]);
 
-function normalizeText(value: string) {
-  return value
+function textFragments(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const text = String(value).trim();
+    return text ? [text] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(textFragments);
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record.items)) {
+      return textFragments(record.items);
+    }
+    return Object.values(record).flatMap(textFragments);
+  }
+  return [];
+}
+
+function normalizeText(value: unknown) {
+  return textFragments(value)
+    .join(' ')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 }
 
-function tokenize(value: string) {
+function tokenize(value: unknown) {
   return normalizeText(value)
     .replace(/[^a-z0-9ñ\s]/g, ' ')
     .split(/\s+/)
@@ -87,14 +103,14 @@ function uniqueItems(items: string[]) {
 
 function courseOfficialFragments(course: CourseDetail | null) {
   if (!course) return [];
-  return [
+  return textFragments([
     course.sumilla,
     course.competencia_egreso,
     course.resultado_aprendizaje,
     course.capacidad,
     ...(course.temas_conocimientos || []),
     ...(course.habilidades_desempenos || []),
-  ].filter(Boolean) as string[];
+  ]);
 }
 
 function buildCourseKeywords(course: CourseDetail | null) {
@@ -178,71 +194,10 @@ function mapOfficialPerformance(perf: PerformanceDB, index: number): SuggestedPe
     code: perf.code ?? `DO-${String(index + 1).padStart(2, '0')}`,
     statement: perf.statement,
     origin: 'official',
+    display_order: perf.display_order,
+    conocimientos: perf.conocimientos || [],
+    habilidades: perf.habilidades || [],
   };
-}
-
-function AdjustModal({
-  perf,
-  onSave,
-  onClose,
-}: {
-  perf: SuggestedPerformance;
-  onSave: (performance: SuggestedPerformance) => void;
-  onClose: () => void;
-}) {
-  const [text, setText] = useState(perf.statement);
-
-  useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-2xl border border-[#D4A351]/45 bg-[#0A2753] p-5 shadow-2xl">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4A351]">{perf.code}</span>
-            <p className="text-[11px] text-white/55">Ajustar enunciado del desempeño</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 text-white/50 hover:text-white"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <textarea
-          className="w-full resize-none rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-[12px] leading-5 text-white outline-none focus:border-[#D4A351]/60"
-          rows={5}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          autoFocus
-        />
-
-        <div className="mt-3 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="px-3 py-2 text-[11px] text-white/50 hover:text-white">
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onSave({ ...perf, statement: text.trim(), origin: 'teacher_edited_from_ai' });
-              onClose();
-            }}
-            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#007A8A] to-[#00B4CC] px-4 py-2 text-[11px] font-bold text-white hover:brightness-110"
-          >
-            Guardar ajuste
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function SourceBadge({ origin }: { origin: SuggestedPerformance['origin'] }) {
@@ -260,14 +215,12 @@ function PerformanceRow({
   alignment,
   confirmed,
   onConfirm,
-  onAdjust,
   onObserve,
 }: {
   performance: SuggestedPerformance;
   alignment: AlignmentResult;
   confirmed: boolean;
   onConfirm: () => void;
-  onAdjust: () => void;
   onObserve: () => void;
 }) {
   const classes = alignmentClasses(alignment.state);
@@ -330,14 +283,6 @@ function PerformanceRow({
           </button>
           <button
             type="button"
-            onClick={onAdjust}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/15 px-2 py-1.5 text-[8.5px] font-semibold text-white/58 transition hover:border-[#D4A351]/45 hover:text-[#F2C260]"
-          >
-            <Edit2 size={10} />
-            Ajustar
-          </button>
-          <button
-            type="button"
             onClick={onObserve}
             className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/15 px-2 py-1.5 text-[8.5px] font-semibold text-white/58 transition hover:border-white/30 hover:text-white"
           >
@@ -355,6 +300,7 @@ export default function Step3_Desempenos() {
   const {
     draftId,
     courseDetail,
+    setCourseDetail,
     draftPerformances,
     setDraftPerformances,
     performancesOrigin,
@@ -365,25 +311,38 @@ export default function Step3_Desempenos() {
     showToast,
   } = useSyllabus();
 
-  const [activeTab, setActiveTab] = useState<Tab>('oficiales');
   const [officialPerfs, setOfficialPerfs] = useState<SuggestedPerformance[]>([]);
   const [loadingOfficial, setLoadingOfficial] = useState(true);
-  const [suggesting, setSuggesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editTarget, setEditTarget] = useState<SuggestedPerformance | null>(null);
   const [confirmedCodes, setConfirmedCodes] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!courseDetail?.id) {
+    if (!draftId && !courseDetail?.id) {
       setLoadingOfficial(false);
       return;
     }
 
     setLoadingOfficial(true);
-    api
-      .getCoursePerformances(courseDetail.id)
+    const request = draftId
+      ? api.getWizardCourseData(draftId)
+      : api.getCoursePerformances(courseDetail!.id);
+
+    request
       .then((res) => {
-        const mapped = (res.data?.items ?? []).map(mapOfficialPerformance);
+        const data = res.data as
+          | { course?: CourseDetail; performances?: SuggestedPerformance[] }
+          | { items?: PerformanceDB[] }
+          | undefined;
+        if ('course' in (data || {}) && data?.course) {
+          setCourseDetail(data.course);
+        }
+        const mapped = 'performances' in (data || {})
+          ? ((data as { performances?: SuggestedPerformance[] }).performances || []).map((perf, index) => ({
+              ...perf,
+              code: perf.code || perf.codigo || `D${index + 1}`,
+              origin: 'official' as const,
+            }))
+          : ((data as { items?: PerformanceDB[] } | undefined)?.items || []).map(mapOfficialPerformance);
         setOfficialPerfs(mapped);
         if (draftPerformances.length === 0 && mapped.length > 0) {
           setDraftPerformances(mapped);
@@ -393,10 +352,9 @@ export default function Step3_Desempenos() {
       })
       .catch(() => {})
       .finally(() => setLoadingOfficial(false));
-  }, [courseDetail?.id]);
+  }, [courseDetail?.id, draftId, draftPerformances.length, setCourseDetail, setDraftPerformances, setPerformancesOrigin]);
 
-  const suggestedPerfs = draftPerformances.filter((performance) => performance.origin !== 'official');
-  const visiblePerfs = activeTab === 'oficiales' ? officialPerfs : suggestedPerfs.length > 0 ? suggestedPerfs : draftPerformances;
+  const visiblePerfs = officialPerfs.length > 0 ? officialPerfs : draftPerformances;
   const alignments = useMemo(
     () => visiblePerfs.map((performance) => evaluateAlignment(performance, courseDetail)),
     [courseDetail, visiblePerfs],
@@ -408,28 +366,6 @@ export default function Step3_Desempenos() {
   const partialCount = alignments.filter((item) => item.state === 'partial').length;
   const weakCount = alignments.filter((item) => item.state === 'weak').length;
   const officialDataCount = courseOfficialFragments(courseDetail).length;
-
-  const handleSuggest = async () => {
-    if (!draftId) return;
-
-    setSuggesting(true);
-    try {
-      const res = await api.suggestPerformances(draftId);
-      const perfs = res.data?.performances ?? [];
-      if (perfs.length > 0) {
-        setDraftPerformances(perfs);
-        setPerformancesOrigin('ai_suggested');
-        setConfirmedCodes([]);
-        setActiveTab('sugeridos');
-        showToast('Desempeños sugeridos por IA', 'success');
-      }
-    } catch {
-      showToast('Error al sugerir desempeños', 'error');
-    } finally {
-      setSuggesting(false);
-    }
-  };
-
   const handleConfirm = (performance: SuggestedPerformance) => {
     setConfirmedCodes((current) => (
       current.includes(performance.code)
@@ -447,10 +383,10 @@ export default function Step3_Desempenos() {
   const handleContinue = async () => {
     setSaving(true);
     try {
-      const selectedPerformances = draftPerformances.length > 0 ? draftPerformances : officialPerfs;
+      const selectedPerformances = visiblePerfs;
       await saveStep('purpose', {
         performances: selectedPerformances,
-        performances_origin: performancesOrigin,
+        performances_origin: selectedPerformances.length > 0 ? 'official' : performancesOrigin,
         teacher_notes: purposeNotes,
         alignment_summary: {
           score: generalScore,
@@ -485,10 +421,10 @@ export default function Step3_Desempenos() {
               PASO 5 DE 8 - DESEMPEÑOS
             </p>
             <h1 className="font-playfair text-[1.55rem] font-bold leading-tight text-white">
-              Desempeños oficiales o sugeridos
+              Desempeños oficiales
             </h1>
             <p className="mt-0.5 max-w-3xl text-[10px] leading-4 text-white/62">
-              Revise la correspondencia entre propósito, sumilla, capacidad y datos curriculares antes de pasar al contenido.
+              Revise los desempeños oficiales del Anexo 2 antes de pasar al programa de contenidos.
             </p>
           </div>
 
@@ -512,45 +448,30 @@ export default function Step3_Desempenos() {
         </div>
 
         <div className="mb-2 grid gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(280px,390px)]">
-          <div className="flex flex-wrap gap-1.5 rounded-xl border border-white/10 bg-[#0A2753] p-1.5">
-            {(['oficiales', 'sugeridos'] as Tab[]).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`flex min-w-[190px] flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-[10px] font-bold transition ${
-                  activeTab === tab
-                    ? 'border-[#D4A351]/45 bg-[#D4A351]/10 text-[#F2C260]'
-                    : 'border-white/8 bg-white/3 text-white/52 hover:text-white'
-                }`}
-              >
-                {tab === 'oficiales' ? <ShieldCheck size={12} /> : <Sparkles size={12} />}
-                {tab === 'oficiales' ? 'Desempeños oficiales' : 'Desempeños sugeridos por el sistema'}
-                <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-[8px]">
-                  {tab === 'oficiales' ? officialPerfs.length : suggestedPerfs.length || draftPerformances.length}
-                </span>
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-[#D4A351]/24 bg-[#0A2753] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={15} className="text-[#F2C260]" />
+              <div>
+                <p className="text-[11px] font-bold text-[#F2C260]">Desempeños oficiales del curso</p>
+                <p className="text-[9px] leading-4 text-white/50">
+                  La cantidad de unidades se tomará de estos desempeños oficiales.
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-white/8 px-2 py-1 text-[9px] font-bold text-white/70">
+              {officialPerfs.length}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-[#00B4CC]/18 bg-[#00B4CC]/6 px-3 py-2">
             <Info size={14} className="shrink-0 text-[#77E3F0]" />
             <p className="text-[10px] leading-4 text-white/62">
-              Datos oficiales detectados: {officialDataCount}. El desempeño pertenece al propósito; el método se aplicará después.
+              Datos curriculares oficiales detectados: {officialDataCount}. El método se aplicará después.
             </p>
           </div>
         </div>
 
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={handleSuggest}
-            disabled={suggesting || !draftId}
-            className="flex items-center gap-1.5 rounded-lg border border-[#D4A351]/40 bg-[#D4A351]/10 px-3 py-1.5 text-[10px] font-bold text-[#D4A351] transition hover:bg-[#D4A351]/20 disabled:opacity-50"
-          >
-            {suggesting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-            Sugerir con IA
-          </button>
+        <div className="mb-2 flex items-center justify-end gap-3">
           <span className="text-[8px] uppercase tracking-[0.18em] text-white/36">
               Propósito {"->"} Contenido {"->"} Método {"->"} Evaluación
           </span>
@@ -562,7 +483,7 @@ export default function Step3_Desempenos() {
           </div>
         ) : visiblePerfs.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-[#0A2753] px-4 py-8 text-center">
-            <p className="text-[12px] text-white/48">No hay desempeños disponibles. Solicita una propuesta con IA.</p>
+            <p className="text-[12px] text-white/48">No hay desempeños oficiales registrados para este curso.</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border border-[#D4A351]/22 bg-[#041A3A]">
@@ -586,7 +507,6 @@ export default function Step3_Desempenos() {
                         alignment={alignment}
                         confirmed={confirmedCodes.includes(performance.code)}
                         onConfirm={() => handleConfirm(performance)}
-                        onAdjust={() => setEditTarget(performance)}
                         onObserve={() => handleObserve(performance, alignment)}
                       />
                     </React.Fragment>
@@ -639,24 +559,6 @@ export default function Step3_Desempenos() {
           </button>
         </div>
       </div>
-
-      {editTarget && (
-        <AdjustModal
-          perf={editTarget}
-          onSave={(updated) => {
-            setDraftPerformances((current) => {
-              const exists = current.some((performance) => performance.code === updated.code);
-              if (exists) {
-                return current.map((performance) => (performance.code === updated.code ? updated : performance));
-              }
-              return [...current, updated];
-            });
-            setPerformancesOrigin(updated.origin);
-            setEditTarget(null);
-          }}
-          onClose={() => setEditTarget(null)}
-        />
-      )}
     </>
   );
 }

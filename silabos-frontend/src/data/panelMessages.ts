@@ -78,7 +78,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
     paso: 'Paso 6 de 8',
     titulo: 'Propuesta de contenido formativo',
     mensajePrincipal:
-      'El sistema propone habilidades, conocimientos y actitudes derivadas del propósito validado y las fuentes activas del curso.',
+      'El sistema propone habilidades y conocimientos derivados del propósito validado y las fuentes activas del curso.',
     mensajeAcompanamiento:
       'La propuesta se construye desde los desempeños confirmados, las fuentes documentales y la biblioteca institucional de habilidades.',
     instruccion:
