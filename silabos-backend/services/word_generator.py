@@ -15,26 +15,26 @@ def _val(v: Any, fallback: str = "") -> str:
     if v is None:
         return fallback
     s = str(v).strip()
-    if not s or s in {"—", "\u00e2\u20ac\u201d", "None", "none", "null", "NULL", "/"}:
+    if not s or s in {"-", "-", "None", "none", "null", "NULL", "/"}:
         return fallback
     return s
 
 
-def _pair(left: Any, right: Any, fallback: str = "—") -> str:
+def _pair(left: Any, right: Any, fallback: str = "-") -> str:
     parts = [_val(left), _val(right)]
     visible = [part for part in parts if part]
     return " / ".join(visible) if visible else fallback
 
 
-def _format_hours(theory: Any, practice: Any, fallback: str = "â€”") -> str:
+def _format_hours(theory: Any, practice: Any, fallback: str = "-") -> str:
     t = _val(theory)
     p = _val(practice)
     if t and p:
-        return f"Teoria: {t} / Practica: {p}"
+        return f"Teoría: {t} / Práctica: {p}"
     if t:
-        return f"Teoria: {t}"
+        return f"Teoría: {t}"
     if p:
-        return f"Practica: {p}"
+        return f"Práctica: {p}"
     return fallback
 
 
@@ -46,8 +46,8 @@ def _sanitize_sentence_spacing(text: Any) -> str:
     cleaned: list[str] = []
     for paragraph in paragraphs:
         value = re.sub(r"\s+", " ", paragraph).strip()
-        value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])\.([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r". \1", value)
-        value = re.sub(r"(?<=[a-zÃ¡Ã©Ã­Ã³ÃºÃ±])([!?])([A-ZÃÃ‰ÃÃ“ÃšÃ‘])", r"\1 \2", value)
+        value = re.sub(r"(?<=[a-záéíóúñ])\.([A-ZÁÉÍÓÚÑ])", r". \1", value)
+        value = re.sub(r"(?<=[a-záéíóúñ])([!?])([A-ZÁÉÍÓÚÑ])", r"\1 \2", value)
         if value:
             cleaned.append(value)
     return "\n\n".join(cleaned)
@@ -58,11 +58,24 @@ def _safe_filename(nombre_curso: str) -> str:
     return re.sub(r"\s+", "_", nombre.strip())[:50] or "silabo"
 
 
+def _public_asset_path(filename: str) -> Path:
+    return Path(__file__).resolve().parent.parent.parent / "silabos-frontend" / "public" / filename
+
+
+def _clean_program_label(value: Any) -> str:
+    text = _val(value)
+    if not text:
+        return ""
+    text = re.sub(r"(?<=[a-záéíóúñ])(?=[A-ZÁÉÍÓÚÑ])", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def _build_context(silabo: dict) -> dict:
     """
-    Construye el contexto de exportacion del silabo.
-    Con rowspan en exportacion: desempeno y habilidades se muestran una vez por unidad.
-    Matriz programa de contenidos: 6 cols (Desempenos|Habilidades|Semana/Fecha|K|Actividades|Evidencias).
+    Construye el contexto de exportación del sílabo.
+    Con rowspan en exportación: desempeño y habilidades se muestran una vez por unidad.
+    Matriz programa de contenidos: 6 cols (Desempeños|Habilidades|Semana/Fecha|K|Actividades|Evidencias).
     """
     dg = silabo.get("datos_generales") or {}
 
@@ -86,10 +99,10 @@ def _build_context(silabo: dict) -> dict:
                     text = str(item or "").strip()
                     if text:
                         parts.append(text)
-            return "\n".join(parts) if parts else "—"
+            return "\n".join(parts) if parts else "-"
         if isinstance(value, str):
-            return value.strip() or "—"
-        return "—"
+            return value.strip() or "-"
+        return "-"
 
     unidades_raw = silabo.get("unidades_tematicas") or []
     desempenos = []
@@ -125,7 +138,7 @@ def _build_context(silabo: dict) -> dict:
     for i, unidad in enumerate(unidades_raw):
         desempeno_txt = _val(unidad.get("logro"), f"D{i + 1}")
         habilidades_raw = unidad.get("required_skills") or unidad.get("habilidades_requeridas")
-        habilidades_txt = _list_to_lines(habilidades_raw) if habilidades_raw else _val(unidad.get("logro"), "—")
+        habilidades_txt = _list_to_lines(habilidades_raw) if habilidades_raw else _val(unidad.get("logro"), "-")
 
         semanas_str = _val(unidad.get("semanas"), "")
         partes = re.findall(r"\d+", semanas_str)
@@ -159,17 +172,17 @@ def _build_context(silabo: dict) -> dict:
                         conocimientos = ", ".join(str(t) for t in temas_raw)
 
                 desempeno_celda = _val(sem_data.get("desempeno"), f"D{i + 1}. {desempeno_txt}")
-                conocimientos_celda = _list_to_lines(sem_data.get("conocimientos")) if sem_data.get("conocimientos") else (conocimientos or "—")
+                conocimientos_celda = _list_to_lines(sem_data.get("conocimientos")) if sem_data.get("conocimientos") else (conocimientos or "-")
                 habilidades_celda = habilidades_txt
-                evidencia_celda = _val(sem_data.get("evidencia") or sem_data.get("producto"), "—")
+                evidencia_celda = _val(sem_data.get("evidencia") or sem_data.get("producto"), "-")
                 filas.append(
                     {
                         "desempeno": desempeno_celda,
                         "habilidades": habilidades_celda,
                         "semana": f"{semana}",
-                        "fecha": _val(sem_data.get("fecha"), "—"),
+                        "fecha": _val(sem_data.get("fecha"), "-"),
                         "conocimientos": conocimientos_celda,
-                        "actividades": _val(sem_data.get("actividad"), "—"),
+                        "actividades": _val(sem_data.get("actividad"), "-"),
                         "evidencias": evidencia_celda,
                     }
                 )
@@ -183,11 +196,11 @@ def _build_context(silabo: dict) -> dict:
                 {
                     "desempeno": f"D{i + 1}. {desempeno_txt}",
                     "habilidades": habilidades_txt,
-                    "semana": semanas_str or "—",
-                    "fecha": "—",
-                    "conocimientos": temas_txt or "—",
-                    "actividades": "—",
-                    "evidencias": "—",
+                    "semana": semanas_str or "-",
+                    "fecha": "-",
+                    "conocimientos": temas_txt or "-",
+                    "actividades": "-",
+                    "evidencias": "-",
                 }
             )
 
@@ -198,7 +211,7 @@ def _build_context(silabo: dict) -> dict:
                 "numero": numero,
                 "titulo": titulo,
                 "titulo_completo": f"6.{numero}. UNIDAD {roman_units[i] if i < len(roman_units) else numero}: {titulo}",
-                "ra_unidad": _val(unidad.get("ra_unidad") or unidad.get("logro"), "—"),
+                "ra_unidad": _val(unidad.get("ra_unidad") or unidad.get("logro"), "-"),
                 "desempeno": f"D{i + 1}. {desempeno_txt}",
                 "habilidades": habilidades_txt,
                 "filas": filas,
@@ -211,20 +224,20 @@ def _build_context(silabo: dict) -> dict:
         for index, item in enumerate(matriz_raw):
             if not isinstance(item, dict):
                 continue
-            habilidades = [h for h in _list_to_lines(item.get("habilidades")).split("\n") if h and h != "—"] or ["—"]
+            habilidades = [h for h in _list_to_lines(item.get("habilidades")).split("\n") if h and h != "-"] or ["-"]
             for habilidad in habilidades:
                 eval_filas.append(
                     {
                         "desempenos": _val(
                             item.get("desempenos") or item.get("desempeno"),
-                            "—",
+                            "-",
                         ),
                         "habilidades": habilidad,
                         "evidencias": _val(
                             item.get("evidenciasDeAprendizaje") or item.get("evidencias"),
-                            "—",
+                            "-",
                         ),
-                        "instrumentos": _val(item.get("instrumentos"), "—"),
+                        "instrumentos": _val(item.get("instrumentos"), "-"),
                     }
                 )
     else:
@@ -238,14 +251,14 @@ def _build_context(silabo: dict) -> dict:
                 if evidencia and key not in seen:
                     seen.add(key)
                     evidencias.append(evidencia)
-            habilidades = [h for h in str(unidad.get("habilidades") or "").split("\n") if h.strip()] or ["—"]
+            habilidades = [h for h in str(unidad.get("habilidades") or "").split("\n") if h.strip()] or ["-"]
             for habilidad in habilidades:
                 eval_filas.append(
                     {
-                        "desempenos": unidad.get("desempeno") or "—",
+                        "desempenos": unidad.get("desempeno") or "-",
                         "habilidades": habilidad,
-                        "evidencias": "; ".join(evidencias) if evidencias else "—",
-                        "instrumentos": "Rubrica analitica",
+                        "evidencias": "; ".join(evidencias) if evidencias else "-",
+                        "instrumentos": "Rúbrica analítica",
                     }
                 )
 
@@ -256,7 +269,7 @@ def _build_context(silabo: dict) -> dict:
             continue
         grading.append(
             {
-                "evidencia": _val(criterio.get("nombre"), f"Evaluacion {index + 1}"),
+                "evidencia": _val(criterio.get("nombre"), f"Evaluación {index + 1}"),
                 "sigla": _val(criterio.get("sigla"), f"EV{index + 1}"),
                 "peso": f"{criterio.get('porcentaje', 0)}%",
                 "cronograma": _val(
@@ -343,19 +356,19 @@ def _build_context(silabo: dict) -> dict:
         )
 
     return {
-        "facultad": _val(dg.get("facultad")),
-        "escuela_profesional": _val(
+        "facultad": _clean_program_label(dg.get("facultad")),
+        "escuela_profesional": _clean_program_label(
             dg.get("escuela_profesional") or dg.get("carrera")
         ),
-        "programa_estudios": _val(
+        "programa_estudios": _clean_program_label(
             dg.get("programa_estudios") or dg.get("carrera")
         ),
-        "departamento_academico": _val(
+        "departamento_academico": _clean_program_label(
             dg.get("escuela_profesional") or dg.get("carrera")
         ),
         "nombre_curso": _val(dg.get("nombre_curso")),
-        "programa": _val(dg.get("programa_estudios") or dg.get("carrera")),
-        "escuela": _val(dg.get("escuela_profesional") or dg.get("carrera")),
+        "programa": _clean_program_label(dg.get("programa_estudios") or dg.get("carrera")),
+        "escuela": _clean_program_label(dg.get("escuela_profesional") or dg.get("carrera")),
         "modalidad": _val(dg.get("modalidad"), "Presencial").capitalize(),
         "curso": _val(dg.get("nombre_curso")),
         "prerrequisito": _val(dg.get("prerrequisito")),
@@ -384,13 +397,13 @@ def _build_context(silabo: dict) -> dict:
         "formula_pf": "PF = " + " + ".join(f"{row['peso']}*{row['sigla']}" for row in grading),
         "metodologia": _sanitize_sentence_spacing(_val(
             silabo.get("metodologia"),
-            "El curso emplea metodologias activas: ABP, Aprendizaje Basado "
-            "en Proyectos e Investigacion Formativa. Se complementa con el "
+            "El curso emplea metodologías activas: ABP, Aprendizaje Basado "
+            "en Proyectos e Investigación Formativa. Se complementa con el "
             "Aula Virtual UNPRG.",
         )),
         "tutoria": _sanitize_sentence_spacing(_val(
             silabo.get("tutoria"),
-            "Las tutorias academicas se realizan de manera presencial o "
+            "Las tutorías académicas se realizan de manera presencial o "
             "virtual, conforme a la normativa institucional vigente.",
         )),
         "responsabilidad_social": _sanitize_sentence_spacing(responsabilidad_social),
@@ -408,7 +421,7 @@ def _add_section_title(document, title: str) -> None:
 def _add_paragraph_block(document, text: str) -> None:
     paragraphs = [part.strip() for part in re.split(r"\n\s*\n", str(text or "")) if part.strip()]
     if not paragraphs:
-        document.add_paragraph("â€”")
+        document.add_paragraph("-")
         return
     for paragraph in paragraphs:
         document.add_paragraph(paragraph)
@@ -445,27 +458,39 @@ def _generar_docx_programatico(context: dict) -> bytes:
     normal_style = document.styles["Normal"]
     normal_style.font.name = "Arial"
     normal_style.font.size = Pt(10)
-
-    header = document.add_paragraph()
+    header_table = document.add_table(rows=1, cols=3)
+    header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    header_table.autofit = False
+    header_cells = header_table.rows[0].cells
+    header_cells[0].width = Cm(3.4)
+    header_cells[1].width = Cm(10.2)
+    header_cells[2].width = Cm(3.4)
+    logo_unprg = _public_asset_path("unprg-logo.png")
+    logo_fachse = _public_asset_path("logo_fachse.png")
+    if logo_unprg.exists():
+        header_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        header_cells[0].paragraphs[0].add_run().add_picture(str(logo_unprg), width=Cm(1.65))
+    header = header_cells[1].paragraphs[0]
     header.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = header.add_run('UNIVERSIDAD NACIONAL "PEDRO RUIZ GALLO"\n')
     run.bold = True
-    run = header.add_run(f"{context['facultad']}\n")
+    run.font.size = Pt(13)
+    faculty_name = context["facultad"] or "................................"
+    faculty_label = faculty_name if faculty_name.lower().startswith("facultad") else f"Facultad de {faculty_name}"
+    run = header.add_run(f"{faculty_label}\n")
     run.bold = True
-    run = header.add_run(
-        f"ESCUELA PROFESIONAL {context['escuela_profesional']}\n"
-    )
+    run = header.add_run(f"ESCUELA PROFESIONAL {context['escuela_profesional'] or '................................'}\n")
     run.bold = True
-    header.add_run(
-        f"Departamento Academico de {context['departamento_academico']}"
-    )
-
+    header.add_run(f"Departamento Académico de {context['departamento_academico'] or '................................'}")
+    if logo_fachse.exists():
+        header_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        header_cells[2].paragraphs[0].add_run().add_picture(str(logo_fachse), width=Cm(1.65))
     title = document.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.add_run(f"{context['nombre_curso']} (Silabo)")
+    run = title.add_run(f"{context['nombre_curso']} (Sílabo)")
     run.bold = True
 
-    _add_section_title(document, "I. Informacion General")
+    _add_section_title(document, "I. Información General")
     info_table = document.add_table(rows=0, cols=2)
     info_table.style = "Table Grid"
     info_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -475,16 +500,16 @@ def _generar_docx_programatico(context: dict) -> bytes:
         ("1.3 Modalidad", context["modalidad"]),
         ("1.4 Curso", context["curso"]),
         ("1.5 Prerrequisito", context["prerrequisito"]),
-        ("1.6 Codigo del curso", context["codigo_curso"]),
-        ("1.7 Semestre Academico", context["semestre"]),
-        ("1.8 Periodo Academico", context["periodo_academico"]),
-        ("1.9 Creditos", context["creditos"]),
+        ("1.6 Código del curso", context["codigo_curso"]),
+        ("1.7 Semestre Académico", context["semestre"]),
+        ("1.8 Periodo Académico", context["periodo_academico"]),
+        ("1.9 Créditos", context["creditos"]),
         (
             "1.10\nHoras Semanales",
             context["horas_semanales"],
         ),
         (
-            "1.11 Duracion (Inicio / Termino)",
+            "1.11 Duración (Inicio / Término)",
             _pair(context["fecha_inicio"], context["fecha_fin"]),
         ),
         (
@@ -929,7 +954,7 @@ def _build_html(ctx: dict) -> str:
 <html lang="es">
   <head>
     <meta charset="utf-8" />
-    <title>Silabo</title>
+    <title>Sílabo</title>
   </head>
   <body>
     <div class="header">
@@ -939,26 +964,26 @@ def _build_html(ctx: dict) -> str:
           <h1>UNIVERSIDAD NACIONAL "PEDRO RUIZ GALLO"</h1>
           <h2>{escape(ctx['facultad'])}</h2>
           <h3>ESCUELA PROFESIONAL {escape(ctx['escuela_profesional'])}</h3>
-          <p>Departamento Academico de {escape(ctx['departamento_academico'])}</p>
+          <p>Departamento Académico de {escape(ctx['departamento_academico'])}</p>
         </div>
         <div>{logo_fachse}</div>
       </div>
-      <div class="titulo-silabo">{escape(ctx['nombre_curso'])} (Silabo)</div>
+      <div class="titulo-silabo">{escape(ctx['nombre_curso'])} (Sílabo)</div>
     </div>
 
-    <div class="seccion-titulo">I. Informacion General</div>
+    <div class="seccion-titulo">I. Información General</div>
     <div class="info-grid">
       <div class="info-row"><div class="info-label">1.1 Programa de Estudios</div><div class="info-value">{escape(ctx['programa'])}</div></div>
       <div class="info-row"><div class="info-label">1.2 Escuela Profesional</div><div class="info-value">{escape(ctx['escuela'])}</div></div>
       <div class="info-row"><div class="info-label">1.3 Modalidad</div><div class="info-value">{escape(ctx['modalidad'])}</div></div>
       <div class="info-row"><div class="info-label">1.4 Curso</div><div class="info-value">{escape(ctx['curso'])}</div></div>
       <div class="info-row"><div class="info-label">1.5 Prerrequisito</div><div class="info-value">{escape(ctx['prerrequisito'])}</div></div>
-      <div class="info-row"><div class="info-label">1.6 Codigo del curso</div><div class="info-value">{escape(ctx['codigo_curso'])}</div></div>
-      <div class="info-row"><div class="info-label">1.7 Semestre Academico</div><div class="info-value">{escape(ctx['semestre'])}</div></div>
-      <div class="info-row"><div class="info-label">1.8 Periodo Academico</div><div class="info-value">{escape(ctx['periodo_academico'])}</div></div>
-      <div class="info-row"><div class="info-label">1.9 Creditos</div><div class="info-value">{escape(ctx['creditos'])}</div></div>
+      <div class="info-row"><div class="info-label">1.6 Código del curso</div><div class="info-value">{escape(ctx['codigo_curso'])}</div></div>
+      <div class="info-row"><div class="info-label">1.7 Semestre Académico</div><div class="info-value">{escape(ctx['semestre'])}</div></div>
+      <div class="info-row"><div class="info-label">1.8 Periodo Académico</div><div class="info-value">{escape(ctx['periodo_academico'])}</div></div>
+      <div class="info-row"><div class="info-label">1.9 Créditos</div><div class="info-value">{escape(ctx['creditos'])}</div></div>
       <div class="info-row"><div class="info-label">1.10<br/>Horas Semanales</div><div class="info-value">{escape(ctx['horas_semanales'])}</div></div>
-      <div class="info-row"><div class="info-label">1.11 Duracion (Inicio / Termino)</div><div class="info-value">{escape(_pair(ctx['fecha_inicio'], ctx['fecha_fin']))}</div></div>
+      <div class="info-row"><div class="info-label">1.11 Duración (Inicio / Término)</div><div class="info-value">{escape(_pair(ctx['fecha_inicio'], ctx['fecha_fin']))}</div></div>
       <div class="info-row"><div class="info-label">1.12 Docente (Nombre / Correo)</div><div class="info-value">{escape(_pair(ctx['docente_nombre'], ctx['docente_email']))}</div></div>
     </div>
 

@@ -126,6 +126,12 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         max_output_tokens=4096,
         json_mode=False,
     ),
+    "progressive_rsu_suggest": TaskConfig(
+        provider="openrouter_light",
+        temperature=0.25,
+        max_output_tokens=1024,
+        json_mode=False,
+    ),
     "progressive_grading_suggest": TaskConfig(
         provider="openrouter_light",
         temperature=0.2,

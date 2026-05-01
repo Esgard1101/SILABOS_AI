@@ -90,25 +90,25 @@ function skillNamesByPerformance(items: HabilidadPorDesempeno[], code: string): 
 }
 
 function progressiveKnowledgeForWeek(items: string[], absoluteWeek: number): string[] {
-  const seeds = items.length ? items : ['fundamentos del curso', 'aplicacion disciplinar'];
+  const seeds = items.length ? items : ['fundamentos del curso', 'aplicación disciplinar'];
   const seed = (index: number) => seeds[Math.min(seeds.length - 1, index % seeds.length)];
   const templates = [
     'Fundamentos conceptuales de {a}',
-    'Contexto, alcance y categorias de {a}',
+    'Contexto, alcance y categorías de {a}',
     'Principios y enfoques de {a}',
-    'Integracion diagnostica de {a} y {b}',
-    'Modelos teoricos de {a}',
+    'Integración diagnóstica de {a} y {b}',
+    'Modelos teóricos de {a}',
     'Procedimientos y estrategias de {a}',
-    'Analisis comparado de {a} y {b}',
+    'Análisis comparado de {a} y {b}',
     'Producto parcial sobre {a}',
-    'Metodos de aplicacion de {a}',
-    'Criterios de diseno e intervencion en {a}',
-    'Resolucion de situaciones practicas vinculadas con {a}',
-    'Evaluacion parcial de resultados sobre {a}',
+    'Métodos de aplicación de {a}',
+    'Criterios de diseño e intervención en {a}',
+    'Resolución de situaciones prácticas vinculadas con {a}',
+    'Evaluación parcial de resultados sobre {a}',
     'Proyecto integrador aplicado a {a}',
-    'Validacion y mejora de propuestas sobre {a}',
-    'Sustentacion de evidencias y toma de decisiones en {a}',
-    'Cierre integrador y reflexion academica sobre {a}',
+    'Validación y mejora de propuestas sobre {a}',
+    'Sustentación de evidencias y toma de decisiones en {a}',
+    'Cierre integrador y reflexión académica sobre {a}',
   ];
   const idx = Math.max(0, absoluteWeek - 1);
   return [

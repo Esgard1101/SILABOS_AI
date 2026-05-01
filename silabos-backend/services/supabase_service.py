@@ -2003,6 +2003,39 @@ class SupabaseService:
             return []
 
     # ──────────────────────────────────────────────
+    def _obtener_programa_sync(self, program_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    SELECT
+                        p.id,
+                        p.name AS program_name,
+                        p.career_id,
+                        cr.name AS career_name,
+                        f.id AS faculty_id,
+                        f.name AS faculty_name
+                    FROM programs p
+                    LEFT JOIN careers cr ON cr.id = p.career_id
+                    LEFT JOIN faculties f ON f.id = cr.faculty_id
+                    WHERE p.id = :program_id
+                """),
+                {"program_id": program_id},
+            ).mappings().first()
+        if not fila:
+            return None
+        item = dict(fila)
+        for campo in ("id", "career_id", "faculty_id"):
+            if item.get(campo) is not None:
+                item[campo] = str(item[campo])
+        return item
+
+    async def obtener_programa(self, program_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_programa_sync, program_id)
+        except Exception as e:
+            logger.error(f"Error al obtener programa {program_id}: {e}")
+            return None
+
     # CURSOS
     # ──────────────────────────────────────────────
 
@@ -3789,6 +3822,7 @@ class SupabaseService:
             # legacy fields needed by meta extractor
             "datos_generales": {
                 "course_id": course_id,
+                "program_id": program_id or "",
                 "semestre": semester,
                 "docente": teacher_name,
                 "docente_email": teacher_email,
@@ -3859,20 +3893,32 @@ class SupabaseService:
                     WHERE course_id = :course_id
                       AND semester = :semester
                       AND user_id = :user_id
+                      AND (
+                        (:program_id IS NULL AND program_id IS NULL)
+                        OR program_id = :program_id
+                      )
                       AND wizard_version = 'v3-progressive'
                       AND status = 'draft'
                     ORDER BY created_at DESC
                     LIMIT 1
                 """),
-                {"course_id": course_id, "semester": semester, "user_id": user_id},
+                {
+                    "course_id": course_id,
+                    "semester": semester,
+                    "user_id": user_id,
+                    "program_id": program_id,
+                },
             ).mappings().first()
 
             if existing:
                 payload = existing["payload_json"]
                 if isinstance(payload, str):
                     payload = json.loads(payload)
-                if isinstance(payload, dict) and (fecha_inicio or fecha_fin):
+                if isinstance(payload, dict) and (fecha_inicio or fecha_fin or program_id):
                     datos = payload.setdefault("datos_generales", {})
+                    if program_id:
+                        payload["program_id"] = program_id
+                        datos["program_id"] = program_id
                     if fecha_inicio:
                         datos["fecha_inicio"] = fecha_inicio
                     if fecha_fin:

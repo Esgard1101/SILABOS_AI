@@ -1,320 +1,460 @@
-# Informe Interno Developer - Estado Real de Deploy y Decision de Infraestructura
+# Informe Interno Developer - Deploy, Produccion y Respuesta Rapida
 
-Fecha: 2026-04-14
+Fecha base: 2026-04-14  
+Ultima adenda aprobada con cliente: 2026-04-30  
+Proyecto: SIGEISIL / SILABOS.AI
 
-## 1. Estado actual confirmado
+## 0. Fuente de verdad actual
 
-La arquitectura real de despliegue queda asi:
+Este documento reemplaza las decisiones temporales tomadas durante la fase de desarrollo. La decision vigente para produccion y fase activa es:
 
-| Componente | Estado actual |
+| Componente | Decision vigente |
 |---|---|
-| Frontend preview | Vercel |
-| Frontend cliente | cPanel |
+| Frontend cliente | cPanel del cliente como sitio estatico |
+| Frontend preview/dev | Vercel o entorno local, solo para pruebas |
 | Backend | VPS CubePath administrado con Coolify |
-| Base de datos | PostgreSQL dentro del VPS |
-| IA principal | Gemini |
-| Fallback IA | OpenRouter |
+| Base de datos produccion | Supabase PRO PostgreSQL |
+| Base de datos local en VPS | Retirar de produccion |
+| Adminer en VPS | Retirar de produccion |
+| IA principal | Gemini / OpenAI segun configuracion activa |
+| Fallback IA | OpenRouter u otro proveedor configurado |
+| Uploads/PDFs | Carpeta local persistente `/uploads` en backend |
 
-La migracion de la base de datos al VPS ya fue ejecutada. El backend ya esta levantando correctamente con la nueva `DATABASE_URL` interna del VPS.
+Regla clave: en produccion la base de datos NO debe vivir dentro del VPS. El VPS queda enfocado en FastAPI, workers, parseo de PDFs, orquestacion de IA y almacenamiento local de archivos cargados.
 
-## 2. Hallazgo clave de la migracion
+## 1. Motivo de la reestructuracion
 
-El backend no dependia realmente de Supabase como plataforma, sino de PostgreSQL por `DATABASE_URL`.
+La base PostgreSQL dentro del VPS fue util para desarrollo y optimizacion de costos, pero no es la opcion mas segura para la fase activa con varios docentes generando silabos en paralelo.
 
-Eso significa que:
+Riesgos detectados del modelo anterior:
 
-- no fue necesario reescribir la logica principal;
-- el cambio fue de infraestructura, no de producto;
-- la compatibilidad con PostgreSQL propio era alta desde el inicio.
+- consumo alto de RAM por PostgreSQL + backend en un servidor de 4 GB;
+- posibilidad de OOM Killer durante picos de concurrencia;
+- mantenimiento manual de backups, indices, memoria y recuperacion;
+- Adminer y herramientas de DB compitiendo por recursos del backend;
+- objetos `JSONB` complejos en `syllabi.payload_json` y `methodology_json`, costosos cuando se procesan muchas generaciones simultaneas.
 
-El unico ajuste de codigo necesario fue normalizar `postgres://` hacia `postgresql+psycopg2://` para SQLAlchemy.
+Decision aprobada: usar Supabase PRO por 25 USD/mes durante los meses de operacion intensiva. Supabase aporta PostgreSQL administrado, backups, Point-in-Time Recovery y una base mas preparada para busquedas avanzadas o RAG futuro.
 
-## 3. Conclusiones tecnicas sobre la base de datos
+## 2. Arquitectura aprobada para fase activa
 
-### 3.1 PostgreSQL en VPS: decision correcta
+### 2.1 Frontend
 
-Mover la base de datos al mismo VPS del backend fue la mejor decision por estas razones:
+El frontend queda en cPanel del cliente como build estatico.
 
-- elimina la dependencia de Supabase como costo o riesgo operativo;
-- mejora la cercania entre backend y base de datos;
-- simplifica la arquitectura;
-- permite administrar el entorno de forma centralizada.
+Debe apuntar al dominio publico del backend autorizado. Antes de subir a cPanel confirmar:
 
-### 3.2 PostgreSQL de cPanel: no recomendado
+- variable de API correcta en el build;
+- dominio backend permitido por CORS;
+- rutas SPA soportadas por `.htaccess` si aplica;
+- assets generados y cacheados correctamente.
 
-Aunque cPanel muestre un modulo PostgreSQL, no conviene usarlo como base principal del sistema.
+### 2.2 Backend
 
-Razones:
+El backend queda en CubePath `gp.micro` con Coolify.
 
-- menor control sobre configuracion y rendimiento;
-- mas dependencia del hosting compartido;
-- mayor riesgo de restricciones de acceso, politicas del proveedor o limites del entorno;
-- peor separacion entre capa web y capa de datos.
+Plan vigente:
 
-Conclusion interna:
+- `gp.micro`;
+- 4 vCPU;
+- 4 GB RAM;
+- costo acordado aproximado: 15.00 USD/mes;
+- upgrade suspendido temporalmente mientras la DB este fuera del VPS.
 
-- cPanel solo debe usarse para el frontend;
-- backend y base de datos deben quedarse en el VPS.
+Condicion de upgrade: si en pruebas de estres o produccion la RAM supera 90% de forma sostenida, subir inmediatamente a `gp.starter` de 8 GB RAM.
 
-## 4. Costos y margen interno actualizados
+### 2.3 Base de datos
 
-### 4.1 Costo real de infraestructura
+La base de datos de produccion debe estar en Supabase PRO.
 
-| Concepto | Costo real mensual |
-|---|---:|
-| VPS gp.micro | 8.00 USD |
-| IP flotante | 1.51 USD |
-| Base de datos PostgreSQL en el mismo VPS | 0 USD adicional |
-| Total real base | 9.51 USD |
+Acciones obligatorias para pasar a produccion:
 
-### 4.2 Precio propuesto al cliente
+1. Crear o activar proyecto Supabase PRO.
+2. Restaurar/migrar datos actuales a Supabase.
+3. Actualizar `DATABASE_URL` del backend en Coolify con la cadena nueva de Supabase.
+4. Verificar que el formato de URL sea compatible con SQLAlchemy (`postgresql+psycopg2://` si el backend lo requiere).
+5. Redeploy del backend.
+6. Probar `/health`, login, catalogos, generacion, guardado y exportacion.
+7. Eliminar la base PostgreSQL local de Coolify cuando la migracion este verificada.
+8. Eliminar Adminer del VPS para liberar memoria y reducir superficie de riesgo.
 
-| Concepto comercial | Precio mensual |
-|---|---:|
-| Hosting administrado de aplicacion y base de datos | 17.00 USD |
-| Presupuesto operativo de IA | 12.00 USD |
-| Total mensual estimado al cliente | 29.00 USD |
+No dejar dos bases activas como si ambas fueran produccion. Durante migracion puede existir una ventana temporal, pero al cierre debe quedar una sola fuente de verdad: Supabase PRO.
 
-### 4.3 Margen interno
+## 3. Variables criticas de entorno
 
-| Indicador | Valor |
-|---|---:|
-| Costo real del VPS e IP | 9.51 USD |
-| Cobro por aplicacion + base de datos | 17.00 USD |
-| Diferencia operativa | 7.49 USD |
-| Markup aproximado sobre costo | 78.76% |
+Revisar en Coolify antes de cada redeploy:
 
-Lectura interna:
-
-- el aumento de 2 USD esta justificado porque ahora el VPS sostiene backend y base de datos;
-- ese fee no es solo hosting, tambien cubre administracion, soporte, operacion y responsabilidad tecnica.
-
-## 5. Que cambio en el software y que no
-
-### 5.1 Lo que no cambio
-
-- no cambio la logica de negocio;
-- no cambio el frontend por la migracion;
-- no cambio el flujo principal de generacion de silabos.
-
-### 5.2 Lo que si cambio
-
-- la fuente de datos ya no es Supabase;
-- la `DATABASE_URL` ahora apunta al PostgreSQL interno del VPS;
-- el backend usa la misma capa de acceso, pero contra la nueva base.
-
-### 5.3 Ajuste tecnico aplicado
-
-Se agrego una normalizacion de URL para aceptar valores tipo `postgres://` y convertirlos a un formato compatible con SQLAlchemy.
-
-Esto evito el error:
-
-`Can't load plugin: sqlalchemy.dialects:postgres`
-
-## 6. RAG y estado del sistema
-
-El subsistema RAG sigue presente en el codigo, pero ya no es un requisito para justificar la migracion de la base al VPS.
-
-Hallazgos:
-
-- el flujo principal `generate-v2` no depende de RAG;
-- el RAG esta concentrado sobre todo en el chat con documentos;
-- el paso satelite de NotebookLM puede convivir sin que el RAG sea el centro del producto.
-
-Recomendacion:
-
-- no tocar RAG ahora si no estorba el deploy;
-- si luego quieres simplificar el producto, se puede retirar en una fase separada.
-
-## 7. Tareas pendientes de alta prioridad
-
-| Tarea | Prioridad | Motivo |
+| Variable | Uso | Riesgo si falla |
 |---|---|---|
-| Probar `GET /health` | Alta | Confirmar estado real de servicios con la nueva base |
-| Probar login | Alta | Validar usuarios y autenticacion sobre la nueva DB |
-| Probar listado de programas y cursos | Alta | Confirmar integridad de catalogos migrados |
-| Probar generacion de silabo | Alta | Validar flujo principal del producto |
-| Probar guardado y lectura de silabos | Alta | Confirmar persistencia correcta |
-| Probar exportacion | Alta | Confirmar que el flujo final del usuario funciona |
-| Revisar persistencia de `uploads/` | Alta | Los archivos siguen en disco local |
-| Configurar backups del PostgreSQL del VPS | Alta | Ya no existe respaldo externo por Supabase |
+| `DATABASE_URL` | Conexion PostgreSQL Supabase | Backend cae o guarda en DB equivocada |
+| `GEMINI_API_KEY` / proveedor IA | Generacion de contenido | Error en generacion |
+| `OPENAI_API_KEY` / fallback | Fallback o funciones futuras | Sin respaldo ante falla IA |
+| `FRONTEND_URL` / CORS | Permitir cPanel | Login o requests bloqueados |
+| `UPLOAD_DIR` | PDFs y archivos locales | Perdida o no lectura de documentos |
+| `SECRET_KEY` / JWT | Sesiones | Login invalido o inseguro |
 
-## 8. Tareas recomendadas de orden y limpieza
+Regla: no cambiar variables en produccion sin anotar fecha, valor anterior conceptual y motivo. Nunca pegar secretos reales en chats o documentos.
 
-| Tarea | Prioridad | Comentario |
-|---|---|---|
-| Renombrar `SupabaseService` a `DatabaseService` | Media | El nombre ya no representa la arquitectura real |
-| Actualizar `main.py` para que `/health` deje de decir `supabase` | Media | Es solo deuda tecnica de naming |
-| Actualizar README del frontend | Media | Sigue desalineado del deploy real |
-| Alinear upload de bibliografia con PDF/MD/TXT | Media | El frontend y backend aun no coinciden del todo |
+## 4. Checklist de deploy a produccion
 
-## 9. Riesgos actuales
+### 4.1 Antes del deploy
 
-### 9.1 Password expuesta en conversacion
+- Confirmar que Supabase PRO esta activo.
+- Confirmar backups de la DB anterior.
+- Confirmar copia de `/uploads`.
+- Confirmar `DATABASE_URL` nueva.
+- Confirmar CORS con dominio de cPanel.
+- Confirmar build frontend con URL del backend productivo.
+- Confirmar que el contenedor PostgreSQL local y Adminer no son necesarios.
 
-La credencial de la nueva base fue compartida en el chat.
+### 4.2 Deploy backend
 
-Accion recomendada inmediata:
+1. Actualizar variables en Coolify.
+2. Redeploy backend.
+3. Revisar logs de arranque.
+4. Confirmar inicializacion de servicios IA.
+5. Confirmar conexion a Supabase.
+6. Ejecutar pruebas funcionales basicas.
 
-- rotar la contraseña de PostgreSQL;
-- actualizar la `DATABASE_URL` en Coolify;
-- redeployar una vez mas.
+### 4.3 Deploy frontend en cPanel
 
-### 9.2 Backups
+1. Generar build estatico.
+2. Subir contenido del build a cPanel.
+3. Verificar `.htaccess` para SPA si corresponde.
+4. Abrir dominio cliente.
+5. Probar login y flujo de generacion desde navegador real.
 
-Antes parte del riesgo operativo quedaba amortiguado por el proveedor externo. Ahora todo el control es tuyo, lo cual es mejor, pero exige disciplina de backup.
+### 4.4 Despues del deploy
 
-### 9.3 Uploads locales
+- Eliminar contenedor PostgreSQL local en Coolify.
+- Eliminar Adminer.
+- Confirmar RAM libre del VPS.
+- Confirmar que no existen conexiones productivas a la DB vieja.
+- Documentar fecha y responsable del cambio.
 
-La base de datos ya esta dentro del VPS, pero los documentos siguen guardandose en disco local del contenedor o del entorno montado. Si no hay persistencia clara, puedes perder archivos aunque la DB este bien.
+## 5. Pruebas minimas obligatorias
 
-## 10. Verificaciones realizadas
-
-| Verificacion | Resultado |
+| Prueba | Resultado esperado |
 |---|---|
-| `npm run lint` en frontend | OK |
-| `npm run build` en frontend | OK |
-| Redeploy backend tras migracion DB | OK |
-| Inicializacion de GeminiService | OK |
-| Inicializacion de SearchService | OK |
-| Inicializacion de acceso a PostgreSQL en VPS | OK |
+| `GET /health` | Backend responde OK y DB conectada |
+| Login docente | Token/session valida |
+| Login admin/coordinador | Acceso por rol correcto |
+| Listado de programas | Catalogos cargan desde Supabase |
+| Listado de cursos | Cursos visibles y filtrados |
+| Generacion de silabo | IA responde y estructura completa |
+| Guardado de silabo | Registro aparece en `syllabi` |
+| Lectura posterior | El silabo guardado se recupera igual |
+| Exportacion | Documento final se genera |
+| Upload PDF | Archivo queda en `/uploads` persistente |
 
-## 11. Recomendacion final
+## 6. Guia rapida para incidentes en produccion
 
-La documentacion comercial ya debe dejar de hablar de Supabase como estado actual. La narrativa correcta es:
+Objetivo: resolver rapido cuando hay varios docentes en paralelo. Primero identificar si el cuello es frontend, backend, DB, IA o archivos.
+
+### 6.1 Sintoma: todos los usuarios ven error o pantalla vacia
+
+Prioridad de revision:
+
+1. Verificar si el dominio frontend de cPanel carga.
+2. Abrir DevTools y confirmar si falla la API.
+3. Probar `/health` del backend.
+4. Revisar logs de Coolify.
+5. Confirmar que Supabase no este pausado, saturado o con credenciales cambiadas.
+
+Accion rapida:
+
+- si frontend carga pero API falla, el problema esta en backend/CORS/API;
+- si `/health` falla, redeploy backend y revisar `DATABASE_URL`;
+- si `/health` responde pero login falla, revisar auth, DB y roles.
+
+### 6.2 Sintoma: login falla para todos
+
+Revisar:
+
+- `DATABASE_URL`;
+- tabla `users`;
+- roles y `status`;
+- `SECRET_KEY` o configuracion JWT;
+- CORS si el navegador bloquea la respuesta.
+
+Accion rapida:
+
+- validar un usuario desde Supabase;
+- probar login con cuenta admin;
+- revisar logs del endpoint de autenticacion.
+
+### 6.3 Sintoma: algunos docentes generan, otros no
+
+Probables causas:
+
+- curso sin data suficiente;
+- usuario sin `career_id` o rol correcto;
+- timeout por PDF pesado;
+- error de proveedor IA;
+- payload demasiado grande.
+
+Accion rapida:
+
+- pedir email del docente y curso exacto;
+- revisar el ultimo error en logs por timestamp;
+- probar el mismo curso con admin;
+- si falla solo un curso, revisar `courses`, `performances`, `course_bibliography_refs` y metadata asociada.
+
+### 6.4 Sintoma: generacion lenta o timeouts con muchos docentes
+
+Revisar en este orden:
+
+1. RAM del VPS.
+2. CPU del VPS.
+3. logs de workers Uvicorn/FastAPI.
+4. latencia/respuestas del proveedor IA.
+5. Supabase dashboard: conexiones, CPU, queries lentas.
+
+Acciones rapidas:
+
+- bajar temporalmente concurrencia si existe control interno;
+- aumentar workers solo si queda RAM disponible;
+- si RAM supera 90%, ejecutar upgrade a `gp.starter`;
+- si IA esta lenta, activar fallback o cambiar proveedor/modelo configurado;
+- revisar si algun PDF pesado esta bloqueando procesos.
+
+### 6.5 Sintoma: guardado falla despues de generar
+
+Revisar:
+
+- conexion a Supabase;
+- permisos/constraints de `syllabi`;
+- tamano de `payload_json`;
+- errores de serializacion JSON;
+- migraciones pendientes.
+
+Accion rapida:
+
+- probar guardar un silabo minimo;
+- revisar el error SQL exacto;
+- no ejecutar DDL automatico desde el backend en produccion;
+- preparar SQL crudo si se requiere ajuste de esquema.
+
+### 6.6 Sintoma: exportacion falla
+
+Revisar:
+
+- que el silabo exista en `syllabi`;
+- estructura de `payload_json`;
+- permisos de escritura temporales;
+- libreria o servicio que genera el documento;
+- logs del endpoint de exportacion.
+
+Accion rapida:
+
+- intentar exportar otro silabo conocido;
+- si solo falla uno, revisar campos faltantes en payload;
+- si fallan todos, revisar dependencia de exportacion o storage temporal.
+
+### 6.7 Sintoma: PDFs o bibliografia no aparecen
+
+Revisar:
+
+- carpeta `/uploads`;
+- volumen persistente en Coolify;
+- permisos de lectura/escritura;
+- tabla `course_bibliography_refs`;
+- ruta configurada en `UPLOAD_DIR`.
+
+Accion rapida:
+
+- confirmar si el archivo existe fisicamente;
+- si la DB apunta a archivo inexistente, restaurar desde backup de uploads;
+- si el archivo existe pero no se lee, revisar permisos/ruta dentro del contenedor.
+
+## 7. Monitoreo durante fase activa
+
+Durante el mes de inicio de ciclo revisar al menos una vez al dia:
+
+| Recurso | Umbral de alerta | Accion |
+|---|---:|---|
+| RAM VPS | > 80% sostenido | Vigilar workers y procesos |
+| RAM VPS | > 90% sostenido | Upgrade a `gp.starter` |
+| CPU VPS | > 85% sostenido | Revisar PDFs, workers y loops |
+| Disco VPS | > 80% | Limpiar temporales y revisar uploads |
+| Errores 5xx | Cualquier pico | Revisar logs Coolify |
+| Supabase conexiones | Cerca del limite | Revisar pool/concurrencia |
+| IA timeouts | Repetidos | Activar fallback o bajar carga |
+
+Comandos utiles en VPS:
+
+```bash
+free -h
+df -h
+docker ps
+docker stats
+docker logs <backend-container> --tail 200
+```
+
+Usarlos con cuidado en produccion. No reiniciar servicios sin revisar logs inmediatos.
+
+## 8. Modelo operativo y financiero aprobado
+
+### 8.1 Fase activa
+
+Durante el inicio de semestre:
+
+- VPS activo;
+- Supabase PRO activo;
+- API de IA activa;
+- monitoreo diario;
+- backups frecuentes;
+- soporte rapido a docentes.
+
+### 8.2 Fase de reposo
+
+Durante el resto del anio:
+
+- generar backup completo `.sql` desde Supabase;
+- descargar copia de `/uploads`;
+- reducir o apagar servicios costosos cuando sea viable;
+- mantener retencion de IP si aplica, aprox. 2.00 USD/mes;
+- si no se retiene IP, asumir ajuste manual de DNS en cPanel durante la siguiente activacion.
+
+### 8.3 Cobro por IA
+
+Decision comercial: estandarizar IA como paquete fijo.
+
+Referencia aprobada:
+
+- cuota IA cliente: 20.00 USD/mes;
+- fundamento: el costo real por silabo usando modelos eficientes es bajo, pero el paquete cubre operacion, margen, fallback y presupuesto predecible.
+
+## 9. Modelo de datos relevante para soporte
+
+Tablas core actuales:
+
+| Tabla | Uso en produccion |
+|---|---|
+| `users` | Login, roles, alcance por carrera |
+| `programs` | Programas academicos |
+| `careers` | Carreras |
+| `courses` | Catalogo de cursos |
+| `performances` | Desempenos oficiales por curso; si esta vacia puede disparar fallback IA |
+| `skills_catalog` | Catalogo de habilidades |
+| `teaching_methods` | Metodologias institucionales |
+| `course_bibliography_refs` | Bibliografia parseada desde NotebookLM/PDFs |
+| `syllabi` | Silabos generados y payload final |
+
+Campos criticos:
+
+- `users.email`, `users.role`, `users.career_id`, `users.status`;
+- `courses.id`, `courses.name`, `courses.code`, `courses.sumilla`;
+- `syllabi.payload_json`, `syllabi.methodology_json`;
+- `course_bibliography_refs.course_id`, `ref_text`, `ref_order`.
+
+Si un docente reporta falla, pedir siempre:
+
+- email del usuario;
+- curso;
+- hora aproximada;
+- accion exacta;
+- captura o mensaje de error;
+- si subio PDF, nombre del archivo.
+
+## 10. Politica de cambios de esquema
+
+Regla estricta para agentes de IA y desarrolladores:
+
+- no ejecutar migraciones DDL automaticas desde el backend en produccion;
+- no asumir que Alembic u otro runner esta habilitado para produccion;
+- todo cambio estructural debe proponerse como SQL crudo;
+- el desarrollador responsable ejecuta manualmente el SQL en Supabase SQL Editor;
+- antes de ejecutar DDL, tomar backup o confirmar Point-in-Time Recovery.
+
+Ejemplos de DDL:
+
+- crear tabla;
+- alterar columna;
+- crear indice;
+- cambiar constraints;
+- modificar tipos JSONB.
+
+## 11. Seguridad y secretos
+
+Reglas:
+
+- no pegar credenciales reales en chats, issues ni documentos;
+- si una credencial fue compartida, rotarla;
+- actualizar Coolify despues de rotar;
+- redeploy inmediato;
+- confirmar que el backend usa la nueva credencial.
+
+Secretos sensibles:
+
+- `DATABASE_URL`;
+- claves Gemini/OpenAI/OpenRouter;
+- `SECRET_KEY`;
+- credenciales cPanel;
+- credenciales Supabase.
+
+## 12. Backups
+
+Durante fase activa:
+
+- backup Supabase antes de cambios importantes;
+- verificar PITR disponible en plan PRO;
+- copia regular de `/uploads`;
+- documentar fecha de cada backup.
+
+Durante fase de reposo:
+
+- export `.sql`;
+- descarga completa de `/uploads`;
+- guardar build frontend estable;
+- documentar versiones de backend/frontend usadas en el ciclo.
+
+Recordatorio: Supabase protege la base de datos, pero no protege automaticamente los PDFs locales del VPS.
+
+## 13. Lecciones aprendidas de CubePath y Coolify
+
+- No tocar firewall externo de CubePath sin plan de rollback. La politica DROP puede bloquear SSH, Coolify o backend.
+- Evitar exponer puertos de base de datos al exterior.
+- Preferir comunicacion interna segura y variables controladas.
+- No instalar pgAdmin, Supabase Studio ni herramientas pesadas en el VPS.
+- Mantener el VPS limpio: backend, volumen de uploads y servicios estrictamente necesarios.
+- Si se usa una herramienta temporal de DB durante migracion, retirarla al terminar.
+
+## 14. Criterios de escalamiento
+
+Escalar VPS a `gp.starter` si ocurre cualquiera:
+
+- RAM > 90% sostenida;
+- OOM Killer detectado;
+- backend reinicia durante generacion concurrente;
+- timeouts frecuentes no atribuibles a IA ni Supabase;
+- `docker stats` muestra contenedor backend al limite.
+
+Escalar revision de base/Supabase si ocurre:
+
+- queries lentas repetidas;
+- limite de conexiones cercano;
+- errores SQL concurrentes;
+- guardados lentos de `payload_json`;
+- necesidad de indices adicionales.
+
+Escalar proveedor IA/fallback si ocurre:
+
+- timeouts de modelo;
+- rate limit;
+- respuestas incompletas;
+- costo anormal;
+- degradacion del proveedor principal.
+
+## 15. Recomendacion final vigente
+
+La narrativa tecnica y comercial actual debe ser:
 
 - frontend en cPanel del cliente;
-- backend y base de datos PostgreSQL en VPS administrado;
-- IA como servicio operativo complementario.
+- backend FastAPI en VPS administrado con Coolify;
+- base de datos PostgreSQL administrada en Supabase PRO durante fase activa;
+- PDFs y uploads en volumen persistente del VPS;
+- IA como paquete operativo fijo;
+- operacion elastica: subir servicios en fase activa y reducir costos en fase de reposo.
 
-Tambien es correcto subir el fee del entorno administrado a 17 USD mensuales, porque ahora ese mismo servicio sostiene tanto la aplicacion como la base de datos. Eso mejora el argumento comercial y refleja mejor la responsabilidad tecnica asumida.
----
-### ANALISIS DE LA DB AL 18/04/2026
-
-## 1. Visión General de Tablas y Volumetría
-Base de datos relacional migrada a PostgreSQL. A continuación, el estado actual de registros:
-
-* `courses`: ~ 317 registros
-* `skills_catalog`: ~ 300 registros
-* `teaching_methods`: 11 registros
-* `syllabi`: ~ 10 registros
-* `programs`: ~ 8 registros
-* `users`: ~ 4 registros
-* `faculties`: ~ 3 registros
-* `careers`: ~ 1 registro
-* `performances`: 0 registros (vacía actualmente)
-* `course_bibliography_refs`: Activa (contiene referencias parseadas)
-
----
-
-## 2. Diccionario de Datos (Tablas Core del Flujo)
-
-### Tabla: `courses`
-Almacena el catálogo de cursos. Es de solo lectura para el flujo de generación, pero editable desde el módulo Admin.
-* **id**: `uuid` (PK)
-* **career_id** / **program_id**: `uuid` (Relaciones)
-* **name**: `varchar(200)`
-* **code**: `varchar(30)`
-* **credits**: `integer`
-* **cycle**: `integer`
-* **is_common**: `boolean` (indica si es de formación general)
-* **scope**: `varchar(100)`
-* **sumilla**: `text`
-* **competencia_egreso**: `text`
-* **resultado_aprendizaje**: `text`
-
-### Tabla: `performances`
-Almacena los desempeños oficiales desglosados por curso. (Actualmente vacía, dispara el fallback de IA).
-* **id**: `uuid` (PK)
-* **course_id**: `uuid` (FK a `courses`)
-* **code**: `varchar` (ej. "D1", "D2")
-* **statement**: `text` (el texto del desempeño)
-* **display_order**: `integer` (secuencia)
-
-### Tabla: `skills_catalog`
-Catálogo estático de habilidades (~300 registros en 7 categorías).
-* **id**: `uuid` (PK)
-* **id_habilidad**: `varchar(20)` (ej. "HAB-COG-001")
-* **nombre**: `varchar(300)` (ej. "Identificar conceptos clave")
-* **descripcion**: `text`
-* **categoria**: `varchar(100)` (ej. "Cognitiva")
-* **subcategoria**: `varchar(150)` (ej. "Comprensión conceptual")
-* **nivel_cognitivo**: `varchar(50)` (ej. "Comprender")
-* **verbo_principal**: `varchar(100)` (ej. "identificar")
-* **evidencias_sugeridas**: `text` (ej. "mapa conceptual, glosario")
-* **instrumentos_sugeridos**: `text` (ej. "lista de cotejo")
-
-### Tabla: `teaching_methods`
-Metodologías pedagógicas institucionales (11 registros). Controla la generación de la metodología y cronograma.
-* **id**: `uuid` (PK)
-* **name**: `varchar(200)`
-* **code**: `varchar(20)`
-* **description**: `text`
-* **phases**: `jsonb` (ej. `["Fase 1", "Fase 2"]`)
-* **weekly_template**: `text` (ej. "Semanas 1-4: Fase 1 | Semanas 5-8: Fase 2")
-* **tecnicas_didacticas**: `jsonb`
-* **estrategias_evaluacion**: `text`
-* **instrumentos_evaluacion**: `jsonb`
-
-### Tabla: `course_bibliography_refs`
-Almacena las referencias extraídas vía NotebookLM/PDFs.
-* **id**: `uuid` (PK)
-* **course_id**: `varchar`
-* **doc_id**: `varchar`
-* **ref_text**: `text` (la cita en formato APA)
-* **ref_order**: `integer` (orden de aparición)
-
-### Tabla: `syllabi`
-Guarda el sílabo final generado y su metadata.
-* **id**: `uuid` (PK)
-* **course_id**: `uuid` (FK a `courses`)
-* **user_id**: `uuid` (FK a `users`)
-* **teaching_method_id**: `uuid` (FK a `teaching_methods`)
-* **semester**: `varchar(20)`
-* **teacher_name**: `varchar(200)`
-* **status**: `varchar(20)` (default: draft)
-* **payload_json**: `jsonb` (Almacena la estructura completa del sílabo, debe incluir skills confirmados y flag de origen de desempeños)
-* **methodology_json**: `jsonb`
-
-### Tabla: `users`
-Maneja la autenticación y autorización (combina data transaccional con metadata de auth). Columnas de negocio clave:
-* **id**: `uuid` (PK)
-* **email**: `varchar`
-* **full_name**: `varchar`
-* **role**: `varchar` (Define el nivel de acceso: Admin, Coordinador, Docente)
-* **career_id**: `uuid` (Define el alcance institucional del usuario)
-* **status**: `varchar`
-
----
-### ADMIN DB 17/04/26
-
-Contexto General: La base de datos fue migrada exitosamente de la plataforma en la nube de Supabase a un contenedor PostgreSQL auto-alojado dentro del VPS principal (CubePath), gestionado a través de Coolify. Esto centraliza la arquitectura y mejora el margen operativo.
-
-1. Herramientas de Administración Aprobadas
-Visualización y CRUD Rápido (UI): Se utiliza Adminer (adminer:latest) desplegado como un contenedor dentro de Coolify. Esta es la herramienta principal para inspeccionar tablas, verificar registros y hacer ajustes manuales rápidos.
-
-Operaciones de Bajo Nivel: Se utiliza la Terminal (SSH) directa al servidor root para configuraciones de sistema operativo, reinicios de Docker o gestión de firewall.
-
-2. Protocolo de Migraciones y Cambios de Esquema (Para Agentes de IA)
-Cualquier futuro agente de IA debe adherirse a esta regla estricta sobre las migraciones:
-
-Cero Ejecución Automática: Los agentes nunca deben intentar ejecutar scripts de migración automática de DDL directamente desde el código del backend en producción. No se debe asumir que existe automatización para esto.
-
-Propuesta de SQL Crudo: Cualquier cambio estructural (crear tablas, alterar columnas, modificar índices) debe ser propuesto por la IA como un script de SQL puro (Raw SQL).
-
-Ejecución Manual: El desarrollador (dueño) tomará ese script SQL y lo ejecutará manualmente utilizando la interfaz de Adminer (en la pestaña "Comando SQL") o por consola.
-
-3. Lecciones Aprendidas de Infraestructura (CubePath y Coolify)
-Seguridad y Firewall (El peligro de la política DROP): Modificar el firewall externo de CubePath es altamente riesgoso. La política por defecto es DROP (bloqueo total). Un error al abrir un puerto nuevo (como olvidar incluir el puerto 22 o el 8000) resultará en el bloqueo completo del acceso al servidor y a Coolify.
-
-Conexiones Seguras (Infiltración vs. Exposición): Intentar exponer puertos de bases de datos al exterior (ej. puerto 3000) genera problemas de timeout. La estrategia más segura es la comunicación interna de Docker. Al instalar Adminer dentro de Coolify, la app visual y la base de datos se comunican por la red interna usando el nombre del contenedor (ej. postgresql-database-...), saltándose completamente la muralla del firewall de CubePath.
-
-Manejo del SSL Local: PostgreSQL suele rechazar conexiones locales si el cliente intenta forzar protocolos SSL (prefer) de manera inesperada. Las herramientas internas dentro de la misma red no requieren SSL (disable).
-
-Proxy y Puertos Internos en Coolify: Cuando se despliegan herramientas de terceros (como Adminer) en Coolify, es vital asegurarse de que el proxy inverso sepa a qué puerto interno apuntar (ej. cambiar el puerto expuesto al 8080 si la imagen de Docker así lo exige) para evitar errores de Bad Gateway.
-
-4. Gestión de Recursos y Prevención de Caídas
-Restricción de RAM: El servidor es una instancia gp.micro. Los recursos (RAM y CPU) son limitados y deben ser protegidos celosamente para asegurar que el backend de FastAPI no sufra caídas.
-
-Prohibición de Contenedores Pesados: Queda terminantemente prohibido instalar gestores de base de datos pesados como pgAdmin 4 o el ecosistema completo de Supabase Studio. Estas herramientas consumen demasiada memoria y pueden provocar que el sistema operativo mate procesos vitales (OOM Killer). Adminer fue elegido por ser un único archivo ligero que consume recursos insignificantes.
-
+Esta decision prioriza estabilidad y velocidad de respuesta durante produccion con varios docentes en paralelo. El ahorro extremo queda subordinado a continuidad operativa, backups y soporte rapido.

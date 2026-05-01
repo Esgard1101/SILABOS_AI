@@ -327,9 +327,9 @@ export default function Step6_Cierre() {
           : row
       )));
       setGradingOrigin('ai_suggested');
-      showToast('Evidencias sugeridas segun el metodo seleccionado', 'success');
+      showToast('Evidencias sugeridas según el método seleccionado', 'success');
     } catch {
-      showToast('Error al sugerir sistema de evaluacion', 'error');
+      showToast('Error al sugerir sistema de evaluación', 'error');
     } finally {
       setSuggesting(false);
     }
@@ -398,18 +398,18 @@ export default function Step6_Cierre() {
     } catch (error) {
       if (isTimeoutOrNetworkError(error)) {
         showToast(
-          'La IA esta tardando mas de lo esperado. Esperando a que termine en segundo plano...',
+          'La IA está tardando más de lo esperado. Esperando a que termine en segundo plano...',
           'warning',
         );
         const completed = await pollAssembledSyllabus(draftId);
         if (completed) {
-          showToast('Silabo generado correctamente. Redirigiendo al editor...', 'success');
+          showToast('Sílabo generado correctamente. Redirigiendo al editor...', 'success');
           setFinalSyllabusId(draftId);
           setAssembled(true);
           navigate(`/editor?id=${draftId}`);
         } else {
           showToast(
-            'La IA aun no termina. Espera unos segundos e intenta de nuevo, o abre el sílabo desde la lista.',
+            'La IA aún no termina. Espera unos segundos e intenta de nuevo, o abre el sílabo desde la lista.',
             'warning',
           );
         }

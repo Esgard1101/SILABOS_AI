@@ -175,7 +175,7 @@ function CurrCard({
             </div>
 
             {isEmpty ? (
-              <p className="text-[12px] italic leading-5 text-white/35">Sin informacion registrada.</p>
+              <p className="text-[12px] italic leading-5 text-white/35">Sin información registrada.</p>
             ) : showBullets ? (
               <ul className="space-y-1 text-[12px] leading-5 text-white/82">
                 {bulletItems.map((item) => (
@@ -245,8 +245,8 @@ function AnnexesCard({ className = '' }: { className?: string }) {
           </div>
 
           <p className="max-w-xl text-[12px] leading-5 text-white/82">
-            Documentos de apoyo y normativas institucionales que complementan la elaboracion del
-            silabo.
+            Documentos de apoyo y normativas institucionales que complementan la elaboración del
+            sílabo.
           </p>
         </div>
 
@@ -354,7 +354,7 @@ export default function Step1_Repositorio() {
                 Componentes curriculares oficiales importados correctamente
               </p>
               <p className="mt-0.5 text-[12px] leading-5 text-white/75">
-                Estos componentes seran la base para la elaboracion inteligente del silabo.
+                Estos componentes serán la base para la elaboración inteligente del sílabo.
               </p>
               <p className="mt-0.5 truncate text-[12px] font-medium text-white">{context.course_name}</p>
             </div>
@@ -414,7 +414,7 @@ export default function Step1_Repositorio() {
             icon={FileText}
             iconTone="bg-white/10 text-white/72"
             title="Plantilla oficial"
-            text="Plantilla institucional para la elaboracion del silabo segun lineamientos de la UNPRG."
+            text="Plantilla institucional para la elaboración del sílabo según lineamientos de la UNPRG."
             previewSrc={PREVIEW_ASSETS.plantilla}
             previewAlt="Vista previa de plantilla oficial"
             maxChars={85}

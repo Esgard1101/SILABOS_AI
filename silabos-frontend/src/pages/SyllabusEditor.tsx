@@ -393,7 +393,7 @@ function buildGradingRows(criteria?: CriterioEvaluacion[]) {
   const rows = (criteria || [])
     .filter((item) => item && (item.nombre || item.sigla || item.porcentaje != null))
     .map((item, index) => ({
-      evidencia: pickDisplayValue(item.nombre, `Evaluacion ${index + 1}`),
+      evidencia: pickDisplayValue(item.nombre, `Evaluación ${index + 1}`),
       sigla: pickDisplayValue(item.sigla, `EV${index + 1}`),
       porcentaje: item.porcentaje ?? 0,
       cronograma: displayValue(item.cronograma || item.descripcion),
@@ -1334,7 +1334,7 @@ export default function SyllabusEditor() {
           <CheckCircle size={18} className="text-amber-500" /> Auditoria de Coherencia
         </h3>
 
-        {validationLoading ? <p className="text-sm text-slate-500">Validando silabo...</p> : null}
+        {validationLoading ? <p className="text-sm text-slate-500">Validando sílabo...</p> : null}
 
         <div className="space-y-4">
           {!syllabusId && !validationLoading ? (
@@ -1350,7 +1350,7 @@ export default function SyllabusEditor() {
             <div className="p-4 rounded-xl bg-green-50 border border-green-100">
               <CheckCircle className="text-green-600 mb-2" />
               <p className="text-sm font-bold text-green-700">Sin observaciones</p>
-              <p className="text-xs text-green-600 mt-1">La auditoria no reporto alertas.</p>
+              <p className="text-xs text-green-600 mt-1">La auditoría no reportó alertas.</p>
             </div>
           ) : null}
 

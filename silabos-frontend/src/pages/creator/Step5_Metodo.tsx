@@ -50,9 +50,9 @@ function buildWhyItems(method: MethodItem, suggestReason: string) {
 
   const candidates = [
     clampText(suggestReason, 140),
-    method.proposito ? `Se alinea al proposito del silabo: ${clampText(method.proposito, 104)}` : '',
+    method.proposito ? `Se alinea al propósito del sílabo: ${clampText(method.proposito, 104)}` : '',
     phases.length > 0 ? `Ordena el trabajo en ${phases.length} fases claras.` : '',
-    techniques.length > 0 ? `Activa al estudiante con tecnicas como ${clampText(techniques.slice(0, 2).join(' y '), 76)}.` : '',
+    techniques.length > 0 ? `Activa al estudiante con técnicas como ${clampText(techniques.slice(0, 2).join(' y '), 76)}.` : '',
     products.length > 0 ? `Conduce a evidencias como ${clampText(products.slice(0, 2).join(' y '), 74)}.` : '',
     method.rol_estudiante ? `Refuerza un rol activo: ${clampText(method.rol_estudiante, 84)}` : '',
   ].filter(Boolean);
@@ -101,7 +101,7 @@ function MethodCard({
   onClick: () => void;
 }) {
   const descriptor = clampText(
-    method.proposito || method.description || 'Metodo institucional listo para secuenciar actividades y evidencias.',
+    method.proposito || method.description || 'Método institucional listo para secuenciar actividades y evidencias.',
     92,
   );
 
@@ -170,7 +170,7 @@ function MethodRelationPanel({ method }: { method: MethodItem }) {
   const phaseSummary =
     method.phases && method.phases.length > 0
       ? `${method.phases.length} fases con secuencia guiada`
-      : 'Secuencia didactica del metodo';
+      : 'Secuencia didáctica del método';
   const evidenceSummary =
     method.productos_tipicos && method.productos_tipicos.length > 0
       ? clampText(method.productos_tipicos.slice(0, 2).join(' / '), 42)
@@ -178,9 +178,9 @@ function MethodRelationPanel({ method }: { method: MethodItem }) {
 
   return (
     <div className="rounded-[18px] border border-white/10 bg-[#0A2753]/72 p-2.5">
-      <p className="text-[9.5px] font-bold text-white">Relacion metodo - componentes</p>
+      <p className="text-[9.5px] font-bold text-white">Relación método - componentes</p>
       <div className="mt-2.5 flex flex-col gap-2 xl:flex-row xl:items-center">
-        <RelationshipNode title="Metodo" body={method.code || method.name} accent="gold" />
+        <RelationshipNode title="Método" body={method.code || method.name} accent="gold" />
         <div className="hidden xl:flex flex-1 items-center gap-1">
           <span className="h-px flex-1 bg-[#00B4CC]/25" />
           <span className="h-1.5 w-1.5 rounded-full border border-[#7BE7F3] bg-[#041A3A]" />
@@ -215,16 +215,16 @@ function MethodHero({
           <MethodGlyph method={method} size="lg" />
           <div className="min-w-0 flex-1">
             <span className="inline-flex rounded-full bg-[#00B4CC]/14 px-2 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-[#7BE7F3]">
-              Metodo seleccionado
+              Método seleccionado
             </span>
             <h2 className="mt-1 font-playfair text-[1.28rem] font-bold leading-none text-white">{method.name}</h2>
             {method.code && (
               <p className="mt-1 text-[7.5px] font-semibold uppercase tracking-[0.14em] text-[#D4A351]">
-                Codigo {method.code}
+                Código {method.code}
               </p>
             )}
             <p className="mt-2 text-[9px] leading-4.5 text-white/78">
-              {method.proposito || method.description || 'Metodo institucional listo para alinear actividades, productos y evidencias del silabo.'}
+              {method.proposito || method.description || 'Método institucional listo para alinear actividades, productos y evidencias del sílabo.'}
             </p>
             {sequencePreview && (
               <p className="mt-2 text-[8px] leading-4 text-white/55">
@@ -237,7 +237,7 @@ function MethodHero({
 
       <div className="grid gap-2.5">
         <div className="rounded-[18px] border border-white/10 bg-[#0A2753]/72 p-2.5">
-          <p className="text-[9.5px] font-bold text-white">Por que este metodo?</p>
+          <p className="text-[9.5px] font-bold text-white">¿Por qué este método?</p>
           <div className="mt-2 space-y-1.5">
             {whyItems.map((item) => (
               <div key={item} className="flex items-start gap-1.5">
@@ -261,7 +261,7 @@ function MethodMetaPanel({ method }: { method: MethodItem }) {
 
   return (
     <section className="rounded-[18px] border border-white/10 bg-[#0A2753]/82 p-2.5">
-      <p className="text-[7.5px] font-bold uppercase tracking-[0.12em] text-white/46">Detalle del metodo</p>
+      <p className="text-[7.5px] font-bold uppercase tracking-[0.12em] text-white/46">Detalle del método</p>
 
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div className="rounded-[13px] border border-white/10 bg-white/5 px-2.5 py-2">
@@ -301,7 +301,7 @@ function MethodMetaPanel({ method }: { method: MethodItem }) {
         <div className="mt-2 space-y-2">
           {products.length > 0 && (
             <div>
-              <p className="text-[7px] font-bold uppercase tracking-[0.12em] text-white/42">Productos tipicos</p>
+              <p className="text-[7px] font-bold uppercase tracking-[0.12em] text-white/42">Productos típicos</p>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {products.slice(0, 8).map((product) => (
                   <span
@@ -317,7 +317,7 @@ function MethodMetaPanel({ method }: { method: MethodItem }) {
 
           {techniques.length > 0 && (
             <div>
-              <p className="text-[7px] font-bold uppercase tracking-[0.12em] text-white/42">Tecnicas didacticas</p>
+              <p className="text-[7px] font-bold uppercase tracking-[0.12em] text-white/42">Técnicas didácticas</p>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {techniques.slice(0, 6).map((technique) => (
                   <span
@@ -355,7 +355,7 @@ function ComplementaryPanel({
         <div>
           <p className="text-[7.5px] font-bold uppercase tracking-[0.12em] text-[#D4A351]">Apoyo complementario sugerido</p>
           <p className="mt-1 text-[8px] leading-4 text-white/56">
-            Esta tarjeta se alimenta cuando el backend devuelve un metodo adicional al troncal.
+            Esta tarjeta se alimenta cuando el backend devuelve un método adicional al troncal.
           </p>
         </div>
         <span className="rounded-full bg-[#D4A351]/12 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-[#F2C260]">
@@ -398,7 +398,7 @@ function ComplementaryPanel({
         <div className="mt-2 rounded-[14px] border border-[#D4A351]/18 bg-[#041A3A]/80 p-2.5">
           <p className="text-[8.5px] font-bold text-white">{fallbackName}</p>
           <p className="mt-1 text-[7.5px] leading-4 text-white/56">
-            El backend lo sugirio, pero todavia no llego su ficha completa al repositorio cargado en pantalla.
+            El backend lo sugirió, pero todavía no llegó su ficha completa al repositorio cargado en pantalla.
           </p>
         </div>
       ) : (
@@ -438,7 +438,7 @@ export default function Step5_Metodo() {
     api
       .getPedagogicMethods()
       .then((res) => setMethods(res.data ?? []))
-      .catch(() => showToast('Error cargando metodos didacticos', 'error'))
+      .catch(() => showToast('Error cargando métodos didácticos', 'error'))
       .finally(() => setLoading(false));
   }, [showToast]);
 
@@ -476,9 +476,9 @@ export default function Step5_Metodo() {
 
       setSuggestReason(suggestion?.reason || '');
       setComplementario(suggestion?.complementario ?? null);
-      showToast('Metodo sugerido por IA', 'success');
+      showToast('Método sugerido por IA', 'success');
     } catch {
-      showToast('Error al sugerir metodo', 'error');
+      showToast('Error al sugerir método', 'error');
     } finally {
       setSuggesting(false);
     }
@@ -497,7 +497,7 @@ export default function Step5_Metodo() {
       });
       navigate('/creator/cierre');
     } catch {
-      showToast('Error al guardar metodo', 'error');
+      showToast('Error al guardar método', 'error');
     } finally {
       setSaving(false);
     }
@@ -512,10 +512,10 @@ export default function Step5_Metodo() {
     <div className="h-full overflow-y-auto bg-[#041A3A] px-3 py-3 text-white sm:px-5">
       <div className="mb-2.5 grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div>
-          <p className="mb-1 text-[7.5px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Paso 7 de 8 - metodo didactico</p>
-          <h1 className="font-playfair text-[1.45rem] font-bold leading-none text-white">Metodo y secuencia didactica</h1>
+          <p className="mb-1 text-[7.5px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Paso 7 de 8 - método didáctico</p>
+          <h1 className="font-playfair text-[1.45rem] font-bold leading-none text-white">Método y secuencia didáctica</h1>
           <p className="mt-1.5 max-w-3xl text-[8.5px] leading-4 text-white/62">
-            Selecciona el metodo que operativizara el proposito del silabo. La pantalla ya usa iconos referenciales para los 11 metodos mientras llegan sus iconos propios.
+            Selecciona el método que operativizará el propósito del sílabo. La pantalla ya usa íconos referenciales para los 11 métodos mientras llegan sus íconos propios.
           </p>
         </div>
 
@@ -525,9 +525,9 @@ export default function Step5_Metodo() {
               <BookOpen size={14} />
             </div>
             <div>
-              <p className="text-[9px] font-bold text-white">Repositorio metodologico oficial</p>
+              <p className="text-[9px] font-bold text-white">Repositorio metodológico oficial</p>
               <p className="mt-1 text-[8px] leading-4 text-white/56">
-                El catalogo ya trae proposito, roles, fases, productos tipicos y tecnicas para apoyar la seleccion visual del metodo.
+                El catálogo ya trae propósito, roles, fases, productos típicos y técnicas para apoyar la selección visual del método.
               </p>
             </div>
           </div>
@@ -537,12 +537,12 @@ export default function Step5_Metodo() {
       <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:items-center">
         <div className="flex-1 rounded-[16px] border border-[#D4A351]/18 bg-[#0A2753]/70 px-3 py-2">
           <p className="text-[7px] font-bold uppercase tracking-[0.12em] text-[#D4A351]">
-            {suggestReason ? 'Lectura del sistema' : 'Seleccion metodologica'}
+            {suggestReason ? 'Lectura del sistema' : 'Selección metodológica'}
           </p>
           <p className="mt-1 text-[8px] leading-4 text-white/72">
             {suggestReason ? (
               <>
-                IA recomienda <span className="font-semibold text-[#F2C260]">{selectedObj?.name || selectedMethodName || 'un metodo troncal'}</span>. {suggestReason}
+                IA recomienda <span className="font-semibold text-[#F2C260]">{selectedObj?.name || selectedMethodName || 'un método troncal'}</span>. {suggestReason}
                 {complementario && (
                   <>
                     {' '}Complementario sugerido:{' '}
@@ -552,7 +552,7 @@ export default function Step5_Metodo() {
               </>
             ) : (
               <>
-                Puedes elegir manualmente desde el repositorio o dejar que la IA proponga el metodo troncal y, si aplica, un apoyo complementario.
+                Puedes elegir manualmente desde el repositorio o dejar que la IA proponga el método troncal y, si aplica, un apoyo complementario.
               </>
             )}
           </p>
@@ -573,16 +573,16 @@ export default function Step5_Metodo() {
         <div className="rounded-[18px] border border-white/10 bg-[#0A2753]/70 px-3 py-4 text-center">
           <div className="inline-flex items-center gap-1.5 text-[8px] text-white/55">
             <Loader2 size={10} className="animate-spin" />
-            Cargando metodos didacticos...
+            Cargando métodos didácticos...
           </div>
         </div>
       ) : (
         <>
           <section className="rounded-[22px] border border-[#D4A351]/20 bg-gradient-to-br from-[#0A2753] via-[#08224A] to-[#041A3A] p-3">
             <div className="mb-2">
-              <p className="text-[9px] font-bold text-white">1. Metodo propuesto por el sistema (metodo troncal)</p>
+              <p className="text-[9px] font-bold text-white">1. Método propuesto por el sistema (método troncal)</p>
               <p className="mt-1 text-[8px] leading-4 text-white/56">
-                El metodo seleccionado concentra la narrativa principal y su relacion con actividades y evidencias.
+                El método seleccionado concentra la narrativa principal y su relación con actividades y evidencias.
               </p>
             </div>
 
@@ -594,10 +594,10 @@ export default function Step5_Metodo() {
                   <Sparkles size={13} />
                 </div>
                 <p className="mt-2 text-[9px] font-semibold text-white">
-                  Selecciona uno de los 11 metodos con icono o usa la sugerencia automatica.
+                  Selecciona uno de los 11 métodos con ícono o usa la sugerencia automática.
                 </p>
                 <p className="mt-1 text-[8px] leading-4 text-white/56">
-                  En cuanto elijas un metodo, aqui aparecera su ficha troncal, la razon de eleccion y su relacion con actividades y evidencias.
+                  En cuanto elijas un método, aquí aparecerá su ficha troncal, la razón de elección y su relación con actividades y evidencias.
                 </p>
               </div>
             )}
@@ -607,13 +607,13 @@ export default function Step5_Metodo() {
             <section className="rounded-[18px] border border-white/10 bg-[#0A2753]/82 p-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <p className="text-[9px] font-bold text-white">2. Repositorio metodologico disponible</p>
+                  <p className="text-[9px] font-bold text-white">2. Repositorio metodológico disponible</p>
                   <p className="mt-1 text-[8px] leading-4 text-white/56">
-                    Cada metodo ya tiene un icono referencial para que la seleccion se parezca mas al mockup sin esperar los iconos propios.
+                    Cada método ya tiene un ícono referencial para que la selección se parezca más al mockup sin esperar los íconos propios.
                   </p>
                 </div>
                 <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white/62">
-                  {methods.length} metodos
+                  {methods.length} métodos
                 </span>
               </div>
 
@@ -635,9 +635,9 @@ export default function Step5_Metodo() {
                 <MethodMetaPanel method={selectedObj} />
               ) : (
                 <section className="rounded-[18px] border border-white/10 bg-[#0A2753]/82 p-2.5">
-                  <p className="text-[7.5px] font-bold uppercase tracking-[0.12em] text-white/46">Detalle del metodo</p>
+                  <p className="text-[7.5px] font-bold uppercase tracking-[0.12em] text-white/46">Detalle del método</p>
                   <p className="mt-2 text-[8px] leading-4 text-white/58">
-                    El panel de detalle mostrara roles, fases, productos y tecnicas del metodo seleccionado.
+                    El panel de detalle mostrará roles, fases, productos y técnicas del método seleccionado.
                   </p>
                 </section>
               )}
@@ -660,7 +660,7 @@ export default function Step5_Metodo() {
         <textarea
           className="w-full resize-none rounded-[18px] border border-white/10 bg-[#0A2753] px-3 py-2 text-[8px] text-white outline-none transition focus:border-[#D4A351]/38"
           rows={2}
-          placeholder="Justificacion del metodo seleccionado..."
+          placeholder="Justificación del método seleccionado..."
           value={methodNotes}
           onChange={(event) => setMethodNotes(event.target.value)}
         />
@@ -689,7 +689,7 @@ export default function Step5_Metodo() {
             </>
           ) : (
             <>
-              Confirmar metodo
+              Confirmar método
               <ArrowRight size={10} />
             </>
           )}

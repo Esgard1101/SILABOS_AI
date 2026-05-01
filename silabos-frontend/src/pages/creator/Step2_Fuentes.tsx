@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  Copy,
   ExternalLink,
   Eye,
   FileText,
@@ -43,6 +44,17 @@ interface SourceTableRow {
   reference: string;
 }
 
+interface NotebookSourceBlock {
+  autor?: unknown;
+  anio?: unknown;
+  titulo?: unknown;
+  fuente?: unknown;
+  url?: unknown;
+  tipo?: unknown;
+  requiere_revision?: unknown;
+  motivo_revision?: unknown;
+}
+
 function formatTodayLabel() {
   return new Intl.DateTimeFormat('es-PE', {
     day: '2-digit',
@@ -74,6 +86,47 @@ function dedupeTextItems(items: string[]) {
       seen.add(normalized);
       return true;
     });
+}
+
+function asCleanText(value: unknown) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function extractJsonArrayBlock(rawText: string) {
+  const withoutFences = rawText
+    .replace(/```json/gi, '```')
+    .replace(/```/g, '')
+    .trim();
+  const start = withoutFences.indexOf('[');
+  const end = withoutFences.lastIndexOf(']');
+  if (start < 0 || end <= start) return '';
+  return withoutFences.slice(start, end + 1);
+}
+
+function parseNotebookSourceBlock(rawText: string) {
+  const jsonBlock = extractJsonArrayBlock(rawText);
+  if (!jsonBlock) return [];
+
+  const parsed = JSON.parse(jsonBlock) as unknown;
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter((item): item is NotebookSourceBlock => Boolean(item) && typeof item === 'object')
+    .map((item) => {
+      const autor = asCleanText(item.autor) || 'S.A.';
+      const anio = asCleanText(item.anio) || 's.f.';
+      const titulo = asCleanText(item.titulo);
+      const fuente = asCleanText(item.fuente);
+      const url = asCleanText(item.url);
+      const motivo = asCleanText(item.motivo_revision);
+      const requiresReview = Boolean(item.requiere_revision) || !url || autor === 'S.A.' || anio === 's.f.';
+
+      if (!titulo) return '';
+
+      const base = `${autor} (${anio}). ${titulo}.${fuente ? ` ${fuente}.` : ''}${url ? ` ${url}` : ''}`;
+      return requiresReview && motivo ? `${base} [Revisar: ${motivo}]` : base;
+    })
+    .filter(Boolean);
 }
 
 function inferBibliographicType(reference: string): BibliographicType {
@@ -383,6 +436,8 @@ export default function Step2_Fuentes() {
   const [referencesModalOrigin, setReferencesModalOrigin] = useState<'NotebookLM' | 'Curaduria IA'>('NotebookLM');
   const [focusedReference, setFocusedReference] = useState<string | null>(null);
   const [aiQuery, setAiQuery] = useState(courseDetail?.name ?? '');
+  const [notebookImportText, setNotebookImportText] = useState('');
+  const [importingNotebookText, setImportingNotebookText] = useState(false);
   const [searching, setSearching] = useState(false);
   const [tableDateLabel] = useState(() => formatTodayLabel());
   const notebookReferences = dedupeTextItems((uploadedBiblio?.references || []).map(cleanNotebookReference));
@@ -431,7 +486,7 @@ export default function Step2_Fuentes() {
     }
 
     if (showFoundToast) {
-      showToast('Ya existe un PDF NotebookLM para este curso. Lo cargue para que puedas revisarlo o eliminarlo.', 'warning');
+      showToast('Ya existe un PDF NotebookLM para este curso. Lo cargué para que puedas revisarlo o eliminarlo.', 'warning');
     }
 
     return true;
@@ -514,7 +569,7 @@ export default function Step2_Fuentes() {
       } else if (courseDetail?.id) {
         await api.deleteCourseBibliography(courseDetail.id);
       } else {
-        throw new Error('No se encontro el documento de bibliografia');
+        throw new Error('No se encontró el documento de bibliografía');
       }
       const uploadedReferenceKeys = new Set((uploadedBiblio.references || []).map((reference) => cleanNotebookReference(reference).toLowerCase()));
       if (uploadedReferenceKeys.size > 0) {
@@ -550,6 +605,49 @@ export default function Step2_Fuentes() {
     });
 
     showToast('Resultados de IA eliminados', 'success');
+  };
+
+  const handleImportNotebookText = async () => {
+    if (!courseDetail || !context) return;
+    if (!notebookImportText.trim()) {
+      showToast('Pega el bloque generado por NotebookLM antes de procesar.', 'warning');
+      return;
+    }
+
+    setImportingNotebookText(true);
+    try {
+      const parsedRefs = dedupeRefs(parseNotebookSourceBlock(notebookImportText));
+
+      if (parsedRefs.length === 0) {
+        showToast('No pude reconocer el bloque. Copia la respuesta completa de NotebookLM e intenta otra vez.', 'error');
+        return;
+      }
+
+      const nextRefs = dedupeRefs([...parsedRefs, ...aiReferences]);
+      const nextSources = dedupeRefs(['NotebookLM', ...bibliographySources.filter((source) => source !== 'NotebookLM')]);
+
+      setUploadedBiblio({
+        docId: uploadedBiblio?.docId || '',
+        fileName: 'Bloque de fuentes NotebookLM',
+        refCount: parsedRefs.length,
+        references: parsedRefs,
+      });
+      setBibliographyReferences(nextRefs);
+      setBibliographySources(nextSources);
+      setNotebookImportText('');
+
+      await saveStep('bibliography', {
+        doc_ids: uploadedBiblio?.docId ? [uploadedBiblio.docId] : [],
+        references: nextRefs,
+        sources_consulted: nextSources,
+      });
+
+      showToast(`${parsedRefs.length} fuentes importadas desde NotebookLM`, 'success');
+    } catch {
+      showToast('El bloque no tiene un formato valido. Vuelve a copiarlo completo desde NotebookLM.', 'error');
+    } finally {
+      setImportingNotebookText(false);
+    }
   };
 
   const handleRemoveSourceRow = async (row: SourceTableRow) => {
@@ -697,6 +795,42 @@ export default function Step2_Fuentes() {
                   onClick={() => navigate('/creator/fuentes/notebook')}
                   badge="Roadmap"
                 />
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-[#A8D8A8]/22 bg-[#041A3A]/88 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-white">Pegar bloque de fuentes de NotebookLM</p>
+                    <p className="mt-1 text-[10px] leading-5 text-white/55">
+                      Usa el roadmap, copia la respuesta generada por NotebookLM y pegala aqui para llenar la tabla.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-[#A8D8A8]/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#A8D8A8]">
+                    Recomendado
+                  </span>
+                </div>
+
+                <textarea
+                  value={notebookImportText}
+                  onChange={(event) => setNotebookImportText(event.target.value)}
+                  placeholder="Pega aqui el bloque completo generado por NotebookLM."
+                  className="mt-3 min-h-[104px] w-full resize-y rounded-xl border border-[#A8D8A8]/18 bg-[#061F45] px-3 py-2 text-[10.5px] leading-5 text-white outline-none placeholder:text-white/28 focus:border-[#A8D8A8]/45 focus:ring-1 focus:ring-[#A8D8A8]/15"
+                />
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="max-w-[25rem] text-[9.5px] leading-4 text-white/42">
+                    No necesitas editar el texto. SIGEISIL extrae las fuentes y marca para revision las incompletas.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleImportNotebookText}
+                    disabled={importingNotebookText || !notebookImportText.trim()}
+                    className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#4A9A6A] to-[#A8D8A8] px-3.5 py-2 text-[10px] font-bold text-[#041A3A] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {importingNotebookText ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
+                    Procesar fuentes
+                  </button>
+                </div>
               </div>
 
               <div className="mt-3 rounded-2xl border border-white/10 bg-[#041A3A]/88 p-3">
@@ -887,7 +1021,7 @@ export default function Step2_Fuentes() {
 
             {sourceRows.length === 0 ? (
               <div className="mt-3 rounded-2xl border border-dashed border-white/14 bg-[#041A3A]/80 px-5 py-8 text-center">
-                <p className="text-[13px] font-semibold text-white">Aun no hay fuentes activas en la tabla</p>
+                <p className="text-[13px] font-semibold text-white">Aún no hay fuentes activas en la tabla</p>
                 <p className="mx-auto mt-2 max-w-[40rem] text-[11px] leading-5 text-white/52">
                   Sube el PDF exportado desde NotebookLM o ejecuta la curaduría IA. En cuanto haya datos, esta
                   tabla se llenará sin ocupar un bloque adicional.

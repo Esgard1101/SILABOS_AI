@@ -2059,8 +2059,15 @@ async def ensamblar_final(
     grading = payload.get("grading", {})
     bibliography = payload.get("bibliography", {})
     course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
+    datos_generales_payload = payload.get("datos_generales", {}) or {}
 
     curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
+    selected_program_id = (
+        _clean_text(datos_generales_payload.get("program_id"))
+        or _clean_text(payload.get("program_id"))
+        or _clean_text(draft.get("program_id"))
+    )
+    selected_program = await supabase.obtener_programa(selected_program_id) if selected_program_id else None
 
     # Deterministic assembly
     performances = purpose.get("performances", [])
@@ -2094,7 +2101,6 @@ async def ensamblar_final(
         habilidades_sugeridas = habilidades_sugeridas or official_prefill["habilidades_sugeridas"]
         habilidades_por_desempeno = habilidades_por_desempeno or official_prefill["habilidades_por_desempeno"]
         content_plan = content_plan or official_prefill["content_plan"]
-    datos_generales_payload = payload.get("datos_generales", {}) or {}
     selected_skill_ids = content.get("selected_skill_ids", [])
     skills_raw = await supabase.listar_skills_raw_por_ids(selected_skill_ids) if selected_skill_ids else []
     skill_names = [
@@ -2268,10 +2274,11 @@ async def ensamblar_final(
             "docente": teacher_name,
             "docente_email": teacher_email,
             "codigo": curso.get("code", "") if curso else "",
-            "facultad": curso.get("faculty_name", "") if curso else "",
-            "carrera": curso.get("career_name", "") if curso else "",
-            "escuela_profesional": curso.get("career_name", "") if curso else "",
-            "programa_estudios": curso.get("program_name", "") if curso else "",
+            "program_id": selected_program_id,
+            "facultad": (selected_program or {}).get("faculty_name") or (curso.get("faculty_name", "") if curso else ""),
+            "carrera": (selected_program or {}).get("career_name") or (curso.get("career_name", "") if curso else ""),
+            "escuela_profesional": (selected_program or {}).get("career_name") or (curso.get("career_name", "") if curso else ""),
+            "programa_estudios": (selected_program or {}).get("program_name") or (curso.get("program_name", "") if curso else ""),
             "modalidad": "Presencial",
             "prerrequisito": curso.get("prerequisites", "") if curso else "",
             "horas_teoria": curso.get("hours_theory", "") if curso else "",
