@@ -282,6 +282,7 @@ class MethodSuggestResponse(BaseModel):
     method_id: int
     method_name: str
     reason: str
+    reason_items: List[str] = Field(default=[])
 
 
 # ─────────────────────────────────────────────

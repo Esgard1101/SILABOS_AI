@@ -767,8 +767,7 @@ export default function Step2_Fuentes() {
               Fuentes del curso y soporte documental
             </h1>
             <p className="mt-1 max-w-[58rem] text-[11px] text-white/60">
-              Compactamos este paso en tres bloques: PDF exportado desde NotebookLM, curaduría asistida por IA
-              y tabla de fuentes activas para la demo.
+              Gestiona las fuentes del curso con NotebookLM o curaduria asistida por IA. Revisa la tabla antes de continuar.
             </p>
           </div>
 
@@ -780,19 +779,18 @@ export default function Step2_Fuentes() {
                 </div>
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#D4A351]">NotebookLM</p>
-                  <p className="text-[13px] font-semibold text-white">PDF exportado y roadmap del flujo</p>
+                  <p className="text-[13px] font-semibold text-white">NotebookLM y fuentes del curso</p>
                 </div>
               </div>
 
               <p className="mt-3 text-[11px] leading-5 text-white/60">
-                Este bloque reemplaza la carga docente tradicional. Aquí se sube el PDF output de NotebookLM y
-                se mantiene el acceso al roadmap visual.
+                Usa la guia visual para preparar el cuaderno en NotebookLM y traer sus fuentes a SIGEISIL.
               </p>
 
               <div className="mt-3">
                 <ActionVisualCard
                   title="Abrir roadmap NotebookLM"
-                  description="Guía visual para trabajar el cuaderno documental en paralelo y luego exportar el PDF de salida."
+                  description="Guia visual para cargar fuentes en NotebookLM y traerlas a SIGEISIL."
                   imageSrc={SOURCE_ACTION_ICONS.notebook}
                   imageAlt="NotebookLM"
                   onClick={() => navigate('/creator/fuentes/notebook')}
@@ -841,8 +839,7 @@ export default function Step2_Fuentes() {
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold text-white">Subir PDF exportado desde NotebookLM</p>
                     <p className="mt-1 text-[10px] leading-5 text-white/55">
-                      El parser intentará capturar referencias desde el PDF para alimentar la tabla mientras el
-                      endpoint enriquecido queda listo.
+                      Se revisaran las referencias del archivo para alimentar la tabla de fuentes del curso.
                     </p>
                   </div>
                   {uploadedBiblio && (
@@ -940,14 +937,13 @@ export default function Step2_Fuentes() {
               </div>
 
               <p className="mt-3 text-[11px] leading-5 text-white/60">
-                Solicita sugerencias académicas según el curso. Los resultados IA se muestran aquí solo cuando
-                vienen de OpenAlex, SciELO o Crossref.
+                Solicita sugerencias academicas verificables segun el curso. Los resultados se agregan a la tabla para revision docente.
               </p>
 
               <div className="mt-3">
                 <ActionVisualCard
                   title="Buscar con IA"
-                  description="Consulta OpenAlex, SciELO y Crossref y convierte la salida en referencias base para la tabla."
+                  description="Busca referencias academicas verificables para alimentar la tabla de fuentes."
                   imageSrc={SOURCE_ACTION_ICONS.ai}
                   imageAlt="Curaduría IA"
                   onClick={() => {
@@ -986,7 +982,7 @@ export default function Step2_Fuentes() {
               <p className="mt-3 text-[10px] leading-5 text-white/45">
                 {aiReferences.length > 0
                   ? `Fuentes consultadas: ${bibliographySources.filter((source) => source !== 'NotebookLM').join(' · ') || 'OpenAlex · SciELO · Crossref'}`
-                  : 'Cuando ejecutes la búsqueda, la tabla compacta mostrará los resultados validados y el modal conservará el formato APA 7.'}
+                  : 'Cuando ejecutes la busqueda, los resultados se mostraran en la tabla y podras revisar el formato APA 7.'}
               </p>
             </section>
           </div>
@@ -1000,7 +996,7 @@ export default function Step2_Fuentes() {
                 <div>
                   <p className="text-[13px] font-semibold text-white">Fuentes activas del curso</p>
                   <p className="mt-0.5 text-[10px] text-white/55">
-                    Tabla compacta lista para recibir el nuevo endpoint enriquecido sin cambiar el layout.
+                    Revisa, consulta o elimina las fuentes que se usaran en el silabo.
                   </p>
                 </div>
               </div>
@@ -1026,8 +1022,7 @@ export default function Step2_Fuentes() {
               <div className="mt-3 rounded-2xl border border-dashed border-white/14 bg-[#041A3A]/80 px-5 py-8 text-center">
                 <p className="text-[13px] font-semibold text-white">Aún no hay fuentes activas en la tabla</p>
                 <p className="mx-auto mt-2 max-w-[40rem] text-[11px] leading-5 text-white/52">
-                  Sube el PDF exportado desde NotebookLM o ejecuta la curaduría IA. En cuanto haya datos, esta
-                  tabla se llenará sin ocupar un bloque adicional.
+                  Pega el bloque generado por NotebookLM o ejecuta la curaduria IA. En cuanto haya datos, esta tabla se llenara automaticamente.
                 </p>
               </div>
             ) : (
@@ -1113,8 +1108,7 @@ export default function Step2_Fuentes() {
             )}
 
             <p className="mt-3 text-[10px] leading-5 text-[#D4A351]/72">
-              Mientras cerramos el RAG completo, esta vista combina el PDF exportado de NotebookLM con la
-              curaduría IA del curso y deja libre el espacio que antes ocupaban las referencias en string.
+              Estas fuentes seran consideradas por SIGEISIL para construir los siguientes pasos del silabo.
             </p>
           </section>
 

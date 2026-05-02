@@ -508,6 +508,7 @@ export interface MethodSuggest {
   method_name: string;
   method_code?: string | null;
   reason: string;
+  reason_items?: string[] | null;
   phases?: string[] | null;
   complementario?: { method_id: string; method_name: string } | null;
 }

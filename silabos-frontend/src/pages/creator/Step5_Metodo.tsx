@@ -7,7 +7,8 @@ import type { MethodItem } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import { getMethodIcon } from '../../utils/methodIcons';
 
-type ComplementarySuggestion = { method_id: string; method_name: string } | null;
+const normalizeDisplayText = (value?: string | null) =>
+  (value ?? '').replace(/\s+/g, ' ').replace(/\s*\.\.\.\s*/g, '. ').trim();
 
 const normalizeMatchValue = (value?: string | null) =>
   (value ?? '')
@@ -17,10 +18,15 @@ const normalizeMatchValue = (value?: string | null) =>
     .toLowerCase();
 
 const clampText = (value?: string | null, max = 140) => {
-  const clean = (value ?? '').replace(/\s+/g, ' ').trim();
+  const clean = normalizeDisplayText(value);
   if (!clean) return '';
   return clean.length > max ? `${clean.slice(0, max - 3).trim()}...` : clean;
 };
+
+const splitReasonText = (value?: string | null) =>
+  (normalizeDisplayText(value).match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [])
+    .map((item) => normalizeDisplayText(item))
+    .filter((item) => item.length > 12);
 
 function findMethod(
   methods: MethodItem[],
@@ -43,18 +49,19 @@ function findMethod(
   return null;
 }
 
-function buildWhyItems(method: MethodItem, suggestReason: string) {
+function buildWhyItems(method: MethodItem, suggestReason: string, suggestReasonItems: string[] = []) {
   const phases = method.phases ?? [];
   const products = method.productos_tipicos ?? [];
   const techniques = method.tecnicas_didacticas ?? [];
 
   const candidates = [
-    clampText(suggestReason, 140),
-    method.proposito ? `Se alinea al propósito del sílabo: ${clampText(method.proposito, 104)}` : '',
+    ...suggestReasonItems.map((item) => normalizeDisplayText(item)),
+    ...splitReasonText(suggestReason).slice(0, 2),
+    method.proposito ? `Se alinea al proposito del silabo porque ${normalizeDisplayText(method.proposito)}.` : '',
     phases.length > 0 ? `Ordena el trabajo en ${phases.length} fases claras.` : '',
-    techniques.length > 0 ? `Activa al estudiante con técnicas como ${clampText(techniques.slice(0, 2).join(' y '), 76)}.` : '',
-    products.length > 0 ? `Conduce a evidencias como ${clampText(products.slice(0, 2).join(' y '), 74)}.` : '',
-    method.rol_estudiante ? `Refuerza un rol activo: ${clampText(method.rol_estudiante, 84)}` : '',
+    techniques.length > 0 ? `Activa al estudiante mediante ${techniques.slice(0, 3).map(normalizeDisplayText).join(', ')}.` : '',
+    products.length > 0 ? `Conduce a evidencias como ${products.slice(0, 3).map(normalizeDisplayText).join(', ')}.` : '',
+    method.rol_estudiante ? `Refuerza un rol activo: ${normalizeDisplayText(method.rol_estudiante)}.` : '',
   ].filter(Boolean);
 
   const seen = new Set<string>();
@@ -63,7 +70,7 @@ function buildWhyItems(method: MethodItem, suggestReason: string) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 4);
+  }).slice(0, 5);
 }
 
 function MethodGlyph({
@@ -173,7 +180,7 @@ function MethodRelationPanel({ method }: { method: MethodItem }) {
       : 'Secuencia didáctica del método';
   const evidenceSummary =
     method.productos_tipicos && method.productos_tipicos.length > 0
-      ? clampText(method.productos_tipicos.slice(0, 2).join(' / '), 42)
+      ? method.productos_tipicos.slice(0, 2).map(normalizeDisplayText).join(' / ')
       : 'Productos de aprendizaje';
 
   return (
@@ -201,11 +208,13 @@ function MethodRelationPanel({ method }: { method: MethodItem }) {
 function MethodHero({
   method,
   suggestReason,
+  suggestReasonItems,
 }: {
   method: MethodItem;
   suggestReason: string;
+  suggestReasonItems: string[];
 }) {
-  const whyItems = buildWhyItems(method, suggestReason);
+  const whyItems = buildWhyItems(method, suggestReason, suggestReasonItems);
   const sequencePreview = clampText(method.secuencia_didactica, 160);
 
   return (
@@ -336,82 +345,6 @@ function MethodMetaPanel({ method }: { method: MethodItem }) {
   );
 }
 
-function ComplementaryPanel({
-  method,
-  fallbackName,
-  selectedMethodId,
-  onUse,
-}: {
-  method: MethodItem | null;
-  fallbackName?: string | null;
-  selectedMethodId: string | null;
-  onUse: (method: MethodItem) => void;
-}) {
-  const isSelected = method ? selectedMethodId === String(method.id) : false;
-
-  return (
-    <section className="rounded-[18px] border border-white/10 bg-[#0A2753]/82 p-2.5">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[7.5px] font-bold uppercase tracking-[0.12em] text-[#D4A351]">Apoyo complementario sugerido</p>
-          <p className="mt-1 text-[8px] leading-4 text-white/56">
-            Esta tarjeta se alimenta cuando el backend devuelve un método adicional al troncal.
-          </p>
-        </div>
-        <span className="rounded-full bg-[#D4A351]/12 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-[#F2C260]">
-          IA
-        </span>
-      </div>
-
-      {method ? (
-        <div className="mt-2 rounded-[14px] border border-[#D4A351]/20 bg-[#041A3A]/80 p-2.5">
-          <div className="flex items-start gap-2">
-            <MethodGlyph method={method} />
-            <div className="min-w-0 flex-1">
-              {method.code && (
-                <span className="rounded-full bg-[#D4A351]/10 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-[#F2C260]">
-                  {method.code}
-                </span>
-              )}
-              <p className="mt-1.5 text-[9px] font-bold leading-4 text-white">{method.name}</p>
-              <p className="mt-0.5 text-[8px] leading-4 text-white/58">
-                {clampText(method.proposito || method.description, 90)}
-              </p>
-            </div>
-          </div>
-          <div className="mt-2 flex justify-end">
-            <button
-              type="button"
-              onClick={() => onUse(method)}
-              disabled={isSelected}
-              className={`rounded-full border px-2 py-1 text-[7.5px] font-bold transition ${
-                isSelected
-                  ? 'border-white/10 bg-white/5 text-white/42'
-                  : 'border-[#D4A351]/35 bg-[#D4A351]/10 text-[#F2C260] hover:bg-[#D4A351]/18'
-              }`}
-            >
-              {isSelected ? 'Ya activo' : 'Usar'}
-            </button>
-          </div>
-        </div>
-      ) : fallbackName ? (
-        <div className="mt-2 rounded-[14px] border border-[#D4A351]/18 bg-[#041A3A]/80 p-2.5">
-          <p className="text-[8.5px] font-bold text-white">{fallbackName}</p>
-          <p className="mt-1 text-[7.5px] leading-4 text-white/56">
-            El backend lo sugirió, pero todavía no llegó su ficha completa al repositorio cargado en pantalla.
-          </p>
-        </div>
-      ) : (
-        <div className="mt-2 rounded-[14px] border border-dashed border-white/14 bg-[#041A3A]/70 px-2.5 py-3 text-center">
-          <p className="text-[8px] font-medium text-white/60">
-            Usa <span className="font-semibold text-[#D4A351]">Sugerir con IA</span> para poblar este apoyo complementario.
-          </p>
-        </div>
-      )}
-    </section>
-  );
-}
-
 export default function Step5_Metodo() {
   const navigate = useNavigate();
   const {
@@ -432,7 +365,7 @@ export default function Step5_Metodo() {
   const [suggesting, setSuggesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [suggestReason, setSuggestReason] = useState('');
-  const [complementario, setComplementario] = useState<ComplementarySuggestion>(null);
+  const [suggestReasonItems, setSuggestReasonItems] = useState<string[]>([]);
 
   useEffect(() => {
     api
@@ -475,7 +408,7 @@ export default function Step5_Metodo() {
       }
 
       setSuggestReason(suggestion?.reason || '');
-      setComplementario(suggestion?.complementario ?? null);
+      setSuggestReasonItems(Array.isArray(suggestion?.reason_items) ? suggestion.reason_items.filter(Boolean) : []);
       showToast('Método sugerido por IA', 'success');
     } catch {
       showToast('Error al sugerir método', 'error');
@@ -494,6 +427,7 @@ export default function Step5_Metodo() {
         selected_method_name: selectedMethodName,
         teacher_notes: methodNotes,
         suggestion_reason: suggestReason,
+        suggestion_reason_items: suggestReasonItems,
       });
       navigate('/creator/cierre');
     } catch {
@@ -504,9 +438,6 @@ export default function Step5_Metodo() {
   };
 
   const selectedObj = findMethod(methods, { id: selectedMethodId, name: selectedMethodName });
-  const complementaryObj = complementario
-    ? findMethod(methods, { id: complementario.method_id, name: complementario.method_name })
-    : null;
 
   return (
     <div className="h-full overflow-y-auto bg-[#041A3A] px-3 py-3 text-white sm:px-5">
@@ -515,7 +446,7 @@ export default function Step5_Metodo() {
           <p className="mb-1 text-[7.5px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Paso 7 de 8 - método didáctico</p>
           <h1 className="font-playfair text-[1.45rem] font-bold leading-none text-white">Método y secuencia didáctica</h1>
           <p className="mt-1.5 max-w-3xl text-[8.5px] leading-4 text-white/62">
-            Selecciona el método que operativizará el propósito del sílabo. La pantalla ya usa íconos referenciales para los 11 métodos mientras llegan sus íconos propios.
+            Selecciona el metodo que mejor conecta el proposito del silabo con sus actividades, evidencias y evaluacion.
           </p>
         </div>
 
@@ -542,17 +473,12 @@ export default function Step5_Metodo() {
           <p className="mt-1 text-[8px] leading-4 text-white/72">
             {suggestReason ? (
               <>
-                IA recomienda <span className="font-semibold text-[#F2C260]">{selectedObj?.name || selectedMethodName || 'un método troncal'}</span>. {suggestReason}
-                {complementario && (
-                  <>
-                    {' '}Complementario sugerido:{' '}
-                    <span className="font-semibold text-[#7BE7F3]">{complementario.method_name}</span>.
-                  </>
-                )}
+                IA recomienda <span className="font-semibold text-[#F2C260]">{selectedObj?.name || selectedMethodName || 'un metodo principal'}</span>
+                {suggestReasonItems.length > 0 ? `: ${suggestReasonItems[0]}` : '. Revisa la justificacion completa en la ficha del metodo.'}
               </>
             ) : (
               <>
-                Puedes elegir manualmente desde el repositorio o dejar que la IA proponga el método troncal y, si aplica, un apoyo complementario.
+                Puedes elegir manualmente desde el repositorio o dejar que la IA proponga el metodo principal para el curso.
               </>
             )}
           </p>
@@ -580,14 +506,14 @@ export default function Step5_Metodo() {
         <>
           <section className="rounded-[22px] border border-[#D4A351]/20 bg-gradient-to-br from-[#0A2753] via-[#08224A] to-[#041A3A] p-3">
             <div className="mb-2">
-              <p className="text-[9px] font-bold text-white">1. Método propuesto por el sistema (método troncal)</p>
+              <p className="text-[9px] font-bold text-white">1. Metodo propuesto por el sistema</p>
               <p className="mt-1 text-[8px] leading-4 text-white/56">
                 El método seleccionado concentra la narrativa principal y su relación con actividades y evidencias.
               </p>
             </div>
 
             {selectedObj ? (
-              <MethodHero method={selectedObj} suggestReason={suggestReason} />
+              <MethodHero method={selectedObj} suggestReason={suggestReason} suggestReasonItems={suggestReasonItems} />
             ) : (
               <div className="rounded-[18px] border border-dashed border-white/14 bg-[#0A2753]/55 px-4 py-5 text-center">
                 <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-[#D4A351]/10 text-[#F2C260]">
@@ -597,7 +523,7 @@ export default function Step5_Metodo() {
                   Selecciona uno de los 11 métodos con ícono o usa la sugerencia automática.
                 </p>
                 <p className="mt-1 text-[8px] leading-4 text-white/56">
-                  En cuanto elijas un método, aquí aparecerá su ficha troncal, la razón de elección y su relación con actividades y evidencias.
+                  En cuanto elijas un metodo, aqui aparecera su ficha, la razon de eleccion y su relacion con actividades y evidencias.
                 </p>
               </div>
             )}
@@ -609,7 +535,7 @@ export default function Step5_Metodo() {
                 <div>
                   <p className="text-[9px] font-bold text-white">2. Repositorio metodológico disponible</p>
                   <p className="mt-1 text-[8px] leading-4 text-white/56">
-                    Cada método ya tiene un ícono referencial para que la selección se parezca más al mockup sin esperar los íconos propios.
+                    Elige el metodo principal desde el repositorio institucional o confirma la recomendacion generada por IA.
                   </p>
                 </div>
                 <span className="rounded-full bg-white/8 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white/62">
@@ -642,12 +568,6 @@ export default function Step5_Metodo() {
                 </section>
               )}
 
-              <ComplementaryPanel
-                method={complementaryObj}
-                fallbackName={complementario?.method_name}
-                selectedMethodId={selectedMethodId}
-                onUse={handleSelect}
-              />
             </div>
           </div>
         </>

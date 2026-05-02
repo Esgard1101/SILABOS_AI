@@ -1936,6 +1936,7 @@ async def sugerir_metodo_progresivo(
         "method_id": metodos_base[0]["id"],
         "method_name": metodos_base[0]["name"],
         "reason": "Sugerencia por defecto",
+        "reason_items": ["Se propone como punto de partida porque permite organizar la secuencia didactica del curso."],
     }
 
     if not gemini or not curso:
@@ -1955,12 +1956,19 @@ async def sugerir_metodo_progresivo(
             (m for m in metodos_base if complementario_id and str(m["id"]) == str(complementario_id)),
             None,
         )
+        reason_items_raw = resultado.get("reason_items", [])
+        reason_items = [
+            str(item).strip()
+            for item in reason_items_raw
+            if isinstance(item, str) and str(item).strip()
+        ] if isinstance(reason_items_raw, list) else []
         sugerencia = {
             "method_id": metodo_encontrado["id"],
             "method_name": metodo_encontrado["name"],
             "method_code": metodo_encontrado.get("code", ""),
             "phases": metodo_encontrado.get("phases", []),
             "reason": resultado.get("reason", "Sugerido por IA"),
+            "reason_items": reason_items,
             "complementario": (
                 {
                     "method_id": complementario["id"],
