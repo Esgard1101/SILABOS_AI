@@ -81,7 +81,64 @@ def _safe_filename(nombre_curso: str) -> str:
 
 
 def _public_asset_path(filename: str) -> Path:
-    return Path(__file__).resolve().parent.parent.parent / "silabos-frontend" / "public" / filename
+    current_file = Path(__file__).resolve()
+    backend_root = current_file.parent.parent
+    project_root = backend_root.parent
+
+    candidates: list[Path] = []
+    for env_name in (
+        "SILABOS_PUBLIC_ASSETS_DIR",
+        "PUBLIC_ASSETS_DIR",
+        "FRONTEND_PUBLIC_DIR",
+        "CPANEL_PUBLIC_HTML",
+    ):
+        env_value = os.getenv(env_name, "").strip()
+        if env_value:
+            candidates.append(Path(env_value) / filename)
+
+    candidates.extend(
+        [
+            backend_root / "static" / filename,
+            backend_root / "public" / filename,
+            project_root / "silabos-frontend" / "public" / filename,
+            project_root / "public" / filename,
+            project_root / "public_html" / filename,
+            Path.cwd() / filename,
+            Path.cwd() / "public" / filename,
+            Path.cwd() / "static" / filename,
+        ]
+    )
+
+    for parent in [current_file.parent, *current_file.parents]:
+        candidates.extend(
+            [
+                parent / filename,
+                parent / "public" / filename,
+                parent / "public_html" / filename,
+                parent / "static" / filename,
+                parent / "silabos.innovasaber.com.pe" / filename,
+            ]
+        )
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate
+        key = str(resolved).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.exists():
+            return resolved
+
+    fallback = project_root / "silabos-frontend" / "public" / filename
+    logger.warning(
+        "Asset publico no encontrado: %s. Configure SILABOS_PUBLIC_ASSETS_DIR con la carpeta donde estan los logos.",
+        filename,
+    )
+    return fallback
 
 
 def _clean_program_label(value: Any) -> str:
@@ -901,11 +958,8 @@ def _img_tag(path: Path, alt: str) -> str:
 
 def _build_html(ctx: dict) -> str:
     """Construye el HTML del sílabo para WeasyPrint."""
-    public_dir = (
-        Path(__file__).resolve().parent.parent.parent / "silabos-frontend" / "public"
-    )
-    logo_unprg = _img_tag(public_dir / "unprg-logo.png", "Logo UNPRG")
-    logo_fachse = _img_tag(public_dir / "logo_fachse.png", "Logo FACHSE")
+    logo_unprg = _img_tag(_public_asset_path("unprg-logo.png"), "Logo UNPRG")
+    logo_fachse = _img_tag(_public_asset_path("logo_fachse.png"), "Logo FACHSE")
 
     def _multiline_html(value: str) -> str:
         return escape(value or "—").replace("\n", "<br/>")
