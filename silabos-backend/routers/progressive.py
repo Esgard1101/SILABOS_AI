@@ -463,6 +463,7 @@ def _sanitize_content_items(items: list[str], limit: int | None = None) -> list[
 
 _CONJUGATED_TO_INFINITIVE = {
     "analiza": "Analizar",
+    "define": "Definir",
     "describe": "Describir",
     "identifica": "Identificar",
     "detecta": "Detectar",
@@ -471,6 +472,7 @@ _CONJUGATED_TO_INFINITIVE = {
     "aplica": "Aplicar",
     "evalua": "Evaluar",
     "evalúa": "Evaluar",
+    "explica": "Explicar",
     "compara": "Comparar",
     "formula": "Formular",
     "interpreta": "Interpretar",
@@ -499,7 +501,7 @@ def _normalize_skill_phrase(value: str) -> str:
         return text[0].upper() + text[1:]
     if first in _CONJUGATED_TO_INFINITIVE:
         return f"{_CONJUGATED_TO_INFINITIVE[first]} {rest}".strip()
-    return f"Analizar {text[0].lower() + text[1:]}"
+    return text[0].upper() + text[1:]
 
 
 def _sanitize_skill_items(items: list[str], limit: int | None = None) -> list[str]:
@@ -551,8 +553,38 @@ def _expand_topics(items: list[str], total: int, fallback_title: str) -> list[st
     return expanded
 
 
+def _clean_generated_topic(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip(" .;,\n\t"))
+    if not text:
+        return ""
+    patterns = [
+        r"^fundamentos conceptuales de\s+",
+        r"^contexto, alcance y categor[ií]as de\s+",
+        r"^principios y enfoques de\s+",
+        r"^integraci[oó]n diagn[oó]stica de\s+",
+        r"^modelos te[oó]ricos de\s+",
+        r"^procedimientos y estrategias de\s+",
+        r"^an[aá]lisis comparado de\s+",
+        r"^producto parcial sobre\s+",
+        r"^m[eé]todos de aplicaci[oó]n de\s+",
+        r"^criterios de dise[nñ]o e intervenci[oó]n en\s+",
+        r"^resoluci[oó]n de situaciones pr[aá]cticas vinculadas con\s+",
+        r"^evaluaci[oó]n parcial de resultados sobre\s+",
+        r"^proyecto integrador aplicado a\s+",
+        r"^validaci[oó]n y mejora de propuestas sobre\s+",
+        r"^sustentaci[oó]n de evidencias y toma de decisiones en\s+",
+        r"^cierre integrador y reflexi[oó]n acad[eé]mica sobre\s+",
+    ]
+    previous = None
+    while previous != text:
+        previous = text
+        for pattern in patterns:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip(" .;,\n\t")
+    return text[0].upper() + text[1:] if text else ""
+
+
 def _topic_tokens(text: str) -> set[str]:
-    return set(re.findall(r"[a-z0-9Ã¡Ã©Ã­Ã³ÃºÃ±]{4,}", _normalize_match_text(text)))
+    return set(re.findall(r"[a-z0-9áéíóúñ]{4,}", _normalize_match_text(text)))
 
 
 def _topic_similarity(left: str, right: str) -> float:
@@ -590,23 +622,26 @@ def _content_plan_is_usable(plan_units: list[dict], expected_units: int = 4) -> 
 
 
 def _progressive_topic_sequence(items: list[str], total: int = 16) -> list[str]:
-    seeds = _sanitize_content_items(items, 12) or ["fundamentos del curso", "aplicación disciplinar"]
+    seeds = _sanitize_content_items([_clean_generated_topic(item) for item in items], 12) or ["fundamentos del curso", "aplicación disciplinar"]
+
+    if len(seeds) >= total:
+        return seeds[:total]
 
     def seed(index: int) -> str:
         return seeds[min(len(seeds) - 1, index % len(seeds))]
 
     templates = [
-        "Introducción a {a}",
-        "Tipos y componentes de {a}",
-        "Principios de trabajo con {a}",
-        "Relación entre {a} y {b}",
-        "Modelos de aplicación de {a}",
-        "Recursos y procedimientos para {a}",
-        "Comparación práctica entre {a} y {b}",
-        "Primer avance aplicado a {a}",
-        "Aplicación guiada de {a}",
-        "Diseño de una solución con {a}",
-        "Resolución de ejercicios o casos sobre {a}",
+        "{a}",
+        "{a}",
+        "{a}",
+        "{a} y {b}",
+        "{a}",
+        "{a}",
+        "{a} y {b}",
+        "Aplicación práctica de {a}",
+        "{a}",
+        "Diseño aplicado con {a}",
+        "Ejercicios o casos sobre {a}",
         "Evaluación parcial de {a}",
         "Proyecto integrador con {a}",
         "Validación y mejora de {a}",
@@ -617,7 +652,7 @@ def _progressive_topic_sequence(items: list[str], total: int = 16) -> list[str]:
     for index in range(total):
         a = seed(index)
         b = seed(index + 1)
-        topics.append(templates[index % len(templates)].format(a=a, b=b))
+        topics.append(_clean_generated_topic(templates[index % len(templates)].format(a=a, b=b)))
     return topics
 
 
@@ -738,8 +773,8 @@ def _content_prefill_from_official_performances(
             ] if conocimientos else []
             if not selected and conocimientos:
                 selected = [conocimientos[min(offset, len(conocimientos) - 1)]]
-            selected = selected[:2]
-            topic = "; ".join(selected) or (conocimientos[0] if conocimientos else perf["statement"])
+            selected = [_clean_generated_topic(item) for item in selected[:2]]
+            topic = "; ".join(selected) or (_clean_generated_topic(conocimientos[0]) if conocimientos else perf["statement"])
             date_range = week_dates[week - 1] if week_dates and 0 <= week - 1 < len(week_dates) else "---"
             activity = _official_week_activity(topic, habilidades, offset)
             evidence = _official_week_evidence(topic, offset)
@@ -898,7 +933,7 @@ _FORMATIVE_EVIDENCE_PATTERNS = {
 
 
 def _didactic_topic_label(topic: str) -> str:
-    text = _clean_text(topic)
+    text = _clean_generated_topic(_clean_text(topic))
     if not text:
         return ""
     text = re.sub(
@@ -907,7 +942,6 @@ def _didactic_topic_label(topic: str) -> str:
         text,
         flags=re.IGNORECASE,
     )
-    text = re.split(r"\s+y\s+", text, maxsplit=1)[0]
     words = text.split()
     if len(words) > 8:
         text = " ".join(words[:8])
@@ -1320,7 +1354,7 @@ def _build_units_and_schedule(
                 week_row = weeks[offset] if offset < len(weeks) and isinstance(weeks[offset], dict) else {}
                 week = int(week_row.get("week") or (start_week + offset))
                 week_in_unit = offset
-                knowledge = _as_text_list(week_row.get("knowledge", []))
+                knowledge = [_clean_generated_topic(item) for item in _as_text_list(week_row.get("knowledge", []))]
                 skills = [
                     _normalize_skill_phrase(skill.get("name", "")) if isinstance(skill, dict) else _normalize_skill_phrase(skill)
                     for skill in week_row.get("skills", [])
@@ -1376,7 +1410,7 @@ def _build_units_and_schedule(
         fallback_title = f"Bloque {unit_index + 1}"
         title = _clean_text(seed_topics[0] if seed_topics else fallback_title, fallback_title)
         week_count = end_week - start_week + 1
-        topics = _expand_topics(seed_topics, week_count, title)
+        topics = [_clean_generated_topic(item) for item in _expand_topics(seed_topics, week_count, title)]
 
         performance_text = _perf_for(unit_index)
         if not performance_text:
@@ -1413,6 +1447,7 @@ def _build_units_and_schedule(
             activity = _compose_activity(method_short, phase_label, action_text, topic, technique)
 
             week_knowledge = knowledge_per_week[week_idx] if week_idx < len(knowledge_per_week) else []
+            week_knowledge = [_clean_generated_topic(item) for item in week_knowledge]
             if not week_knowledge:
                 week_knowledge = [topic]
 
