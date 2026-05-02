@@ -23,8 +23,11 @@ from prompts.validator_prompt import construir_prompt_validacion
 logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite-preview"
+DEFAULT_OPENAI_FINAL_MODEL = "gpt-5.4-mini"
 DEFAULT_OPENROUTER_AUDIT_MODEL = "google/gemma-4-26b-a4b-it:free"
 OPENROUTER_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+OPENAI_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+FINAL_SYLLABUS_TASKS = {"syllabus_generate", "syllabus_generate_v2"}
 
 _gemini_client: genai.Client | None = None
 _router_service: "GeminiService | None" = None
@@ -191,6 +194,24 @@ def _normalize_text_from_message(content: Any) -> str:
                     parts.append(text)
         return "\n".join(part for part in parts if part)
     return str(content or "")
+
+
+def _extract_openai_output_text(data: dict[str, Any]) -> str:
+    output_text = data.get("output_text")
+    if isinstance(output_text, str):
+        return output_text
+
+    parts: list[str] = []
+    for output_item in data.get("output") or []:
+        if not isinstance(output_item, dict):
+            continue
+        for content_item in output_item.get("content") or []:
+            if not isinstance(content_item, dict):
+                continue
+            text = content_item.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(part for part in parts if part)
 
 
 _STIFFENED_JSON_SUFFIX = (
@@ -448,6 +469,15 @@ class GeminiService:
     def __init__(self):
         self.client = _get_client()
         self.gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.openai_base_url = os.getenv(
+            "OPENAI_BASE_URL",
+            "https://api.openai.com/v1",
+        ).rstrip("/")
+        self.openai_final_model = os.getenv(
+            "OPENAI_FINAL_MODEL",
+            DEFAULT_OPENAI_FINAL_MODEL,
+        ).strip() or DEFAULT_OPENAI_FINAL_MODEL
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.openrouter_base_url = os.getenv(
             "OPENROUTER_BASE_URL",
@@ -473,8 +503,9 @@ class GeminiService:
         )
         self.openrouter_no_native_json_models: set[str] = set()
         logger.info(
-            "GeminiService inicializado | gemini=%s | openrouter_audit=%s | openrouter_light=%s",
+            "GeminiService inicializado | gemini=%s | openai_final=%s | openrouter_audit=%s | openrouter_light=%s",
             self.gemini_model,
+            self.openai_final_model,
             self.openrouter_audit_model,
             self.openrouter_light_model,
         )
@@ -530,6 +561,88 @@ class GeminiService:
             return result
         except Exception as exc:
             raise self._gemini_error(exc) from exc
+
+    async def _call_openai_final(
+        self,
+        task_name: str,
+        prompt: str,
+        config: TaskConfig,
+        *,
+        fallback_used: bool,
+    ) -> AIResult:
+        if not self.openai_api_key:
+            raise AIProviderError(
+                "OPENAI_API_KEY no configurada",
+                provider="openai",
+                model=self.openai_final_model,
+            )
+
+        payload: dict[str, Any] = {
+            "model": self.openai_final_model,
+            "input": prompt,
+            "max_output_tokens": config.max_output_tokens,
+            "store": False,
+        }
+        if config.temperature is not None:
+            payload["temperature"] = config.temperature
+
+        headers = {
+            "Authorization": f"Bearer {self.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    f"{self.openai_base_url}/responses",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise AIProviderError(
+                "OpenAI timeout",
+                retryable=True,
+                provider="openai",
+                model=self.openai_final_model,
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500]
+            raise AIProviderError(
+                f"OpenAI HTTP {exc.response.status_code}: {body}",
+                retryable=exc.response.status_code in OPENAI_RETRYABLE_STATUS_CODES,
+                status_code=exc.response.status_code,
+                provider="openai",
+                model=self.openai_final_model,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise AIProviderError(
+                f"OpenAI request error: {exc}",
+                retryable=True,
+                provider="openai",
+                model=self.openai_final_model,
+            ) from exc
+
+        data = response.json()
+        status = str(data.get("status") or "").lower()
+        incomplete_details = data.get("incomplete_details")
+        if status == "incomplete" or incomplete_details:
+            raise AIProviderError(
+                f"OpenAI respuesta incompleta para {task_name}: {incomplete_details or status}",
+                retryable=True,
+                provider="openai",
+                model=self.openai_final_model,
+            )
+
+        result = AIResult(
+            text=_extract_openai_output_text(data),
+            provider="openai",
+            model=data.get("model") or self.openai_final_model,
+            usage=data.get("usage"),
+            fallback_used=fallback_used,
+        )
+        self._log_result(task_name, result)
+        return result
 
     async def _post_openrouter(
         self,
@@ -697,8 +810,18 @@ class GeminiService:
     ) -> AIResult:
         config = _task_config(task_name)
         forced = (force_provider or "").strip().lower()
-        if forced and forced not in {"gemini", "openrouter"}:
+        if forced and forced not in {"gemini", "openai", "openrouter"}:
             raise ValueError(f"Proveedor forzado no soportado: {force_provider}")
+
+        if forced == "openai":
+            if task_name not in FINAL_SYLLABUS_TASKS:
+                raise ValueError(f"OpenAI solo esta habilitado para tareas finales: {task_name}")
+            return await self._call_openai_final(
+                task_name,
+                prompt,
+                config,
+                fallback_used=True,
+            )
 
         if forced == "openrouter":
             return await self._call_openrouter(task_name, prompt, config, fallback_used=True)
@@ -709,6 +832,25 @@ class GeminiService:
             except AIProviderError as exc:
                 if not exc.retryable:
                     raise
+                if task_name in FINAL_SYLLABUS_TASKS:
+                    try:
+                        logger.warning(
+                            "Gemini no disponible para %s; reintentando con OpenAI | error=%s",
+                            task_name,
+                            exc,
+                        )
+                        return await self._call_openai_final(
+                            task_name,
+                            prompt,
+                            config,
+                            fallback_used=True,
+                        )
+                    except AIProviderError as openai_exc:
+                        logger.warning(
+                            "OpenAI fallback fallo para %s; reintentando con OpenRouter | error=%s",
+                            task_name,
+                            openai_exc,
+                        )
                 logger.warning(
                     "Gemini no disponible para %s; reintentando con OpenRouter | error=%s",
                     task_name,
@@ -753,6 +895,9 @@ class GeminiService:
             if attempt == 0:
                 provider_for_attempt = force_provider
                 attempt_prompt = prompt
+            elif task_name in FINAL_SYLLABUS_TASKS and not force_provider:
+                provider_for_attempt = "openai" if attempt == 1 else "openrouter"
+                attempt_prompt = prompt + _STIFFENED_JSON_SUFFIX
             else:
                 base_provider = (force_provider or default_provider).lower()
                 if attempt % 2 == 1:
@@ -1209,4 +1354,20 @@ Formato exacto:
             return "ok"
         except AIProviderError as exc:
             logger.error("Error al verificar conexion con OpenRouter: %s", exc)
+            return "error"
+
+    async def verificar_conexion_openai(self) -> str:
+        if not self.openai_api_key:
+            return "no_configurado"
+
+        try:
+            await self._call_openai_final(
+                "health_openai",
+                "Responde solo: ok",
+                TaskConfig("openai", 0.0, 16),
+                fallback_used=False,
+            )
+            return "ok"
+        except AIProviderError as exc:
+            logger.error("Error al verificar conexion con OpenAI: %s", exc)
             return "error"

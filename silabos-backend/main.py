@@ -130,6 +130,7 @@ async def health_check():
     estado = {
         "api": "online",
         "gemini": "error",
+        "openai": "no_configurado",
         "openrouter": "no_configurado",
         "supabase": "error",
         "google_search": "no_configurado",
@@ -139,9 +140,11 @@ async def health_check():
     if gemini:
         ok = await gemini.verificar_conexion()
         estado["gemini"] = "ok" if ok else "error"
+        estado["openai"] = await gemini.verificar_conexion_openai()
         estado["openrouter"] = await gemini.verificar_conexion_openrouter()
     else:
         estado["gemini"] = "no_inicializado"
+        estado["openai"] = "no_inicializado"
         estado["openrouter"] = "no_inicializado"
 
     supabase: SupabaseService = servicios.get("supabase")

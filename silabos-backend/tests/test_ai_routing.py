@@ -10,7 +10,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from services.gemini_service import GeminiService, TASK_CONFIGS
+from services.gemini_service import AIProviderError, GeminiService, TASK_CONFIGS
 
 
 class FakeOpenRouterResponse:
@@ -111,6 +111,70 @@ class GeminiServiceRoutingTests(unittest.TestCase):
 
     def test_openrouter_audit_keeps_native_json_mode(self):
         self.assertTrue(TASK_CONFIGS["syllabus_validate"].json_mode)
+
+
+class GeminiServiceFinalFallbackTests(unittest.IsolatedAsyncioTestCase):
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "OPENAI_API_KEY": "test-openai-key",
+            "OPENAI_FINAL_MODEL": "gpt-5.4-mini",
+            "OPENROUTER_API_KEY": "test-openrouter-key",
+        },
+        clear=False,
+    )
+    async def test_final_generation_falls_back_from_gemini_to_openai(self, _mock_client):
+        service = GeminiService()
+        service._call_gemini = AsyncMock(side_effect=Exception("unused"))
+        service._call_gemini.side_effect = service._gemini_error(Exception("503 unavailable"))
+        service._call_openai_final = AsyncMock(
+            return_value=Mock(
+                text='{"datos_generales": {"nombre_curso": "Curso"}}',
+                provider="openai",
+            )
+        )
+        service._call_openrouter = AsyncMock()
+
+        result = await service.generate_json("syllabus_generate", "prompt final")
+
+        self.assertEqual(result["datos_generales"]["nombre_curso"], "Curso")
+        service._call_openai_final.assert_awaited_once()
+        service._call_openrouter.assert_not_awaited()
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "OPENAI_API_KEY": "test-openai-key",
+            "OPENAI_FINAL_MODEL": "gpt-5.4-mini",
+            "OPENROUTER_API_KEY": "test-openrouter-key",
+        },
+        clear=False,
+    )
+    async def test_final_generation_falls_back_to_openrouter_if_openai_fails(self, _mock_client):
+        service = GeminiService()
+        service._call_gemini = AsyncMock(side_effect=service._gemini_error(Exception("503 unavailable")))
+        service._call_openai_final = AsyncMock(
+            side_effect=AIProviderError(
+                "OpenAI 503 unavailable",
+                retryable=True,
+                provider="openai",
+                model="gpt-5.4-mini",
+            )
+        )
+        service._call_openrouter = AsyncMock(
+            return_value=Mock(
+                text='{"datos_generales": {"nombre_curso": "Curso OR"}}',
+                provider="openrouter",
+            )
+        )
+
+        result = await service.generate_json("syllabus_generate", "prompt final")
+
+        self.assertEqual(result["datos_generales"]["nombre_curso"], "Curso OR")
+        service._call_openai_final.assert_awaited_once()
+        service._call_openrouter.assert_awaited_once()
 
 
 class GeminiServiceValidationTests(unittest.IsolatedAsyncioTestCase):
