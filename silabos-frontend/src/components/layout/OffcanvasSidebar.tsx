@@ -120,7 +120,7 @@ export default function OffcanvasSidebar({ open, onClose, isAuthenticated }: Off
                   <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-[#D4A351]">
                     UNPRG
                   </p>
-                  <p className="text-sm font-bold text-[#041A3A]">SIGESIL</p>
+                  <p className="text-sm font-bold text-[#041A3A]">SIGEISIL</p>
                 </div>
               </div>
               <button

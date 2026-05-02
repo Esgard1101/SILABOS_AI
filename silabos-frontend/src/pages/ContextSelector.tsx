@@ -235,7 +235,7 @@ export default function ContextSelector() {
           <div className="relative flex w-full flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
             <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4A351]">
-              BIENVENIDO A SIGESIL UNPRG
+              BIENVENIDO A SIGEISIL UNPRG
             </p>
             <h1 className="font-playfair text-3xl font-bold text-white">
               Contexto institucional y curso

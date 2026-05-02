@@ -129,7 +129,7 @@ export default function Landing() {
           <div className="relative flex items-center justify-center">
             <img
               src="/landing_page/hero-brain-book.png"
-              alt="Ilustracion SIGESIL"
+              alt="Ilustracion SIGEISIL"
               className="relative z-10 max-h-[44vh] w-[82%] object-contain drop-shadow-[0_22px_28px_rgba(0,70,120,0.22)]"
             />
           </div>

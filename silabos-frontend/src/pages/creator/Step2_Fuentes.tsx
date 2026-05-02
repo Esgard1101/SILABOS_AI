@@ -608,7 +608,10 @@ export default function Step2_Fuentes() {
   };
 
   const handleImportNotebookText = async () => {
-    if (!courseDetail || !context) return;
+    if (!courseDetail) {
+      showToast('Selecciona un curso antes de importar fuentes.', 'warning');
+      return;
+    }
     if (!notebookImportText.trim()) {
       showToast('Pega el bloque generado por NotebookLM antes de procesar.', 'warning');
       return;
@@ -824,7 +827,7 @@ export default function Step2_Fuentes() {
                   <button
                     type="button"
                     onClick={handleImportNotebookText}
-                    disabled={importingNotebookText || !notebookImportText.trim()}
+                    disabled={importingNotebookText}
                     className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#4A9A6A] to-[#A8D8A8] px-3.5 py-2 text-[10px] font-bold text-[#041A3A] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {importingNotebookText ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
@@ -833,7 +836,7 @@ export default function Step2_Fuentes() {
                 </div>
               </div>
 
-              <div className="mt-3 rounded-2xl border border-white/10 bg-[#041A3A]/88 p-3">
+              <div className="hidden">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold text-white">Subir PDF exportado desde NotebookLM</p>

@@ -108,7 +108,7 @@ export default function Login() {
               Bienvenido a
             </p>
             <h2 className="font-playfair text-5xl leading-[1.08] text-white xl:text-6xl">
-              SIGESIL<br />UNPRG
+              SIGEISIL<br />UNPRG
             </h2>
             <div className="mt-6 h-[2px] w-24 bg-[#D4A351]" />
             <p className="mt-5 max-w-md text-sm leading-7 text-white/70">
@@ -129,7 +129,7 @@ export default function Login() {
           <div className="mb-5 flex justify-center">
             <img
               src="/iconologin.svg"
-              alt="SIGESIL"
+              alt="SIGEISIL"
               className="h-16 w-16 object-contain drop-shadow-lg"
             />
           </div>

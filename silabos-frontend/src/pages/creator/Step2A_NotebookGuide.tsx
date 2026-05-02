@@ -5,6 +5,12 @@ import { useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
 
 const VIDEO_PLACEHOLDER = '/images/notebooklm_steps/step2d5.png';
+const NOTEBOOK_VIDEOS = {
+  openNotebook: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777685690/paso1_abrirnotebook_d3bvlq.mp4',
+  manualUpload: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777685611/CARGAMANUAL_s0ov29.mp4',
+  chatSetup: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777700733/configurarchat_diqdio.mp4',
+  sourcesExport: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777700960/0501_ug5k8u.mp4',
+} as const;
 
 function buildChatSetupPrompt(): string {
   return `Responde solo con JSON valido. Extrae datos reales de las fuentes: autor, anio, titulo, fuente, url, tipo, requiere_revision y motivo_revision. No agregues explicaciones ni Markdown. No uses citas internas como [1] o [2]. No inventes datos: si faltan usa "S.A.", "s.f." o "".`;
@@ -42,6 +48,24 @@ Usa exactamente esta estructura:
 Responde unicamente con el JSON valido.`;
 }
 
+function buildDeepResearchPrompt(courseName: string, area: string, program: string): string {
+  return `Necesito bibliografia academica verificada para preparar el silabo del siguiente curso universitario:
+
+CURSO: ${courseName || '[Nombre del curso]'}
+PROGRAMA: ${program || '[Programa academico]'}
+AREA: ${area || '[Area academica]'}
+UNIVERSIDAD: Universidad Nacional Pedro Ruiz Gallo (UNPRG)
+
+Busca minimo 10 referencias bibliograficas:
+- De los ultimos 5 anios
+- En espanol e ingles
+- Con DOI o URL verificable
+- De fuentes academicas: SciELO, Redalyc, Dialnet, ERIC, repositorios universitarios o editoriales academicas
+- Excluye blogs, Wikipedia, Scribd, StuDocu, SlideShare y paginas comerciales
+
+Devuelve solo la lista de fuentes recomendadas para agregarlas al cuaderno.`;
+}
+
 function ImageModal({ title, image, onClose }: { title: string; image: string; onClose: () => void }) {
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -75,6 +99,7 @@ interface PromptVideoModalProps {
   title: string;
   eyebrow: string;
   image: string;
+  videoUrl?: string;
   prompt?: string;
   promptLabel?: string;
   copyLabel?: string;
@@ -88,6 +113,7 @@ function PromptVideoModal({
   title,
   eyebrow,
   image,
+  videoUrl,
   prompt,
   promptLabel,
   copyLabel = 'Copiar texto',
@@ -161,12 +187,23 @@ function PromptVideoModal({
                 Placeholder
               </span>
             </div>
-            <img
-              src={image}
-              alt={title}
-              className="aspect-video w-full rounded-xl border border-white/10 object-contain"
-              onError={(event) => { event.currentTarget.style.display = 'none'; }}
-            />
+            {videoUrl ? (
+              <video
+                src={videoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                poster={image}
+                className="aspect-video w-full rounded-xl border border-white/10 bg-black object-contain"
+              />
+            ) : (
+              <img
+                src={image}
+                alt={title}
+                className="aspect-video w-full rounded-xl border border-white/10 object-contain"
+                onError={(event) => { event.currentTarget.style.display = 'none'; }}
+              />
+            )}
           </div>
 
           <div className="flex min-h-0 flex-col rounded-2xl border border-[#A8D8A8]/24 bg-[#041A3A]/82 p-4">
@@ -243,7 +280,8 @@ function PromptVideoModal({
 
 type CardAction =
   | { type: 'modal'; image: string }
-  | { type: 'prompt'; promptKey: 'chatSetup' | 'sourcesExport' | 'importSigesisil' }
+  | { type: 'prompt'; promptKey: 'openNotebook' | 'manualUpload' | 'deepResearch' | 'chatSetup' | 'sourcesExport' }
+  | { type: 'externalPrompt'; url: string; promptKey: 'openNotebook' }
   | { type: 'navigate'; to: string };
 
 type CardStyle = 'gold' | 'cyan' | 'mint';
@@ -285,18 +323,21 @@ const CTA_CLS: Record<CardStyle, string> = {
 
 function HubCardItem({ card, onClick }: { card: HubCard; onClick: () => void }) {
   const LIcon = card.lucideIcon;
+  const isPromptCard = card.action.type === 'prompt' && ['chatSetup', 'deepResearch', 'sourcesExport'].includes(card.action.promptKey);
   const cta =
     card.action.type === 'navigate'
       ? 'Abrir sub-flujo ->'
-      : card.action.type === 'prompt'
-      ? 'Ver video + prompt ->'
+    : isPromptCard
+      ? 'Ver video + copiar prompt ->'
+    : card.action.type === 'prompt' || card.action.type === 'externalPrompt'
+      ? 'Ver video ->'
       : 'Ver instruccion ->';
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative flex min-h-[172px] flex-col rounded-xl border bg-gradient-to-br from-[#0A2753] to-[#041A3A] p-3.5 text-left shadow-lg transition ${BORDER[card.style]}`}
+      className={`group relative flex min-h-[214px] flex-col rounded-2xl border bg-gradient-to-br from-[#0A2753] to-[#041A3A] p-4 text-left shadow-lg transition ${BORDER[card.style]}`}
     >
       <span className={`absolute right-2.5 top-2.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${TAG_CLS[card.style]}`}>
         {card.tag}
@@ -307,7 +348,7 @@ function HubCardItem({ card, onClick }: { card: HubCard; onClick: () => void }) 
             <img
               src={card.icon}
               alt=""
-              className="h-[58px] w-auto max-w-[86px] object-contain drop-shadow-[0_14px_24px_rgba(0,180,204,0.14)]"
+              className="h-[74px] w-auto max-w-[104px] object-contain drop-shadow-[0_14px_24px_rgba(0,180,204,0.14)]"
               onError={(event) => { event.currentTarget.style.display = 'none'; }}
             />
           ) : LIcon ? (
@@ -323,9 +364,9 @@ function HubCardItem({ card, onClick }: { card: HubCard; onClick: () => void }) 
         </div>
         <span className="pt-2 text-[10px] font-bold text-white/24">{String(card.id).padStart(2, '0')}</span>
       </div>
-      <p className={`mb-1 pr-6 text-[12px] font-bold leading-tight ${TITLE_CLS[card.style]}`}>{card.title}</p>
-      <p className="line-clamp-3 flex-1 text-[10px] leading-snug text-white/50">{card.description}</p>
-      <p className={`mt-2.5 text-[10px] font-semibold ${CTA_CLS[card.style]}`}>{cta}</p>
+      <p className={`mb-1.5 pr-6 text-[14px] font-bold leading-tight ${TITLE_CLS[card.style]}`}>{card.title}</p>
+      <p className="line-clamp-3 flex-1 text-[11px] leading-5 text-white/52">{card.description}</p>
+      <p className={`mt-3 text-[11px] font-semibold ${CTA_CLS[card.style]}`}>{cta}</p>
     </button>
   );
 }
@@ -368,17 +409,63 @@ export default function Step2A_NotebookGuide() {
   const { context } = useAppContext();
 
   const [imageModal, setImageModal] = useState<{ title: string; image: string } | null>(null);
-  const [promptModal, setPromptModal] = useState<'chatSetup' | 'sourcesExport' | 'importSigesisil' | null>(null);
+  const [promptModal, setPromptModal] = useState<'openNotebook' | 'manualUpload' | 'deepResearch' | 'chatSetup' | 'sourcesExport' | null>(null);
 
   const courseName = courseDetail?.name ?? context?.course_name ?? '';
+  const areaName = context?.school_name ?? '';
+  const programName = context?.program_name ?? '';
   const chatSetupPrompt = buildChatSetupPrompt();
+  const deepResearchPrompt = buildDeepResearchPrompt(courseName, areaName, programName);
   const sourcesExportPrompt = buildSourcesExportPrompt(courseName);
 
   const promptModalContent = {
+    openNotebook: {
+      title: 'Abrir NotebookLM y crear cuaderno',
+      eyebrow: 'Inicio del flujo',
+      image: VIDEO_PLACEHOLDER,
+      videoUrl: NOTEBOOK_VIDEOS.openNotebook,
+      steps: [
+        'Se abre NotebookLM en una nueva pestana.',
+        'Inicia sesion con tu cuenta Google si te lo solicita.',
+        'Haz clic en Crear cuaderno o Nuevo cuaderno.',
+        'Vuelve a SIGEISIL para seguir el siguiente mini paso.',
+      ],
+      note: 'Este video sera reemplazado por tu mini guia de 6 a 8 segundos cuando lo subas al cloud.',
+    },
+    manualUpload: {
+      title: 'Carga manual de fuentes',
+      eyebrow: 'Carga de materiales',
+      image: VIDEO_PLACEHOLDER,
+      videoUrl: NOTEBOOK_VIDEOS.manualUpload,
+      steps: [
+        'Abre el panel de fuentes de NotebookLM.',
+        'Haz clic en agregar fuente.',
+        'Sube archivos, pega enlaces, agrega YouTube o elige Google Drive.',
+        'Confirma que tus fuentes aparezcan cargadas antes de continuar.',
+      ],
+      note: 'Tu video resumira las opciones principales. Para este paso no hace falta prompt.',
+    },
+    deepResearch: {
+      title: 'Deep Research con IA',
+      eyebrow: 'Busqueda academica',
+      image: VIDEO_PLACEHOLDER,
+      prompt: deepResearchPrompt,
+      promptLabel: 'Prompt de investigacion',
+      copyLabel: 'Copiar prompt',
+      copiedLabel: 'Prompt copiado',
+      steps: [
+        'Abre Deep Research dentro de NotebookLM.',
+        'Copia este prompt preparado por SIGEISIL.',
+        'Pegalo en NotebookLM y espera los resultados.',
+        'Agrega al cuaderno las fuentes academicas pertinentes.',
+      ],
+      note: 'Tu video explicara los detalles del proceso. La pantalla solo deja el prompt listo para copiar.',
+    },
     chatSetup: {
       title: 'Ajustar el chat de NotebookLM',
       eyebrow: 'Paso de preparacion',
       image: VIDEO_PLACEHOLDER,
+      videoUrl: NOTEBOOK_VIDEOS.chatSetup,
       prompt: chatSetupPrompt,
       promptLabel: 'Prompt de ajuste del chat',
       copyLabel: 'Copiar ajuste',
@@ -392,9 +479,10 @@ export default function Step2A_NotebookGuide() {
       note: 'Este ajuste ayuda a que NotebookLM responda en un bloque limpio y evita gastar consultas corrigiendo el formato.',
     },
     sourcesExport: {
-      title: 'Generar el bloque de fuentes',
+      title: 'Traer fuentes a SIGEISIL',
       eyebrow: 'Exportacion hacia SIGEISIL',
       image: VIDEO_PLACEHOLDER,
+      videoUrl: NOTEBOOK_VIDEOS.sourcesExport,
       prompt: sourcesExportPrompt,
       promptLabel: 'Prompt para traer fuentes',
       copyLabel: 'Copiar instruccion',
@@ -404,49 +492,38 @@ export default function Step2A_NotebookGuide() {
         'Espera a que termine la respuesta completa.',
         'Copia todo el bloque generado por NotebookLM.',
         'Vuelve a SIGEISIL para pegarlo en la caja de importacion.',
+        'Procesa las fuentes y revisa la tabla del silabo.',
       ],
       note: 'No pidas varias regeneraciones si no es necesario. En cuentas gratuitas, NotebookLM puede tener limite diario de consultas.',
-    },
-    importSigesisil: {
-      title: 'Importar fuentes a SIGEISIL',
-      eyebrow: 'Revision final',
-      image: VIDEO_PLACEHOLDER,
-      steps: [
-        'Copia todo el bloque que genero NotebookLM.',
-        'Regresa al paso Fuentes y pegalo en la caja de importacion.',
-        'Procesa las fuentes para llenar la tabla del silabo.',
-        'Revisa las fuentes marcadas y elimina las que no correspondan.',
-      ],
-      note: 'Verifica que el numero importado coincida con tus fuentes cargadas. NotebookLM puede ignorar PDFs protegidos, webs incrustadas o videos sin subtitulos.',
     },
   } as const;
 
   const HUB_CARDS: HubCard[] = [
     {
       id: 1,
-      icon: '/notebooklmICONS/ICONNOTEBOOK_1_CREARNUEVOCUADERNO.png',
+      icon: '/notebooklmICONS/iconnotebookcrearnuevocuaderno.png',
       title: 'Crear nuevo cuaderno',
-      description: 'Accede a NotebookLM y crea un cuaderno dedicado para el curso.',
+      description: 'Abre NotebookLM en otra pestana y crea un cuaderno dedicado para el curso.',
       tag: 'Inicio',
-      action: { type: 'modal', image: '/images/notebooklm_steps/step1.png' },
+      action: { type: 'externalPrompt', url: 'https://notebooklm.google.com', promptKey: 'openNotebook' },
       style: 'gold',
     },
     {
       id: 2,
-      icon: '/notebooklmICONS/ICONNOTEBOOK_2_VIAMANUAL.png',
+      icon: '/notebooklmICONS/iconnotebook2viamanual.png',
       title: 'Carga manual de fuentes',
-      description: 'Sube archivos, enlaces web, YouTube o Google Drive.',
+      description: 'Sube archivos, enlaces web, YouTube o documentos de Google Drive.',
       tag: 'Manual',
-      action: { type: 'navigate', to: '/creator/fuentes/notebook/manual' },
+      action: { type: 'prompt', promptKey: 'manualUpload' },
       style: 'cyan',
     },
     {
       id: 3,
-      icon: '/notebooklmICONS/ICONNOTEBOOK_3_DEEPRESEARCH.png',
+      icon: '/notebooklmICONS/iconnotebook3deepresearch.png',
       title: 'Deep Research con IA',
-      description: 'Busqueda automatica de bibliografia academica verificada.',
+      description: 'Busca bibliografia academica y agrega fuentes relevantes al cuaderno.',
       tag: 'IA',
-      action: { type: 'navigate', to: '/creator/fuentes/notebook/ia' },
+      action: { type: 'prompt', promptKey: 'deepResearch' },
       style: 'cyan',
     },
     {
@@ -460,16 +537,6 @@ export default function Step2A_NotebookGuide() {
     },
     {
       id: 5,
-      icon: '',
-      lucideIcon: ExternalLink,
-      title: 'Consultar el asistente',
-      description: 'Haz preguntas sobre las fuentes cargadas para explorar el contenido.',
-      tag: 'Consulta',
-      action: { type: 'modal', image: '/images/notebooklm_steps/step4.png' },
-      style: 'gold',
-    },
-    {
-      id: 6,
       icon: '/ajustarchat.png',
       title: 'Ajustar chat',
       description: 'Configura NotebookLM para responder en el formato que SIGEISIL puede importar.',
@@ -478,33 +545,23 @@ export default function Step2A_NotebookGuide() {
       style: 'mint',
     },
     {
-      id: 7,
+      id: 6,
       icon: '/pegarpromptDEJSON (1).png',
-      title: 'Traer fuentes',
-      description: 'Copia la instruccion para que NotebookLM genere el bloque de fuentes del cuaderno.',
+      title: 'Traer fuentes a SIGEISIL',
+      description: 'Copia la instruccion, genera el bloque de fuentes y pegalo en la caja de importacion.',
       tag: 'Prompt',
       action: { type: 'prompt', promptKey: 'sourcesExport' },
       style: 'mint',
     },
-    {
-      id: 8,
-      icon: '',
-      lucideIcon: Download,
-      title: 'Exportar a SIGEISIL',
-      description: 'Pega el bloque generado en SIGEISIL y revisa la tabla de fuentes activas.',
-      tag: 'Export',
-      action: { type: 'prompt', promptKey: 'importSigesisil' },
-      style: 'mint',
-    },
   ];
-
-  const row1 = HUB_CARDS.slice(0, 4);
-  const row2 = HUB_CARDS.slice(4, 8);
 
   const handleCard = (card: HubCard) => {
     if (card.action.type === 'navigate') {
       navigate(card.action.to);
     } else if (card.action.type === 'prompt') {
+      setPromptModal(card.action.promptKey);
+    } else if (card.action.type === 'externalPrompt') {
+      window.open(card.action.url, '_blank', 'noopener,noreferrer');
       setPromptModal(card.action.promptKey);
     } else {
       setImageModal({ title: card.title, image: card.action.image });
@@ -539,27 +596,11 @@ export default function Step2A_NotebookGuide() {
           </div>
         </div>
 
-        <div className="flex items-stretch">
-          {row1.map((card, index) => (
-            <React.Fragment key={card.id}>
-              <div className="min-w-0 flex-1">
-                <HubCardItem card={card} onClick={() => handleCard(card)} />
-              </div>
-              {index < row1.length - 1 && <ArrowRight16 />}
-            </React.Fragment>
-          ))}
-        </div>
-
-        <ArrowDown />
-
-        <div className="flex items-stretch">
-          {[...row2].reverse().map((card, index) => (
-            <React.Fragment key={card.id}>
-              <div className="min-w-0 flex-1">
-                <HubCardItem card={card} onClick={() => handleCard(card)} />
-              </div>
-              {index < row2.length - 1 && <ArrowLeft16 />}
-            </React.Fragment>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {HUB_CARDS.map((card) => (
+            <div key={card.id}>
+              <HubCardItem card={card} onClick={() => handleCard(card)} />
+            </div>
           ))}
         </div>
 

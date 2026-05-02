@@ -28,7 +28,7 @@
                 <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/60">
                   UNPRG
                 </p>
-                <p className="text-sm font-bold leading-none text-white">SIGESIL</p>
+                <p className="text-sm font-bold leading-none text-white">SIGEISIL</p>
               </div>
             </div>
           </div>

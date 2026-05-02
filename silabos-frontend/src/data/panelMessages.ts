@@ -60,7 +60,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
     mensajeAcompanamiento:
       'Sigue el roadmap visual de 8 pasos para crear el cuaderno, subir fuentes y obtener referencias APA verificadas.',
     instruccion:
-      'Haz clic en cada tarjeta del roadmap para ver las instrucciones detalladas con imágenes. Cuando termines, vuelve a Fuentes para cargar las referencias en SIGESIL.',
+      'Haz clic en cada tarjeta del roadmap para ver las instrucciones detalladas con imágenes. Cuando termines, vuelve a Fuentes para cargar las referencias en SIGEISIL.',
   },
   '/creator/desempenos': {
     pantalla: 5,
@@ -150,10 +150,10 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   '/dashboard': {
     pantalla: 1,
     paso: 'Panel principal',
-    titulo: 'Bienvenido a SIGESIL',
+    titulo: 'Bienvenido a SIGEISIL',
     mensajePrincipal:
       'Aquí puede revisar sus sílabos recientes, iniciar un nuevo proceso de elaboración o acceder al repositorio de sílabos del programa.',
-    mensajeAcompanamiento: 'Sistema de Gestión Inteligente de Sílabos – UNPRG.',
+    mensajeAcompanamiento: 'Sistema de Gestion Inteligente de Silabos - UNPRG.',
     instruccion:
       'Seleccione una acción del panel para continuar. Para crear un nuevo sílabo, use el botón "Crear Sílabo".',
   },
@@ -164,8 +164,8 @@ export function getPanelMessage(pathname: string): PanelMessage {
     PANEL_MESSAGES[pathname] ?? {
       pantalla: 0,
       paso: '',
-      titulo: 'SIGESIL UNPRG',
-      mensajePrincipal: 'Sistema de Gestión Inteligente de Sílabos.',
+      titulo: 'SIGEISIL UNPRG',
+      mensajePrincipal: 'Sistema de Gestion Inteligente de Silabos.',
       mensajeAcompanamiento: 'Innovación curricular para una docencia de calidad.',
       instruccion: 'Navegue usando el menú lateral.',
     }

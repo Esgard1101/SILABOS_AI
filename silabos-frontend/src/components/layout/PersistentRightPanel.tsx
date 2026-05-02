@@ -16,7 +16,7 @@ export default function PersistentRightPanel() {
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4A351]">
-              {msg.paso || 'SIGESIL'}
+              {msg.paso || 'SIGEISIL'}
             </p>
             <h3 className="mt-0.5 text-[11px] font-bold leading-tight text-slate-900">
               {msg.titulo}
@@ -77,7 +77,7 @@ export default function PersistentRightPanel() {
       <div className="shrink-0 border-t border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2">
           <img src="/unprg-logo.png" alt="UNPRG" className="h-5 w-auto object-contain opacity-50" />
-          <p className="text-[10px] font-semibold text-slate-400">SIGESIL UNPRG</p>
+          <p className="text-[10px] font-semibold text-slate-400">SIGEISIL UNPRG</p>
         </div>
       </div>
     </div>
