@@ -1,4 +1,4 @@
-"""Generacion DOCX y PDF para silabos."""
+"""Generación DOCX y PDF para sílabos."""
 
 import logging
 import os
@@ -26,9 +26,31 @@ def _pair(left: Any, right: Any, fallback: str = "-") -> str:
     return " / ".join(visible) if visible else fallback
 
 
+SEMESTER_WEEKS = 16
+
+
+def _format_hour_value(value: Any) -> str:
+    formatted = _val(value)
+    if not formatted:
+        return ""
+
+    normalized_text = formatted.replace(",", ".")
+    if not re.fullmatch(r"\d+(\.\d+)?", normalized_text):
+        return formatted
+
+    numeric_value = float(normalized_text)
+    if numeric_value < SEMESTER_WEEKS:
+        return formatted
+
+    weekly_value = numeric_value / SEMESTER_WEEKS
+    if weekly_value.is_integer():
+        return str(int(weekly_value))
+    return f"{weekly_value:.2f}".rstrip("0").rstrip(".")
+
+
 def _format_hours(theory: Any, practice: Any, fallback: str = "-") -> str:
-    t = _val(theory)
-    p = _val(practice)
+    t = _format_hour_value(theory)
+    p = _format_hour_value(practice)
     if t and p:
         return f"Teoría: {t} / Práctica: {p}"
     if t:
@@ -306,7 +328,7 @@ def _build_context(silabo: dict) -> dict:
                 "cronograma": "Semana 12",
             },
             {
-                "evidencia": "Proyecto Final y Reflexión",
+                "evidencia": "Producto Acreditable 3",
                 "sigla": "PA3",
                 "peso": "35%",
                 "cronograma": "Semana 16",
@@ -378,8 +400,8 @@ def _build_context(silabo: dict) -> dict:
             dg.get("periodo_academico") or dg.get("semestre")
         ),
         "creditos": _val(dg.get("creditos")),
-        "horas_teoria": _val(dg.get("horas_teoria")),
-        "horas_practica": _val(dg.get("horas_practica")),
+        "horas_teoria": _format_hour_value(dg.get("horas_teoria")),
+        "horas_practica": _format_hour_value(dg.get("horas_practica")),
         "fecha_inicio": _val(dg.get("fecha_inicio")),
         "fecha_fin": _val(dg.get("fecha_fin")),
         "horas_semanales": _format_hours(dg.get("horas_teoria"), dg.get("horas_practica")),
@@ -418,6 +440,14 @@ def _add_section_title(document, title: str) -> None:
     run.bold = True
 
 
+def _add_blank_line(document, points: int = 8) -> None:
+    from docx.shared import Pt
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(points)
+    paragraph.add_run(" ")
+
+
 def _add_paragraph_block(document, text: str) -> None:
     paragraphs = [part.strip() for part in re.split(r"\n\s*\n", str(text or "")) if part.strip()]
     if not paragraphs:
@@ -432,6 +462,32 @@ def _set_cell_text(cell, text: str, *, bold: bool = False) -> None:
     paragraph = cell.paragraphs[0]
     run = paragraph.add_run(text or "—")
     run.bold = bold
+
+
+def _set_table_borders(table, *, color: str = "FFFFFF", size: str = "4") -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    def apply_borders(container, tag_name: str) -> None:
+        borders = container.find(qn(tag_name))
+        if borders is None:
+            borders = OxmlElement(tag_name)
+            container.append(borders)
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            edge_tag = f"w:{edge}"
+            node = borders.find(qn(edge_tag))
+            if node is None:
+                node = OxmlElement(edge_tag)
+                borders.append(node)
+            node.set(qn("w:val"), "single")
+            node.set(qn("w:sz"), size)
+            node.set(qn("w:space"), "0")
+            node.set(qn("w:color"), color)
+
+    apply_borders(table._tbl.tblPr, "w:tblBorders")
+    for row in table.rows:
+        for cell in row.cells:
+            apply_borders(cell._tc.get_or_add_tcPr(), "w:tcBorders")
 
 
 def _merge_repeated_vertical_cells(table, col_idx: int, row_start: int, row_end: int, text: str) -> None:
@@ -461,6 +517,7 @@ def _generar_docx_programatico(context: dict) -> bytes:
     header_table = document.add_table(rows=1, cols=3)
     header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     header_table.autofit = False
+    _set_table_borders(header_table)
     header_cells = header_table.rows[0].cells
     header_cells[0].width = Cm(3.4)
     header_cells[1].width = Cm(10.2)
@@ -491,36 +548,41 @@ def _generar_docx_programatico(context: dict) -> bytes:
     run.bold = True
 
     _add_section_title(document, "I. Información General")
-    info_table = document.add_table(rows=0, cols=2)
+    info_table = document.add_table(rows=0, cols=3)
     info_table.style = "Table Grid"
     info_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    info_table.autofit = False
+    _set_table_borders(info_table)
     info_fields = [
-        ("1.1 Programa de Estudios", context["programa"]),
-        ("1.2 Escuela Profesional", context["escuela"]),
-        ("1.3 Modalidad", context["modalidad"]),
-        ("1.4 Curso", context["curso"]),
-        ("1.5 Prerrequisito", context["prerrequisito"]),
-        ("1.6 Código del curso", context["codigo_curso"]),
-        ("1.7 Semestre Académico", context["semestre"]),
-        ("1.8 Periodo Académico", context["periodo_academico"]),
-        ("1.9 Créditos", context["creditos"]),
+        ("1.1.   Programa de Estudios", context["programa"]),
+        ("1.2.   Escuela Profesional", context["escuela"]),
+        ("1.3.   Modalidad", context["modalidad"]),
+        ("1.4.   Curso", context["curso"]),
+        ("1.5.   Prerrequisito", context["prerrequisito"]),
+        ("1.6.   Código del curso", context["codigo_curso"]),
+        ("1.7.   Semestre Académico", context["semestre"]),
+        ("1.8.   Periodo Académico", context["periodo_academico"]),
+        ("1.9.   Créditos", context["creditos"]),
+        ("1.10.  Horas Semanales", ""),
+        ("        Teoría", context["horas_teoria"]),
+        ("        Práctica", context["horas_practica"]),
+        ("1.11.  Duración", ""),
+        ("        Fecha de inicio", context["fecha_inicio"]),
+        ("        Fecha de término", context["fecha_fin"]),
         (
-            "1.10\nHoras Semanales",
-            context["horas_semanales"],
-        ),
-        (
-            "1.11 Duración (Inicio / Término)",
-            _pair(context["fecha_inicio"], context["fecha_fin"]),
-        ),
-        (
-            "1.12 Docente (Nombre / Correo)",
-            _pair(context["docente_nombre"], context["docente_email"]),
+            "1.12.  Docente",
+            _pair(context["docente_nombre"], context["docente_email"], "").replace(" / ", "\n"),
         ),
     ]
     for label, value in info_fields:
         row = info_table.add_row().cells
-        _set_cell_text(row[0], label, bold=True)
-        _set_cell_text(row[1], value)
+        row[0].width = Cm(8)
+        row[1].width = Cm(0.35)
+        row[2].width = Cm(8)
+        _set_cell_text(row[0], label)
+        _set_cell_text(row[1], ":")
+        _set_cell_text(row[2], value or " ")
+    _set_table_borders(info_table)
 
     _add_section_title(document, "II. Sumilla")
     document.add_paragraph(context["sumilla"] or "—")
@@ -541,6 +603,7 @@ def _generar_docx_programatico(context: dict) -> bytes:
     else:
         document.add_paragraph("—")
 
+    _add_blank_line(document, 10)
     _add_section_title(document, "VI. Programa de Contenidos")
     for unidad in context["unidades"]:
         paragraph = document.add_paragraph()
@@ -574,6 +637,7 @@ def _generar_docx_programatico(context: dict) -> bytes:
             _merge_repeated_vertical_cells(unit_table, 0, 1, last_row, unidad.get("desempeno", "—"))
             _merge_repeated_vertical_cells(unit_table, 1, 1, last_row, unidad.get("habilidades", "—"))
 
+    _add_blank_line(document, 10)
     _add_section_title(document, "VII. Sistema de Evaluación")
     eval_table = document.add_table(rows=1, cols=4)
     eval_table.style = "Table Grid"
@@ -659,7 +723,7 @@ def _generar_docx_programatico(context: dict) -> bytes:
 
 
 def generar_docx(silabo: dict, template_path: Optional[str] = None) -> bytes:
-    """Genera el DOCX del silabo usando docxtpl con fallback estable."""
+    """Genera el DOCX del sílabo usando docxtpl con fallback estable."""
     context = _build_context(silabo)
 
     if template_path and os.path.exists(template_path):
@@ -674,7 +738,7 @@ def generar_docx(silabo: dict, template_path: Optional[str] = None) -> bytes:
             return buffer.getvalue()
         except Exception as exc:
             logger.warning(
-                "La plantilla DOCX fallo y se usara el generador programatico: %s",
+                "La plantilla DOCX falló y se usará el generador programático: %s",
                 exc,
             )
 
@@ -709,12 +773,12 @@ def _ensure_weasyprint_compatibility() -> None:
 
 
 def generar_pdf_html(silabo: dict) -> bytes:
-    """Genera el PDF del silabo usando WeasyPrint desde HTML."""
+    """Genera el PDF del sílabo usando WeasyPrint desde HTML."""
     try:
         from weasyprint import CSS, HTML
     except ImportError as exc:
         raise ImportError(
-            "WeasyPrint no esta instalado. Ver instrucciones en requirements.txt."
+            "WeasyPrint no está instalado. Ver instrucciones en requirements.txt."
         ) from exc
 
     _ensure_weasyprint_compatibility()
@@ -836,7 +900,7 @@ def _img_tag(path: Path, alt: str) -> str:
 
 
 def _build_html(ctx: dict) -> str:
-    """Construye el HTML del silabo para WeasyPrint."""
+    """Construye el HTML del sílabo para WeasyPrint."""
     public_dir = (
         Path(__file__).resolve().parent.parent.parent / "silabos-frontend" / "public"
     )

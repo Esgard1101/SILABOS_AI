@@ -26,9 +26,9 @@ const PREVIEW_ASSETS = {
 
 const ANNEX_ITEMS = [
   { name: 'Reglamento de Estudios.pdf', ext: 'PDF', tone: 'border-[#EF4444]/30 bg-[#EF4444]/12 text-[#FF8A8A]' },
-  { name: 'Modelo de Silabo UNPRG.docx', ext: 'DOCX', tone: 'border-[#3B82F6]/30 bg-[#3B82F6]/12 text-[#9EC5FF]' },
+  { name: 'Modelo de Sílabo UNPRG.docx', ext: 'DOCX', tone: 'border-[#3B82F6]/30 bg-[#3B82F6]/12 text-[#9EC5FF]' },
   { name: 'Lineamientos Curriculares.pdf', ext: 'PDF', tone: 'border-[#EF4444]/30 bg-[#EF4444]/12 text-[#FF8A8A]' },
-  { name: 'Rubrica de Evaluacion.xlsx', ext: 'XLSX', tone: 'border-[#22C55E]/30 bg-[#22C55E]/12 text-[#8BE0A6]' },
+  { name: 'Rúbrica de Evaluación.xlsx', ext: 'XLSX', tone: 'border-[#22C55E]/30 bg-[#22C55E]/12 text-[#8BE0A6]' },
 ];
 
 function splitPreviewItems(text: string, limit: number) {

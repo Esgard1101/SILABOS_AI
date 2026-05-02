@@ -466,15 +466,15 @@ export default function ContextSelector() {
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">Creditos</label>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">Créditos</label>
                   <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">{selectedCourse?.credits ?? '—'}</div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">H. Teoria</label>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">H. Teoría</label>
                   <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">{selectedCourse?.hours_theory ?? '—'}</div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">H. Practica</label>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">H. Práctica</label>
                   <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">{selectedCourse?.hours_practice ?? '—'}</div>
                 </div>
               </div>
@@ -493,7 +493,7 @@ export default function ContextSelector() {
 
               <div>
                 <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/50">
-                  Fecha de termino
+                  Fecha de término
                 </label>
                 <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">
                   {endDate || '—'}
@@ -521,7 +521,7 @@ export default function ContextSelector() {
                 className="flex items-center gap-2 rounded border border-white/20 px-4 py-2 text-[11px] font-semibold text-white/70 transition hover:border-white/40 hover:text-white"
               >
                 <RefreshCw size={12} />
-                LIMPIAR SELECCION
+                LIMPIAR SELECCIÓN
               </button>
 
               <button

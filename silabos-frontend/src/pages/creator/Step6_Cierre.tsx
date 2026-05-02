@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, BookOpen, Check, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Check, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, api } from '../../api/client';
 import type { GradingRow } from '../../api/types';
@@ -14,100 +14,8 @@ const DEFAULT_GRADING_ROWS: GradingRow[] = [
   { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 15, cronograma: 'Semana 4' },
   { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: 'Semana 8' },
   { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: 15, cronograma: 'Semana 12' },
-  { evidencia: 'Proyecto Final y Reflexión', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
+  { evidencia: 'Producto Acreditable 3', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
 ];
-
-const METHOD_EVIDENCE_PRODUCTS: Record<string, [string, string, string, string]> = {
-  ABPro: [
-    'Dossier analítico',
-    'Avance de proyecto / Recurso parcial',
-    'Examen Parcial / Sustentación',
-    'Proyecto final integrador + exposición',
-  ],
-  ABI: [
-    'Informe analítico de investigación',
-    'Seminario documentado',
-    'Examen Parcial',
-    'Informe de investigación final + sustentación',
-  ],
-  ABDe: [
-    'Evidencias iniciales y preguntas esenciales',
-    'Recurso de desafío',
-    'Sustentación / Examen Parcial',
-    'Propuesta final de difusión',
-  ],
-  AEC: [
-    'Informe de caso introductorio',
-    'Sustentación de caso histórico/práctico',
-    'Examen Parcial / Informe evaluativo',
-    'Informe final de caso integrador + exposición',
-  ],
-  AC: [
-    'Informe grupal',
-    'Dossier cooperativo',
-    'Examen Parcial / Informe cooperativo',
-    'Informe grupal integrador y exposición final',
-  ],
-  AE: [
-    'Informe reflexivo-aplicado',
-    'Microdiseño sustentado / Avance',
-    'Examen Parcial',
-    'Propuesta integral + exposición',
-  ],
-  ADI: [
-    'Informe argumentado de fundamentos',
-    'Dossier argumentado / Unidad sustentada',
-    'Examen Parcial',
-    'Propuesta completa argumentada + sustentación',
-  ],
-  CER: [
-    'Informe de fenomenología',
-    'Dossier de evidencias y razonamiento',
-    'Examen Parcial',
-    'Aplicación contextualizada final',
-  ],
-  EMR: [
-    'Informe sobre fundamentos realistas',
-    'Propuesta didáctica parcial',
-    'Examen Parcial',
-    'Propuesta integral EMR + sustentación',
-  ],
-  ABT: [
-    'Informe síntesis de fundamentos',
-    'Producto de taller sustentado',
-    'Examen Parcial',
-    'Propuesta completa de taller + sustentación',
-  ],
-  ABRP: [
-    'Informe de fundamentación inicial',
-    'Dossier de análisis teórico-problemático',
-    'Examen Parcial / Propuesta de intervención',
-    'Propuesta final de abordaje didáctico + sustentación',
-  ],
-};
-
-function normalizeMethodText(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-function resolveMethodKey(methodName: string) {
-  const text = normalizeMethodText(methodName);
-  if (/\babpro\b/.test(text) || text.includes('proyecto')) return 'ABPro';
-  if (/\babi\b/.test(text) || text.includes('investigacion')) return 'ABI';
-  if (/\babde\b/.test(text) || text.includes('desafio')) return 'ABDe';
-  if (/\baec\b/.test(text) || text.includes('caso')) return 'AEC';
-  if (/\bac\b/.test(text) || text.includes('cooperativo')) return 'AC';
-  if (/\bae\b/.test(text) || text.includes('experiencial')) return 'AE';
-  if (/\badi\b/.test(text) || text.includes('indagacion')) return 'ADI';
-  if (/\bcer\b/.test(text) || text.includes('claim') || text.includes('evidencia') && text.includes('razonamiento')) return 'CER';
-  if (/\bemr\b/.test(text) || text.includes('matematica realista')) return 'EMR';
-  if (/\babt\b/.test(text) || text.includes('taller')) return 'ABT';
-  if (/\babrp\b/.test(text) || text.includes('resolucion de problemas')) return 'ABRP';
-  return 'ABPro';
-}
 
 function isLegacyDefault(rows: GradingRow[]) {
   return (
@@ -280,7 +188,6 @@ export default function Step6_Cierre() {
     draftPerformances,
     habilidadesSugeridas,
     selectedMethodId,
-    selectedMethodName,
     gradingRows,
     setGradingRows,
     gradingOrigin,
@@ -294,7 +201,6 @@ export default function Step6_Cierre() {
     setRequiresValidation,
   } = useSyllabus();
 
-  const [suggesting, setSuggesting] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [aiRecoveryVisible, setAiRecoveryVisible] = useState(false);
 
@@ -315,25 +221,6 @@ export default function Step6_Cierre() {
     { label: 'Ponderación total = 100%', ok: totalPct === 100 },
   ];
   const allOk = checks.every((c) => c.ok);
-
-  const handleSuggestGrading = async () => {
-    setSuggesting(true);
-    try {
-      const methodKey = resolveMethodKey(selectedMethodName);
-      const products = METHOD_EVIDENCE_PRODUCTS[methodKey];
-      setGradingRows((currentRows) => currentRows.map((row, index) => (
-        index >= 1 && index <= 4
-          ? { ...row, evidencia: products[index - 1] }
-          : row
-      )));
-      setGradingOrigin('ai_suggested');
-      showToast('Evidencias sugeridas según el método seleccionado', 'success');
-    } catch {
-      showToast('Error al sugerir sistema de evaluación', 'error');
-    } finally {
-      setSuggesting(false);
-    }
-  };
 
   const isAiAvailabilityError = (error: unknown) => {
     if (!(error instanceof ApiError)) return false;
@@ -441,23 +328,10 @@ export default function Step6_Cierre() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Grading table — 2 cols */}
         <div className="space-y-3 lg:col-span-2">
-          <div className="flex items-center justify-between gap-3">
+          <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4A351]">
               Sistema de evaluación
             </p>
-            <button
-              type="button"
-              onClick={handleSuggestGrading}
-              disabled={suggesting}
-              className="flex items-center gap-1.5 rounded-lg border border-[#D4A351]/40 bg-[#D4A351]/10 px-3 py-1.5 text-[10px] font-bold text-[#D4A351] transition hover:bg-[#D4A351]/20 disabled:opacity-50"
-            >
-              {suggesting ? (
-                <Loader2 size={11} className="animate-spin" />
-              ) : (
-                <Sparkles size={11} />
-              )}
-              Sugerir con IA
-            </button>
           </div>
           <GradingTable rows={gradingRows} onChange={setGradingRows} />
           {gradingRows.length > 0 && totalPct !== 100 && (

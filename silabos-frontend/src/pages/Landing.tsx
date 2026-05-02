@@ -26,13 +26,13 @@ export default function Landing() {
             <span className="absolute -bottom-1 left-0 h-0.5 w-full bg-[#0A3A6A]" />
           </a>
           <a href="#silabos" className="text-base font-bold text-[#1A1A1A] transition hover:text-[#0052CC]">
-            Silabos
+            Sílabos
           </a>
           <a href="#calidad" className="text-base font-bold text-[#1A1A1A] transition hover:text-[#0052CC]">
             Calidad
           </a>
           <a href="#innovacion" className="text-base font-bold text-[#1A1A1A] transition hover:text-[#0052CC]">
-            Innovacion
+            Innovación
           </a>
         </nav>
 
@@ -47,7 +47,7 @@ export default function Landing() {
             <img src="/logo_fachse.png" alt="FACHSE" className="h-14 w-auto object-contain" />
             <div className="leading-tight text-[#0A3A6A]">
               <p className="text-xs font-bold">Facultad de Ciencias</p>
-              <p className="text-xs font-bold">Historico Sociales y Educacion</p>
+              <p className="text-xs font-bold">Histórico Sociales y Educación</p>
               <p className="text-sm font-black">(FACHSE)</p>
             </div>
           </div>
@@ -75,7 +75,7 @@ export default function Landing() {
           </a>
           <a
             href="#config"
-            aria-label="Configuracion"
+            aria-label="Configuración"
             className="flex h-10 w-10 items-center justify-center rounded-full text-[#0A3A6A] transition hover:bg-[#E6F0FA]"
           >
             <Settings size={18} />
@@ -93,15 +93,15 @@ export default function Landing() {
             </div>
 
             <h1 className="max-w-2xl text-[2.45rem] font-black leading-[1.08] tracking-[-0.015em] text-[#0A3A6A] lg:text-[2.9rem]">
-              Sistema de Gestion
+              Sistema de Gestión
               <br />
               <span>Inteligente</span>{' '}
-              <span className="text-[#0A3A6A]/95">de Silabos - UNPRG</span>
+              <span className="text-[#0A3A6A]/95">de Sílabos - UNPRG</span>
             </h1>
 
             <p className="mt-4 max-w-[26rem] text-[1.05rem] font-medium leading-8 text-[#1A1A1A]/82 lg:max-w-[27rem] xl:max-w-[29rem]">
-              Plataforma academica impulsada por la Direccion de la Escuela Profesional de Educacion
-              para transformar la elaboracion de silabos, fortalecer la coherencia curricular y elevar
+              Plataforma académica impulsada por la Dirección de la Escuela Profesional de Educación
+              para transformar la elaboración de sílabos, fortalecer la coherencia curricular y elevar
               la calidad formativa con apoyo de inteligencia artificial.
             </p>
 
@@ -111,7 +111,7 @@ export default function Landing() {
                 style={{ transform: 'skewX(-8deg)' }}
               >
                 <span style={{ display: 'inline-block', transform: 'skewX(8deg)' }}>
-                  Innovacion curricular para
+                  Innovación curricular para
                   <br />
                   una docencia de calidad.
                 </span>
@@ -129,7 +129,7 @@ export default function Landing() {
           <div className="relative flex items-center justify-center">
             <img
               src="/landing_page/hero-brain-book.png"
-              alt="Ilustracion SIGEISIL"
+              alt="Ilustración SIGEISIL"
               className="relative z-10 max-h-[44vh] w-[82%] object-contain drop-shadow-[0_22px_28px_rgba(0,70,120,0.22)]"
             />
           </div>
@@ -140,7 +140,7 @@ export default function Landing() {
           <div className="leading-tight">
             <p className="text-xl font-black tracking-[-0.01em] text-[#111827]">Dr. Carlos Carvas</p>
             <p className="mt-1 text-sm font-semibold text-[#0A3A6A]/78">
-              Director de la Escuela Profesional de Educacion
+              Director de la Escuela Profesional de Educación
             </p>
           </div>
         </div>
@@ -149,13 +149,13 @@ export default function Landing() {
       <footer className="absolute inset-x-0 bottom-0 z-20 flex h-12 items-center justify-between bg-white/95 px-6 text-xs text-[#1A1A1A] shadow-[0_-1px_0_rgba(0,0,0,0.05)] lg:px-12">
         <div className="flex items-center gap-6">
           <FooterLink icon={<Phone size={14} />} label="Contacto" href="#contacto" />
-          <FooterLink icon={<BookCheck size={14} />} label="Silabos" href="#silabos" />
+          <FooterLink icon={<BookCheck size={14} />} label="Sílabos" href="#silabos" />
           <FooterLink icon={<Globe size={14} />} label="UNPRG" href="https://www.unprg.edu.pe" />
-          <FooterLink icon={<Mail size={14} />} label="Innovacion" href="#innovacion" />
+          <FooterLink icon={<Mail size={14} />} label="Innovación" href="#innovacion" />
         </div>
         <div className="hidden items-center gap-2 text-[#0A3A6A] md:flex">
           <Globe size={14} />
-          <span>Informacion universidad nacional pedro info@gmail.com</span>
+          <span>Información universidad nacional pedro info@gmail.com</span>
         </div>
       </footer>
     </div>

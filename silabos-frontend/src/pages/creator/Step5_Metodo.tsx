@@ -473,12 +473,12 @@ export default function Step5_Metodo() {
           <p className="mt-1 text-[8px] leading-4 text-white/72">
             {suggestReason ? (
               <>
-                IA recomienda <span className="font-semibold text-[#F2C260]">{selectedObj?.name || selectedMethodName || 'un metodo principal'}</span>
-                {suggestReasonItems.length > 0 ? `: ${suggestReasonItems[0]}` : '. Revisa la justificacion completa en la ficha del metodo.'}
+                IA recomienda <span className="font-semibold text-[#F2C260]">{selectedObj?.name || selectedMethodName || 'un método principal'}</span>
+                {suggestReasonItems.length > 0 ? `: ${suggestReasonItems[0]}` : '. Revisa la justificación completa en la ficha del método.'}
               </>
             ) : (
               <>
-                Puedes elegir manualmente desde el repositorio o dejar que la IA proponga el metodo principal para el curso.
+                Puedes elegir manualmente desde el repositorio o dejar que la IA proponga el método principal para el curso.
               </>
             )}
           </p>

@@ -17,7 +17,7 @@ export function useSyllabus() {
       setSyllabus(response.data);
       return response.data;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'No se pudo generar el silabo';
+      const message = err instanceof Error ? err.message : 'No se pudo generar el sílabo';
       setError(message);
       throw err;
     } finally {
@@ -34,7 +34,7 @@ export function useSyllabus() {
       setValidation(response.data);
       return response.data;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'No se pudo validar el silabo';
+      const message = err instanceof Error ? err.message : 'No se pudo validar el sílabo';
       setError(message);
       throw err;
     } finally {

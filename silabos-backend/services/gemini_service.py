@@ -215,9 +215,9 @@ def _extract_openai_output_text(data: dict[str, Any]) -> str:
 
 
 _STIFFENED_JSON_SUFFIX = (
-    "\n\n[CRITICO: Tu respuesta anterior causo un JSONDecodeError. "
-    "DEBES responder EXCLUSIVAMENTE con el array/objeto JSON valido. "
-    "Cero markdown, cero comentarios, cero texto antes o despues. "
+    "\n\n[CRÍTICO: Tu respuesta anterior causó un JSONDecodeError. "
+    "DEBES responder EXCLUSIVAMENTE con el array/objeto JSON válido. "
+    "Cero markdown, cero comentarios, cero texto antes o después. "
     "Comienza directamente con '{' o '[' y termina con '}' o ']'.]"
 )
 
@@ -402,7 +402,7 @@ Debes devolver SOLO un objeto JSON con esta forma:
   "aprobado": false
 }}
 
-Si falta informacion, usa valores por defecto razonables.
+Si falta información, usa valores por defecto razonables.
 No agregues markdown, comentarios ni texto extra.
 
 SALIDA A REPARAR:
@@ -530,7 +530,7 @@ class GeminiService:
     def _gemini_error(self, exc: Exception) -> AIProviderError:
         message = str(exc)
         return AIProviderError(
-            f"Gemini fallo: {message}",
+            f"Gemini falló: {message}",
             retryable=_error_is_retryable(message),
             provider="gemini",
             model=self.gemini_model,
@@ -788,7 +788,7 @@ class GeminiService:
                 raise
 
             logger.warning(
-                "OpenRouter primario fallo para %s; usando fallback %s | error=%s",
+                "OpenRouter primario falló para %s; usando fallback %s | error=%s",
                 task_name,
                 fallback_model,
                 exc,
@@ -815,7 +815,7 @@ class GeminiService:
 
         if forced == "openai":
             if task_name not in FINAL_SYLLABUS_TASKS:
-                raise ValueError(f"OpenAI solo esta habilitado para tareas finales: {task_name}")
+                raise ValueError(f"OpenAI solo está habilitado para tareas finales: {task_name}")
             return await self._call_openai_final(
                 task_name,
                 prompt,
@@ -847,7 +847,7 @@ class GeminiService:
                         )
                     except AIProviderError as openai_exc:
                         logger.warning(
-                            "OpenAI fallback fallo para %s; reintentando con OpenRouter | error=%s",
+                            "OpenAI fallback falló para %s; reintentando con OpenRouter | error=%s",
                             task_name,
                             openai_exc,
                         )
@@ -940,21 +940,21 @@ class GeminiService:
                 continue
 
         logger.error(
-            "generate_json agoto reintentos | tarea=%s | ultimo_raw=%r",
+            "generate_json agotó reintentos | tarea=%s | último_raw=%r",
             task_name,
             (last_raw or "")[:500],
         )
         if last_error is not None:
             raise last_error
-        raise json.JSONDecodeError("IA no devolvio JSON parseable", last_raw or "", 0)
+        raise json.JSONDecodeError("IA no devolvió JSON parseable", last_raw or "", 0)
 
     async def generar_silabo(self, datos_curso: dict, contexto_curricular: str = "") -> dict:
         try:
             prompt = construir_prompt_silabo(datos_curso, contexto_curricular)
-            logger.info("Generando silabo: %s", datos_curso.get("nombre_curso"))
+            logger.info("Generando sílabo: %s", datos_curso.get("nombre_curso"))
             return await self.generate_json("syllabus_generate", prompt)
         except json.JSONDecodeError as exc:
-            logger.error("Error al parsear JSON del silabo: %s", exc)
+            logger.error("Error al parsear JSON del sílabo: %s", exc)
             return {"error": "No se pudo parsear la respuesta del modelo como JSON"}
         except AIProviderError as exc:
             logger.error("Error al generar silabo: %s", exc)
@@ -1022,7 +1022,7 @@ class GeminiService:
             payload = await self.generate_json("search_query_build", prompt)
             queries = payload.get("queries", []) if isinstance(payload, dict) else []
             if not isinstance(queries, list):
-                raise ValueError("El modelo no devolvio una lista de queries")
+                raise ValueError("El modelo no devolvió una lista de queries")
             logger.info("Se generaron %s queries", len(queries))
             return [str(query) for query in queries if str(query).strip()]
         except Exception as exc:
@@ -1039,7 +1039,7 @@ class GeminiService:
             payload = await self.generate_json("search_result_filter", prompt)
             fuentes = payload.get("fuentes", []) if isinstance(payload, dict) else []
             if not isinstance(fuentes, list):
-                raise ValueError("El modelo no devolvio una lista de fuentes")
+                raise ValueError("El modelo no devolvió una lista de fuentes")
             logger.info("Se seleccionaron %s fuentes", len(fuentes))
             return fuentes
         except Exception as exc:
@@ -1098,7 +1098,7 @@ Responde solo JSON, sin markdown, sin texto adicional."""
 
         payload = await self.generate_json("method_suggest", prompt, force_provider=force_provider)
         if not isinstance(payload, dict):
-            raise ValueError("El modelo no devolvio un objeto JSON para method_suggest")
+            raise ValueError("El modelo no devolvió un objeto JSON para method_suggest")
         return payload
 
     async def chat_documento(
@@ -1114,8 +1114,8 @@ Responde solo JSON, sin markdown, sin texto adicional."""
                 historial_texto += f"\n{rol}: {msg.get('contenido', '')}"
 
             prompt = f"""# ROL
-Asistente academico especializado en documentos universitarios.
-Responde UNICAMENTE con informacion de los documentos proporcionados.
+Asistente académico especializado en documentos universitarios.
+Responde ÚNICAMENTE con información de los documentos proporcionados.
 
 # DOCUMENTOS DE REFERENCIA
 {contexto_docs[:6000]}
@@ -1127,8 +1127,8 @@ Responde UNICAMENTE con informacion de los documentos proporcionados.
 {pregunta}
 
 # INSTRUCCIONES
-- Cita el documento cuando uses informacion especifica (ej: "Segun el documento X...")
-- Si la informacion no esta en los documentos: "Esta informacion no se encuentra en los documentos proporcionados"
+- Cita el documento cuando uses información específica (ej: "Según el documento X...")
+- Si la información no está en los documentos: "Esta información no se encuentra en los documentos proporcionados"
 - Usa markdown para listas cuando mejore la claridad
 """
             logger.info("Procesando consulta de chat con documentos")

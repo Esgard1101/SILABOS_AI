@@ -141,7 +141,7 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
     { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 15, cronograma: 'Semana 4' },
     { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: 'Semana 8' },
     { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: 15, cronograma: 'Semana 12' },
-    { evidencia: 'Proyecto Final y Reflexión', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
+    { evidencia: 'Producto Acreditable 3', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
   ]);
   const [gradingOrigin, setGradingOrigin] = useState<GradingOrigin>('none');
   const [gradingNotes, setGradingNotes] = useState('');

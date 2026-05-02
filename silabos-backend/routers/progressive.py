@@ -242,7 +242,7 @@ def _build_evaluacion_matriz(
             desempeno_text = _clean_text(unidad.get("logro")) or (
                 _clean_text((desempenos[i] or {}).get("descripcion"))
                 if i < len(desempenos)
-                else f"Desempeno RA{i + 1}"
+                else f"Desempeño RA{i + 1}"
             )
             instruments_text = (
                 "; ".join(ai_insts)
@@ -310,7 +310,7 @@ CANONICAL_GRADING_ROWS = [
     {"evidencia": "Producto Acreditable 1", "sigla": "PA1", "porcentaje": 15, "cronograma": "Semana 4"},
     {"evidencia": "Producto Acreditable 2", "sigla": "PA2", "porcentaje": 20, "cronograma": "Semana 8"},
     {"evidencia": "Examen Parcial", "sigla": "EP", "porcentaje": 15, "cronograma": "Semana 12"},
-    {"evidencia": "Proyecto Final y Reflexión", "sigla": "PA3", "porcentaje": 35, "cronograma": "Semana 16"},
+    {"evidencia": "Producto Acreditable 3", "sigla": "PA3", "porcentaje": 35, "cronograma": "Semana 16"},
 ]
 
 METHOD_EVIDENCE_PRODUCTS = {
@@ -421,10 +421,6 @@ def _resolve_evidence_method_key(method_name: str = "", method_code: str = "") -
 
 def _canonical_grading_rows(method_name: str = "", method_code: str = "") -> list[dict]:
     rows = [row.copy() for row in CANONICAL_GRADING_ROWS]
-    if method_name or method_code:
-        products = METHOD_EVIDENCE_PRODUCTS[_resolve_evidence_method_key(method_name, method_code)]
-        for index, evidence_name in enumerate(products, start=1):
-            rows[index]["evidencia"] = evidence_name
     return rows
 
 
@@ -470,7 +466,7 @@ _CONJUGATED_TO_INFINITIVE = {
     "describe": "Describir",
     "identifica": "Identificar",
     "detecta": "Detectar",
-    "disena": "Disenar",
+    "disena": "Diseñar",
     "diseña": "Diseñar",
     "aplica": "Aplicar",
     "evalua": "Evaluar",
@@ -551,7 +547,7 @@ def _expand_topics(items: list[str], total: int, fallback_title: str) -> list[st
         if index < len(base):
             expanded.append(base[index])
         else:
-            expanded.append(f"{base[-1]} - aplicacion {index - len(base) + 1}")
+            expanded.append(f"{base[-1]} - aplicación {index - len(base) + 1}")
     return expanded
 
 
@@ -594,28 +590,28 @@ def _content_plan_is_usable(plan_units: list[dict], expected_units: int = 4) -> 
 
 
 def _progressive_topic_sequence(items: list[str], total: int = 16) -> list[str]:
-    seeds = _sanitize_content_items(items, 12) or ["fundamentos del curso", "aplicacion disciplinar"]
+    seeds = _sanitize_content_items(items, 12) or ["fundamentos del curso", "aplicación disciplinar"]
 
     def seed(index: int) -> str:
         return seeds[min(len(seeds) - 1, index % len(seeds))]
 
     templates = [
-        "Fundamentos conceptuales de {a}",
-        "Contexto, alcance y categorias de {a}",
-        "Principios y enfoques de {a}",
-        "Integracion diagnostica de {a} y {b}",
-        "Modelos teoricos de {a}",
-        "Procedimientos y estrategias de {a}",
-        "Analisis comparado de {a} y {b}",
-        "Producto parcial sobre {a}",
-        "Metodos de aplicacion de {a}",
-        "Criterios de diseno e intervencion en {a}",
-        "Resolucion de situaciones practicas vinculadas con {a}",
-        "Evaluacion parcial de resultados sobre {a}",
-        "Proyecto integrador aplicado a {a}",
-        "Validacion y mejora de propuestas sobre {a}",
-        "Sustentacion de evidencias y toma de decisiones en {a}",
-        "Cierre integrador y reflexion academica sobre {a}",
+        "Introducción a {a}",
+        "Tipos y componentes de {a}",
+        "Principios de trabajo con {a}",
+        "Relación entre {a} y {b}",
+        "Modelos de aplicación de {a}",
+        "Recursos y procedimientos para {a}",
+        "Comparación práctica entre {a} y {b}",
+        "Primer avance aplicado a {a}",
+        "Aplicación guiada de {a}",
+        "Diseño de una solución con {a}",
+        "Resolución de ejercicios o casos sobre {a}",
+        "Evaluación parcial de {a}",
+        "Proyecto integrador con {a}",
+        "Validación y mejora de {a}",
+        "Sustentación de avances sobre {a}",
+        "Cierre reflexivo sobre {a}",
     ]
     topics = []
     for index in range(total):
@@ -633,8 +629,8 @@ def _build_deterministic_content_plan(
     unit_count: int = 4,
 ) -> dict:
     topics = _progressive_topic_sequence(knowledge_items, 16)
-    skills = _sanitize_skill_items(skill_names, 12) or ["Analizar fundamentos del curso", "Aplicar procedimientos academicos"]
-    attitudes_pool = _sanitize_content_items(attitudes or [], 8) or ["Responsabilidad academica", "Rigor en el trabajo colaborativo"]
+    skills = _sanitize_skill_items(skill_names, 12) or ["Analizar fundamentos del curso", "Aplicar procedimientos académicos"]
+    attitudes_pool = _sanitize_content_items(attitudes or [], 8) or ["Responsabilidad académica", "Rigor en el trabajo colaborativo"]
     units = []
     ranges = _unit_week_ranges(unit_count, 16)
     for unit_index, (start_week, end_week) in enumerate(ranges):
@@ -670,7 +666,7 @@ def _build_deterministic_content_plan(
                 "weeks": weeks,
             }
         )
-    return {"units": units, "warnings": ["content_plan regenerado por baja diversidad tematica"]}
+    return {"units": units, "warnings": ["content_plan regenerado por baja diversidad temática"]}
 
 
 def _unit_week_ranges(unit_count: int, total_weeks: int = 16) -> list[tuple[int, int]]:
@@ -850,8 +846,8 @@ def _draft_ra_unidad(
     main_topics = ", ".join(knowledge_in_unit[:3]) if knowledge_in_unit else (unit_title or f"Unidad {unit_index + 1}")
     phase_focus = phases[0] if phases else "el desarrollo del curso"
     return (
-        f"Integra los fundamentos de {main_topics} mediante {method_short or 'metodologia activa'}, "
-        f"con enfasis en {phase_focus.lower()}, para sustentar el desempeno esperado de la unidad."
+        f"Integra los fundamentos de {main_topics} mediante {method_short or 'metodología activa'}, "
+        f"con énfasis en {phase_focus.lower()}, para sustentar el desempeño esperado de la unidad."
     )
 
 
@@ -869,43 +865,79 @@ _PRODUCT_KEYWORDS_BY_PHASE = (
 
 _FORMATIVE_EVIDENCE_PATTERNS = {
     "ABI": [
-        "Matriz de preguntas de investigacion",
-        "Fichas de lectura academica",
-        "Organizador conceptual analitico",
+        "Preguntas de investigación sobre {topic}",
+        "Ficha de lectura aplicada",
+        "Organizador conceptual",
+        "Reporte breve de hallazgos",
     ],
     "ABPro": [
-        "Esquema del proyecto",
-        "Plan de trabajo del proyecto",
-        "Avance revisado del producto",
+        "Ficha de reto y criterios del prototipo",
+        "Boceto o diagrama técnico del prototipo",
+        "Bitácora de prueba y ajustes",
+        "Demostración breve del avance funcional",
     ],
     "ABDe": [
-        "Matriz de analisis del desafio",
-        "Plan de solucion del desafio",
+        "Ficha de análisis del desafío",
+        "Propuesta breve de solución",
         "Prototipo o avance validado",
+        "Reporte de mejora del prototipo",
     ],
     "Aprendizaje Cooperativo": [
-        "Organizador cooperativo inicial",
+        "Organizador cooperativo",
         "Ficha individual de trabajo",
-        "Producto grupal en revision",
+        "Producto grupal en revisión",
+        "Acta de socialización y mejora",
     ],
     "Estudio de Casos": [
-        "Ficha de analisis del caso",
-        "Matriz de alternativas de solucion",
+        "Ficha de análisis del caso",
+        "Matriz de alternativas de solución",
         "Informe preliminar del caso",
+        "Sustentación breve de conclusiones",
     ],
 }
+
+
+def _didactic_topic_label(topic: str) -> str:
+    text = _clean_text(topic)
+    if not text:
+        return ""
+    text = re.sub(
+        r"^(introducci[oó]n a|tipos y componentes de|principios de trabajo con|relaci[oó]n entre|modelos de aplicaci[oó]n de|recursos y procedimientos para|comparaci[oó]n pr[aá]ctica entre|primer avance aplicado a|aplicaci[oó]n guiada de|dise[ñn]o de una soluci[oó]n con|resoluci[oó]n de ejercicios o casos sobre|evaluaci[oó]n parcial de|proyecto integrador con|validaci[oó]n y mejora de|sustentaci[oó]n de avances sobre|cierre reflexivo sobre)\s+",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.split(r"\s+y\s+", text, maxsplit=1)[0]
+    words = text.split()
+    if len(words) > 8:
+        text = " ".join(words[:8])
+    return text.strip(" .;,:")
 
 
 def _formative_evidence_for_week(week: int, method_short: str, topic: str) -> str:
     week_in_unit = (week - 1) % 4
     templates = _FORMATIVE_EVIDENCE_PATTERNS.get(method_short) or [
-        "Esquema de analisis",
-        "Ficha de trabajo academico",
-        "Avance con retroalimentacion",
+        "Ficha de análisis aplicado",
+        "Ejercicio o procedimiento resuelto",
+        "Producto breve de aplicación",
+        "Registro de retroalimentación y mejora",
     ]
-    if week_in_unit < len(templates):
-        return templates[week_in_unit]
-    return f"Avance integrador de {topic}"
+    topic_text = _didactic_topic_label(topic)
+    template = templates[week_in_unit % len(templates)]
+    evidence = template.format(topic=topic_text)
+    if topic_text and "{topic}" not in template and week_in_unit in {0, 1}:
+        evidence = f"{evidence}: {topic_text}"
+    return evidence
+
+
+def _is_accreditable_product_label(value: str) -> bool:
+    text = _normalize_match_text(value)
+    return "producto acreditable" in text or re.search(r"\bpa[123]\b", text) is not None
+
+
+def _is_exam_label(value: str) -> bool:
+    text = _normalize_match_text(value)
+    return "examen" in text or "evaluacion parcial" in text
 
 
 def _evidence_for_week(
@@ -918,33 +950,19 @@ def _evidence_for_week(
     grading_rows: list[dict],
     topic: str,
 ) -> str:
-    """Selecciona evidencia por semana priorizando: grading explícito → productos del método por fase → grading cíclico."""
+    """Selecciona una evidencia semanal formativa.
+
+    Los Productos Acreditables viven en el sistema de calificación como hitos
+    graduales del mismo producto integrador; no deben reemplazar las tareas
+    semanales del programa de contenidos.
+    """
     explicit = evidences_by_week.get(week)
     if explicit:
-        return "; ".join(explicit)
+        exams = [item for item in explicit if _is_exam_label(item)]
+        if exams:
+            return "; ".join(exams)
 
     return _formative_evidence_for_week(week, method_short, topic)
-
-    if method_products and phase_label:
-        lowered_phase = phase_label.lower()
-        for phase_needles, prod_needles in _PRODUCT_KEYWORDS_BY_PHASE:
-            if any(n in lowered_phase for n in phase_needles):
-                for prod in method_products:
-                    if any(pk in prod.lower() for pk in prod_needles):
-                        return prod
-
-    if grading_rows:
-        non_permanent = [r for r in grading_rows if "permanente" not in str(r.get("cronograma", "")).lower()]
-        if non_permanent:
-            row = non_permanent[(week - 1) % len(non_permanent)]
-            evidencia_g = _clean_text(row.get("evidencia"))
-            sigla_g = _clean_text(row.get("sigla"))
-            if evidencia_g:
-                return f"{evidencia_g}{f' ({sigla_g})' if sigla_g else ''}"
-
-    if permanent:
-        return permanent[0]
-    return f"Avance de {topic}"
 
 
 # Mapeo nombre → código corto del método (para prefijo "ABPro – Fase: ...")
@@ -1936,7 +1954,7 @@ async def sugerir_metodo_progresivo(
         "method_id": metodos_base[0]["id"],
         "method_name": metodos_base[0]["name"],
         "reason": "Sugerencia por defecto",
-        "reason_items": ["Se propone como punto de partida porque permite organizar la secuencia didactica del curso."],
+        "reason_items": ["Se propone como punto de partida porque permite organizar la secuencia didáctica del curso."],
     }
 
     if not gemini or not curso:
@@ -2132,14 +2150,14 @@ async def ensamblar_final(
     desempenos_final = [
         {
             "codigo": _clean_text(item.get("code"), f"D{index + 1}"),
-            "descripcion": _clean_text(item.get("statement"), f"Desempeno {index + 1}"),
-            "statement": _clean_text(item.get("statement"), f"Desempeno {index + 1}"),
+            "descripcion": _clean_text(item.get("statement"), f"Desempeño {index + 1}"),
+            "statement": _clean_text(item.get("statement"), f"Desempeño {index + 1}"),
         }
         if isinstance(item, dict)
         else {
             "codigo": f"D{index + 1}",
-            "descripcion": _clean_text(item, f"Desempeno {index + 1}"),
-            "statement": _clean_text(item, f"Desempeno {index + 1}"),
+            "descripcion": _clean_text(item, f"Desempeño {index + 1}"),
+            "statement": _clean_text(item, f"Desempeño {index + 1}"),
         }
         for index, item in enumerate(performances)
     ]
@@ -2170,7 +2188,7 @@ async def ensamblar_final(
                 status_code=500,
                 detail={
                     "code": "AI_FORMAT_ERROR",
-                    "message": "Error de formato en IA tras 3 intentos. Reintente la operacion.",
+                    "message": "Error de formato en IA tras 3 intentos. Reintente la operación.",
                     "retryable": True,
                     "task": "suggest_instruments",
                 },
@@ -2233,8 +2251,8 @@ async def ensamblar_final(
         course_name=curso.get("name", "") if curso else "",
     )
     tutoria_text = (
-        "Las tutorias academicas se desarrollaran de manera flexible durante el curso, "
-        "atendiendo dificultades de comprension, elaboracion de productos y sustentacion de evidencias."
+        "Las tutorías académicas se desarrollarán de manera flexible durante el curso, "
+        "atendiendo dificultades de comprensión, elaboración de productos y sustentación de evidencias."
     )
     try:
         progressive_ai = get_progressive_ai_service()
@@ -2408,7 +2426,7 @@ async def enviar_validacion_academica(
     # Reuse the institutional review flow and track academic validation in dedicated flags.
     current_status = draft.get("status", "draft")
     if current_status not in ("draft", "generated", "returned"):
-        raise HTTPException(400, f"No se puede enviar a validacion desde el estado '{current_status}'")
+        raise HTTPException(400, f"No se puede enviar a validación desde el estado '{current_status}'")
 
     ok = await supabase.marcar_envio_validacion_academica(syllabus_id)
     if not ok:

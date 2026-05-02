@@ -25,6 +25,7 @@ import {
 import NavSidebar from '../components/NavSidebar';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
+import { useAppContext } from '../hooks/useAppContext';
 import { getStoredUser } from '../hooks/useAuth';
 import {
   enrichVersion,
@@ -41,6 +42,7 @@ import {
 
 type VersionMap = Record<string, SyllabusVersion[]>;
 type LoadingMap = Record<string, boolean>;
+const MANAGEMENT_ROLES = new Set(['admin', 'director', 'coordinador']);
 
 const REVIEW_MODULE_MESSAGE =
   'Módulo de revisión académica en desarrollo. Estará disponible próximamente.';
@@ -107,6 +109,7 @@ async function downloadExport(
 
 export default function SyllabusList() {
   const navigate = useNavigate();
+  const { clearContext } = useAppContext();
   const currentUser = getStoredUser();
   const isAdmin = currentUser?.role === 'admin';
   const [syllabi, setSyllabi] = useState<SyllabusListItem[]>([]);
@@ -124,6 +127,16 @@ export default function SyllabusList() {
     () => syllabi.find((item) => item.id === selectedObservationId) || null,
     [selectedObservationId, syllabi],
   );
+
+  const handleCreateSyllabus = () => {
+    if (currentUser?.role && MANAGEMENT_ROLES.has(currentUser.role)) {
+      navigate('/creator');
+      return;
+    }
+
+    clearContext();
+    navigate('/select-context');
+  };
 
   const loadSyllabi = async () => {
     setLoading(true);
@@ -445,7 +458,7 @@ export default function SyllabusList() {
                 Volver
               </button>
               <button
-                onClick={() => navigate('/creator')}
+                onClick={handleCreateSyllabus}
                 className="inline-flex items-center gap-2 rounded-2xl bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
               >
                 <PlusCircle size={16} />
@@ -478,7 +491,7 @@ export default function SyllabusList() {
               <h2 className="mt-5 text-2xl font-bold">No tienes sílabos aún</h2>
               <p className="mt-2 text-sm text-slate-500">Crea el primero para empezar el workflow académico.</p>
               <button
-                onClick={() => navigate('/creator')}
+                onClick={handleCreateSyllabus}
                 className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white hover:bg-orange-700"
               >
                 <PlusCircle size={16} />

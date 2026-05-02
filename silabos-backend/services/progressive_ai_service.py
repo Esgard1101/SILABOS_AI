@@ -99,7 +99,7 @@ class ProgressiveAIService:
             )
         except json.JSONDecodeError as exc:
             logger.error(
-                "Step progresivo agoto reintentos JSON | tarea=%s | error=%s",
+                "Step progresivo agotó reintentos JSON | tarea=%s | error=%s",
                 task,
                 exc,
             )
@@ -214,8 +214,9 @@ REGLAS:
 - habilidades_sugeridas: 4 a 8 habilidades; todas deben iniciar con verbo en infinitivo terminado en -ar, -er o -ir.
 - content_plan: una unidad por desempeno oficial. Distribuye exactamente 16 semanas entre las unidades.
 - No incluyas actitudes ni resultados de aprendizaje; la plantilla vigente no los usa en el programa de contenidos.
-- Cada semana debe tener un tema de knowledge unico, secuencial y de complejidad creciente. Prohibido repetir o fragmentar el mismo concepto.
-- Unidad 1 introductoria; unidades 2 y 3 de profundizacion; unidad 4 de aplicacion/integracion.
+- Cada semana debe tener un tema de knowledge unico, secuencial y de complejidad creciente. Redactalo como tema didactico breve, natural y entendible por un docente.
+- Evita formulas roboticas como "Fundamentos conceptuales de...", "Integracion diagnostica de..." o "Producto parcial sobre..."; usa nombres de clase/taller concretos.
+- Unidad 1 introductoria; unidades intermedias de practica y profundizacion; unidad final de aplicacion/integracion.
 - responsabilidad_social: 4 a 5 lineas. Debe plantear una actividad concreta del mundo real vinculada al proposito del curso o a la aplicacion social del aprendizaje en el departamento de Lambayeque. No debe ser decorativa ni aislada: debe incluir contexto local, accion estudiantil, aplicacion de conocimientos/habilidades y evidencia verificable.
 - Responde SOLO JSON, sin texto adicional."""
 
@@ -310,8 +311,10 @@ CURSO: {curso.get("name", "")}
 
 REGLAS:
 - La suma de porcentajes debe ser exactamente 100.
-- Incluir entre 3 y 5 evidencias.
-- Cada evidencia debe ser coherente con el metodo pedagogico.
+- Mantener los Productos Acreditables como hitos graduales de un mismo producto integrador: PA1 es primer avance, PA2 es avance desarrollado y PA3 es presentacion/sustentacion final.
+- No reemplazar PA1, PA2 ni PA3 por productos distintos segun el metodo.
+- Las tareas semanales pertenecen al Programa de Contenidos; no las mezcles con los Productos Acreditables del sistema de calificacion.
+- Incluir entre 3 y 5 evidencias de evaluacion.
 - Responde SOLO JSON valido.
 
 Formato:
@@ -338,43 +341,43 @@ Formato:
         contenidos: list[dict],
         force_provider: str | None = None,
     ) -> str:
-        prompt = f"""Asume el rol de especialista en didactica universitaria y diseno curricular por competencias.
-Vas a redactar exclusivamente el componente del silabo denominado: "Metodologia y actividades de investigacion formativa".
+        prompt = f"""Asume el rol de especialista en didáctica universitaria y diseño curricular por competencias.
+Vas a redactar exclusivamente el componente del sílabo denominado: "Metodología y actividades de investigación formativa".
 
-Debes construir este componente de manera coherente con: la sumilla, la competencia oficial, el resultado de aprendizaje del curso, los resultados de las unidades, los desempenos, los contenidos y el metodo seleccionado ({metodo}).
+Debes construir este componente de manera coherente con: la sumilla, la competencia oficial, el resultado de aprendizaje del curso, los resultados de las unidades, los desempeños, los contenidos y el método seleccionado ({metodo}).
 
 SUMILLA: {str(curso.get("sumilla", ""))[:900]}
 COMPETENCIA OFICIAL: {str(curso.get("competencia_egreso", ""))[:500]}
 RESULTADO DE APRENDIZAJE DEL CURSO: {ra_curso}
 RESULTADOS DE UNIDAD:
 {_join_context_items(ra_unidades, 4)}
-DESEMPENOS:
+DESEMPEÑOS:
 {_join_context_items(desempenos, 6)}
 CONTENIDOS:
 {_join_context_items(contenidos, 10)}
 
 OBJETIVO:
-Redacta una explicacion academica, clara y bien articulada, desarrollando:
-1. Por que el metodo es pertinente para este curso.
-2. Como se concreta en el desarrollo del curso.
+Redacta una explicación académica, clara y bien articulada, desarrollando:
+1. Por qué el método es pertinente para este curso.
+2. Cómo se concreta en el desarrollo del curso.
 3. El rol del docente.
 4. El rol del estudiante.
-5. Como se desarrollara la investigacion formativa.
+5. Cómo se desarrollará la investigación formativa.
 
 INSTRUCCIONES OBLIGATORIAS:
-- No redactes una definicion generica del metodo. Explica como operara en este curso.
-- Justifica la pertinencia del metodo en funcion del proposito del curso.
-- No uses vinetas ni numeracion. Redacta en prosa continua, organizada en parrafos.
-- La redaccion debe quedar lista para el silabo, estilo academico.
+- No redactes una definición genérica del método. Explica cómo operará en este curso.
+- Justifica la pertinencia del método en función del propósito del curso.
+- No uses viñetas ni numeración. Redacta en prosa continua, organizada en párrafos.
+- La redacción debe quedar lista para el sílabo, estilo académico.
 
 ESTRUCTURA:
-Parrafo 1: Presenta el metodo y explica su pertinencia para el curso.
-Parrafo 2: Explica como se desarrollara concretamente y relacionalo con las actividades.
-Parrafo 3: Explica el rol del docente y del estudiante.
-Parrafo 4: Explica la investigacion formativa y cierra mostrando coherencia general.
+Párrafo 1: Presenta el método y explica su pertinencia para el curso.
+Párrafo 2: Explica cómo se desarrollará concretamente y relaciónalo con las actividades.
+Párrafo 3: Explica el rol del docente y del estudiante.
+Párrafo 4: Explica la investigación formativa y cierra mostrando coherencia general.
 
 SALIDA ESPERADA:
-Devuelve la respuesta estrictamente en formato JSON valido, utilizando una unica clave llamada "metodologia_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 4 parrafos. NO uses vinetas."""
+Devuelve la respuesta estrictamente en formato JSON válido, utilizando una única clave llamada "metodologia_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 4 párrafos. NO uses viñetas."""
 
         payload = await self._generate_json(
             task="progressive_methodology_text",
@@ -395,40 +398,40 @@ Devuelve la respuesta estrictamente en formato JSON valido, utilizando una unica
         contenidos: list[dict],
         force_provider: str | None = None,
     ) -> str:
-        prompt = f"""Asume el rol de especialista en tutoria universitaria y diseno curricular.
-Vas a redactar exclusivamente el componente: "Actividades de tutoria: area academica".
+        prompt = f"""Asume el rol de especialista en tutoría universitaria y diseño curricular.
+Vas a redactar exclusivamente el componente: "Actividades de tutoría: área académica".
 
-Debes construir este componente de manera coherente con la sumilla, resultados de aprendizaje, desempenos, contenidos y el metodo del curso.
+Debes construir este componente de manera coherente con la sumilla, resultados de aprendizaje, desempeños, contenidos y el método del curso.
 
 SUMILLA: {str(curso.get("sumilla", ""))[:900]}
 RESULTADO DE APRENDIZAJE DEL CURSO: {ra_curso}
-METODO DEL CURSO: {metodo}
-DESEMPENOS:
+MÉTODO DEL CURSO: {metodo}
+DESEMPEÑOS:
 {_join_context_items(desempenos, 6)}
 CONTENIDOS:
 {_join_context_items(contenidos, 10)}
 
 OBJETIVO:
-Redacta un texto academico que explique la tutoria, desarrollando:
-1. El sentido de la tutoria en este curso.
+Redacta un texto académico que explique la tutoría, desarrollando:
+1. El sentido de la tutoría en este curso.
 2. Acciones del docente.
-3. Que la tutoria se desarrollara segun las necesidades que vayan surgiendo.
-4. Tecnicas a utilizar.
-5. Relaciona la tutoria con dificultades reales del curso, como comprension, productos, oralidad, analisis, argumentacion o aplicacion.
+3. Que la tutoría se desarrollará según las necesidades que vayan surgiendo.
+4. Técnicas a utilizar.
+5. Relaciona la tutoría con dificultades reales del curso, como comprensión, productos, oralidad, análisis, argumentación o aplicación.
 
 INSTRUCCIONES OBLIGATORIAS:
-- No la redactes como lista administrativa ni frase generica.
-- Explica explicitamente que sera flexible a necesidades emergentes.
-- Menciona tecnicas concretas, por ejemplo entrevistas, revision de avances y retroalimentacion focalizada.
-- No uses vinetas ni numeracion. Prosa continua.
+- No la redactes como lista administrativa ni frase genérica.
+- Explica explícitamente que será flexible a necesidades emergentes.
+- Menciona técnicas concretas, por ejemplo entrevistas, revisión de avances y retroalimentación focalizada.
+- No uses viñetas ni numeración. Prosa continua.
 
 ESTRUCTURA:
-Parrafo 1: Finalidad de la tutoria academica dentro del curso.
-Parrafo 2: Acciones concretas de tutoria que realizara el docente.
-Parrafo 3: Tecnicas a emplear y declaracion explicita de que la tutoria se ajustara a las necesidades que surjan.
+Párrafo 1: Finalidad de la tutoría académica dentro del curso.
+Párrafo 2: Acciones concretas de tutoría que realizará el docente.
+Párrafo 3: Técnicas a emplear y declaración explícita de que la tutoría se ajustará a las necesidades que surjan.
 
 SALIDA ESPERADA:
-Devuelve la respuesta estrictamente en formato JSON valido, utilizando una unica clave llamada "tutoria_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 3 parrafos. NO uses vinetas."""
+Devuelve la respuesta estrictamente en formato JSON válido, utilizando una única clave llamada "tutoria_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 3 párrafos. NO uses viñetas."""
 
         payload = await self._generate_json(
             task="progressive_tutoria_text",

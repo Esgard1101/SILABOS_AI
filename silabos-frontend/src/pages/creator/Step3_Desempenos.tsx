@@ -333,11 +333,11 @@ export default function Step3_Desempenos() {
           | { course?: CourseDetail; performances?: SuggestedPerformance[] }
           | { items?: PerformanceDB[] }
           | undefined;
-        if ('course' in (data || {}) && data?.course) {
+        if (data && 'course' in data && data.course) {
           setCourseDetail(data.course);
         }
-        const mapped = 'performances' in (data || {})
-          ? ((data as { performances?: SuggestedPerformance[] }).performances || []).map((perf, index) => ({
+        const mapped = data && 'performances' in data
+          ? (data.performances || []).map((perf, index) => ({
               ...perf,
               code: perf.code || perf.codigo || `D${index + 1}`,
               origin: 'official' as const,

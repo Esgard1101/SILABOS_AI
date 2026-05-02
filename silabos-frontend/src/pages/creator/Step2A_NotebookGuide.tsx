@@ -13,22 +13,22 @@ const NOTEBOOK_VIDEOS = {
 } as const;
 
 function buildChatSetupPrompt(): string {
-  return `Responde solo con JSON valido. Extrae datos reales de las fuentes: autor, anio, titulo, fuente, url, tipo, requiere_revision y motivo_revision. No agregues explicaciones ni Markdown. No uses citas internas como [1] o [2]. No inventes datos: si faltan usa "S.A.", "s.f." o "".`;
+  return `Responde solo con JSON válido. Extrae datos reales de las fuentes: autor, año, título, fuente, url, tipo, requiere_revision y motivo_revision. No agregues explicaciones ni Markdown. No uses citas internas como [1] o [2]. No inventes datos: si faltan usa "S.A.", "s.f." o "".`;
 }
 
 function buildSourcesExportPrompt(courseName: string): string {
-  return `Extrae TODAS las fuentes cargadas en este cuaderno para el curso "${courseName || 'el curso'}" y devuelve un arreglo JSON valido.
+  return `Extrae TODAS las fuentes cargadas en este cuaderno para el curso "${courseName || 'el curso'}" y devuelve un arreglo JSON válido.
 
 Antes de responder:
-1. Cuenta cuantas fuentes hay en el panel de fuentes.
+1. Cuenta cuántas fuentes hay en el panel de fuentes.
 2. Genera un objeto por cada fuente procesada.
 3. Si dos fuentes parecen representar la misma obra, conserva ambas solo si realmente provienen de fuentes distintas, pero marca la repetida con requiere_revision=true.
-4. Si una fuente proviene de una tienda, marketplace, ficha comercial o resultado de busqueda, no la descartes, pero marca requiere_revision=true y explica el motivo.
+4. Si una fuente proviene de una tienda, marketplace, ficha comercial o resultado de búsqueda, no la descartes, pero marca requiere_revision=true y explica el motivo.
 5. No uses marcadores internos de NotebookLM como [1], [2] o enlaces internos.
-6. Extrae DOI o URL original solo si aparece explicitamente en la fuente.
-7. No inventes datos. Si no encuentras autor usa "S.A."; si no encuentras anio usa "s.f."; si no encuentras URL usa "".
-8. Si el titulo parece nombre de archivo, pagina comercial o titulo generado automaticamente, marca requiere_revision=true.
-9. No devuelvas bibliografia redactada en APA. Devuelve solo datos estructurados.
+6. Extrae DOI o URL original solo si aparece explícitamente en la fuente.
+7. No inventes datos. Si no encuentras autor usa "S.A."; si no encuentras año usa "s.f."; si no encuentras URL usa "".
+8. Si el título parece nombre de archivo, página comercial o título generado automáticamente, marca requiere_revision=true.
+9. No devuelvas bibliografía redactada en APA. Devuelve solo datos estructurados.
 
 Usa exactamente esta estructura:
 
@@ -36,32 +36,32 @@ Usa exactamente esta estructura:
   {
     "autor": "Apellido, Inicial(es). o S.A.",
     "anio": "2024 o s.f.",
-    "titulo": "Titulo real de la fuente",
-    "fuente": "Revista, editorial, repositorio, institucion, canal o sitio",
-    "url": "DOI o URL original, vacio si no existe",
-    "tipo": "articulo | libro | tesis | documentacion | web | video",
+    "titulo": "Título real de la fuente",
+    "fuente": "Revista, editorial, repositorio, institución, canal o sitio",
+    "url": "DOI o URL original, vacío si no existe",
+    "tipo": "artículo | libro | tesis | documentación | web | video",
     "requiere_revision": false,
     "motivo_revision": ""
   }
 ]
 
-Responde unicamente con el JSON valido.`;
+Responde únicamente con el JSON válido.`;
 }
 
 function buildDeepResearchPrompt(courseName: string, area: string, program: string): string {
-  return `Necesito bibliografia academica verificada para preparar el silabo del siguiente curso universitario:
+  return `Necesito bibliografía académica verificada para preparar el sílabo del siguiente curso universitario:
 
 CURSO: ${courseName || '[Nombre del curso]'}
-PROGRAMA: ${program || '[Programa academico]'}
-AREA: ${area || '[Area academica]'}
+PROGRAMA: ${program || '[Programa académico]'}
+ÁREA: ${area || '[Área académica]'}
 UNIVERSIDAD: Universidad Nacional Pedro Ruiz Gallo (UNPRG)
 
-Busca minimo 10 referencias bibliograficas:
-- De los ultimos 5 anios
-- En espanol e ingles
+Busca mínimo 10 referencias bibliográficas:
+- De los últimos 5 años
+- En español e inglés
 - Con DOI o URL verificable
-- De fuentes academicas: SciELO, Redalyc, Dialnet, ERIC, repositorios universitarios o editoriales academicas
-- Excluye blogs, Wikipedia, Scribd, StuDocu, SlideShare y paginas comerciales
+- De fuentes académicas: SciELO, Redalyc, Dialnet, ERIC, repositorios universitarios o editoriales académicas
+- Excluye blogs, Wikipedia, Scribd, StuDocu, SlideShare y páginas comerciales
 
 Devuelve solo la lista de fuentes recomendadas para agregarlas al cuaderno.`;
 }
@@ -443,27 +443,27 @@ export default function Step2A_NotebookGuide() {
         'Sube archivos, pega enlaces, agrega YouTube o elige Google Drive.',
         'Confirma que tus fuentes aparezcan cargadas antes de continuar.',
       ],
-      note: 'Tu video resumira las opciones principales. Para este paso no hace falta prompt.',
+      note: 'Tu video resumirá las opciones principales. Para este paso no hace falta prompt.',
     },
     deepResearch: {
       title: 'Deep Research con IA',
-      eyebrow: 'Busqueda academica',
+      eyebrow: 'Búsqueda académica',
       image: VIDEO_PLACEHOLDER,
       prompt: deepResearchPrompt,
-      promptLabel: 'Prompt de investigacion',
+      promptLabel: 'Prompt de investigación',
       copyLabel: 'Copiar prompt',
       copiedLabel: 'Prompt copiado',
       steps: [
         'Abre Deep Research dentro de NotebookLM.',
         'Copia este prompt preparado por SIGEISIL.',
-        'Pegalo en NotebookLM y espera los resultados.',
-        'Agrega al cuaderno las fuentes academicas pertinentes.',
+        'Pégalo en NotebookLM y espera los resultados.',
+        'Agrega al cuaderno las fuentes académicas pertinentes.',
       ],
-      note: 'Tu video explicara los detalles del proceso. La pantalla solo deja el prompt listo para copiar.',
+      note: 'Tu video explicará los detalles del proceso. La pantalla solo deja el prompt listo para copiar.',
     },
     chatSetup: {
       title: 'Ajustar el chat de NotebookLM',
-      eyebrow: 'Paso de preparacion',
+      eyebrow: 'Paso de preparación',
       image: VIDEO_PLACEHOLDER,
       videoUrl: NOTEBOOK_VIDEOS.chatSetup,
       prompt: chatSetupPrompt,
@@ -471,30 +471,30 @@ export default function Step2A_NotebookGuide() {
       copyLabel: 'Copiar ajuste',
       copiedLabel: 'Ajuste copiado',
       steps: [
-        'Abre la configuracion del chat en NotebookLM.',
-        'Elige la opcion Personalizado y pega este ajuste.',
-        'Selecciona respuesta Mas larga para cuadernos con muchas fuentes.',
-        'Guarda la configuracion antes de pedir la exportacion.',
+        'Abre la configuración del chat en NotebookLM.',
+        'Elige la opción Personalizado y pega este ajuste.',
+        'Selecciona respuesta Más larga para cuadernos con muchas fuentes.',
+        'Guarda la configuración antes de pedir la exportación.',
       ],
       note: 'Este ajuste ayuda a que NotebookLM responda en un bloque limpio y evita gastar consultas corrigiendo el formato.',
     },
     sourcesExport: {
       title: 'Traer fuentes a SIGEISIL',
-      eyebrow: 'Exportacion hacia SIGEISIL',
+      eyebrow: 'Exportación hacia SIGEISIL',
       image: VIDEO_PLACEHOLDER,
       videoUrl: NOTEBOOK_VIDEOS.sourcesExport,
       prompt: sourcesExportPrompt,
       promptLabel: 'Prompt para traer fuentes',
-      copyLabel: 'Copiar instruccion',
-      copiedLabel: 'Instruccion copiada',
+      copyLabel: 'Copiar instrucción',
+      copiedLabel: 'Instrucción copiada',
       steps: [
-        'Pega esta instruccion en el chat de NotebookLM ya configurado.',
+        'Pega esta instrucción en el chat de NotebookLM ya configurado.',
         'Espera a que termine la respuesta completa.',
         'Copia todo el bloque generado por NotebookLM.',
-        'Vuelve a SIGEISIL para pegarlo en la caja de importacion.',
-        'Procesa las fuentes y revisa la tabla del silabo.',
+        'Vuelve a SIGEISIL para pegarlo en la caja de importación.',
+        'Procesa las fuentes y revisa la tabla del sílabo.',
       ],
-      note: 'No pidas varias regeneraciones si no es necesario. En cuentas gratuitas, NotebookLM puede tener limite diario de consultas.',
+      note: 'No pidas varias regeneraciones si no es necesario. En cuentas gratuitas, NotebookLM puede tener límite diario de consultas.',
     },
   } as const;
 

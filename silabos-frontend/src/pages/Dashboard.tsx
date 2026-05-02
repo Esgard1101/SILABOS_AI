@@ -35,6 +35,8 @@ function formatDate(value?: string | null) {
   return value ? formatDateLabel(value) : 'Sin fecha';
 }
 
+const MANAGEMENT_ROLES = new Set(['admin', 'director', 'coordinador']);
+
 function MetricCard({
   title,
   value,
@@ -156,6 +158,16 @@ export default function Dashboard() {
     navigate('/select-context');
   };
 
+  const handleCreateSyllabus = () => {
+    if (currentUser?.role && MANAGEMENT_ROLES.has(currentUser.role)) {
+      navigate('/creator');
+      return;
+    }
+
+    clearContext();
+    navigate('/select-context');
+  };
+
   return (
     <AppShell
       currentPath="/dashboard"
@@ -213,7 +225,7 @@ export default function Dashboard() {
         {/* Bloque 3 — CTA principal */}
         <button
           type="button"
-          onClick={() => navigate('/creator')}
+          onClick={handleCreateSyllabus}
           className="col-span-12 flex flex-col justify-between rounded-[2rem] bg-[var(--brand-700)] p-5 text-left text-white transition hover:bg-[var(--brand-800)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-400)] lg:col-span-4 xl:p-6"
         >
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15">

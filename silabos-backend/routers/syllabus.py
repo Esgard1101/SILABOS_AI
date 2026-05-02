@@ -108,14 +108,14 @@ def _ensure_midterm_final_criteria(criteria: list) -> list:
             {
                 "nombre": "Examen parcial",
                 "porcentaje": parcial_pct,
-                "descripcion": "Evaluacion parcial",
+                "descripcion": "Evaluación parcial",
                 "sigla": "EP",
                 "cronograma": "Semana 8",
             },
             {
                 "nombre": "Examen final",
                 "porcentaje": final_pct,
-                "descripcion": "Evaluacion final",
+                "descripcion": "Evaluación final",
                 "sigla": "EF",
                 "cronograma": "Semana 16",
             },

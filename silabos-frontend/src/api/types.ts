@@ -677,6 +677,7 @@ export interface ContentBlock {
   selected_skill_ids: string[];
   knowledge_items: string[];
   attitudes: string[];
+  responsabilidad_social?: string;
   source: 'none' | 'ai_suggested' | 'manual' | 'confirmed' | 'editing';
   content_mode: 'idle' | 'proposal' | 'editing' | 'confirmed';
   teacher_notes: string;

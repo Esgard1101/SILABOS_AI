@@ -22,18 +22,18 @@ function resolveGoogleNotice(accountStatus: string, fallbackMessage: string): Lo
   switch (accountStatus) {
     case 'not_registered':
       return {
-        text: 'Esta cuenta todavia no tiene acceso habilitado.',
+        text: 'Esta cuenta todavía no tiene acceso habilitado.',
         tone: 'warning',
         showRegisterCta: true,
       };
     case 'pending':
       return {
-        text: 'Tu solicitud sigue en revision. Intenta nuevamente cuando sea aprobada.',
+        text: 'Tu solicitud sigue en revisión. Intenta nuevamente cuando sea aprobada.',
         tone: 'warning',
       };
     case 'rejected':
       return {
-        text: 'No fue posible habilitar el acceso con esta cuenta. Contacta a coordinacion.',
+        text: 'No fue posible habilitar el acceso con esta cuenta. Contacta a coordinación.',
         tone: 'error',
       };
     default:

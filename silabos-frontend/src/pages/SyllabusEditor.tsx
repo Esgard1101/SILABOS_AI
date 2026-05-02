@@ -142,6 +142,30 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
+const SEMESTER_WEEKS = 16;
+
+function normalizeWeeklyHours(value: unknown): string {
+  const formatted = displayValue(value);
+  if (formatted === '—') {
+    return formatted;
+  }
+
+  const normalizedText = formatted.replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(normalizedText)) {
+    return formatted;
+  }
+
+  const numericValue = Number(normalizedText);
+  if (!Number.isFinite(numericValue) || numericValue < SEMESTER_WEEKS) {
+    return formatted;
+  }
+
+  const weeklyValue = numericValue / SEMESTER_WEEKS;
+  return Number.isInteger(weeklyValue)
+    ? String(weeklyValue)
+    : String(Number(weeklyValue.toFixed(2)));
+}
+
 function pickDisplayValue(...values: unknown[]): string {
   for (const value of values) {
     const formatted = displayValue(value);
@@ -383,8 +407,8 @@ function buildGradingRows(criteria?: CriterioEvaluacion[]) {
       cronograma: 'Semana 12',
     },
     {
-      evidencia: 'Proyecto Final y Reflexión',
-      nombre: 'Proyecto Final y Reflexión',
+      evidencia: 'Producto Acreditable 3',
+      nombre: 'Producto Acreditable 3',
       sigla: 'PA3',
       porcentaje: 35,
       cronograma: 'Semana 16',
@@ -1015,7 +1039,7 @@ export default function SyllabusEditor() {
               <div>{creditsValue}</div>
               <div>1.10 Horas Semanales (Teoría / Práctica)</div>
               <div>
-                {displayValue(dg.horas_teoria)} / {displayValue(dg.horas_practica)}
+                {normalizeWeeklyHours(dg.horas_teoria)} / {normalizeWeeklyHours(dg.horas_practica)}
               </div>
               <div>1.11 Duración (Fecha inicio / Fecha término)</div>
               <div>
@@ -1367,5 +1391,3 @@ export default function SyllabusEditor() {
     </div>
   );
 }
-
-

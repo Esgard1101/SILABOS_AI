@@ -982,7 +982,7 @@ export default function Step2_Fuentes() {
               <p className="mt-3 text-[10px] leading-5 text-white/45">
                 {aiReferences.length > 0
                   ? `Fuentes consultadas: ${bibliographySources.filter((source) => source !== 'NotebookLM').join(' · ') || 'OpenAlex · SciELO · Crossref'}`
-                  : 'Cuando ejecutes la busqueda, los resultados se mostraran en la tabla y podras revisar el formato APA 7.'}
+                  : 'Cuando ejecutes la búsqueda, los resultados se mostrarán en la tabla y podrás revisar el formato APA 7.'}
               </p>
             </section>
           </div>

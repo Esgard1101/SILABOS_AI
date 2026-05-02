@@ -5,19 +5,19 @@ import { useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
 
 function buildSearchText(courseName: string, area: string, program: string): string {
-  return `Necesito bibliografia academica verificada para preparar el silabo del siguiente curso universitario:
+  return `Necesito bibliografía académica verificada para preparar el sílabo del siguiente curso universitario:
 
 CURSO: ${courseName || '[Nombre del curso]'}
-PROGRAMA: ${program || '[Programa academico]'}
-AREA: ${area || '[Area academica]'}
+PROGRAMA: ${program || '[Programa académico]'}
+ÁREA: ${area || '[Área académica]'}
 UNIVERSIDAD: Universidad Nacional Pedro Ruiz Gallo (UNPRG)
 
-Busca minimo 10 referencias bibliograficas:
-- De los ultimos 5 anios
-- En espanol e ingles
+Busca mínimo 10 referencias bibliográficas:
+- De los últimos 5 años
+- En español e inglés
 - Con DOI o URL verificable
-- De fuentes academicas: SciELO, Redalyc, Dialnet, ERIC, repositorios universitarios o editoriales academicas
-- Excluye blogs, Wikipedia, Scribd, StuDocu, SlideShare y paginas comerciales
+- De fuentes académicas: SciELO, Redalyc, Dialnet, ERIC, repositorios universitarios o editoriales académicas
+- Excluye blogs, Wikipedia, Scribd, StuDocu, SlideShare y páginas comerciales
 
 Devuelve solo la lista de fuentes recomendadas para agregarlas al cuaderno.`;
 }
@@ -95,7 +95,7 @@ function TextOverlay({ text, onClose }: { text: string; onClose: () => void }) {
         </button>
 
         <details className="mt-3 rounded-xl border border-white/10 bg-[#041A3A] px-3 py-2">
-          <summary className="cursor-pointer text-[10px] font-semibold text-white/45">Ver texto tecnico</summary>
+          <summary className="cursor-pointer text-[10px] font-semibold text-white/45">Ver texto técnico</summary>
           <pre className="mt-2 max-h-[180px] overflow-y-auto whitespace-pre-wrap break-words font-sans text-[10px] leading-5 text-white/64">{text}</pre>
         </details>
       </div>
@@ -157,11 +157,11 @@ function GuideModal({
             <div className="rounded-2xl border border-white/10 bg-[#041A3A]/82 p-4">
               {searchText ? (
                 <>
-                  <p className="text-[12px] font-semibold leading-5 text-white">Copia el texto preparado por SIGEISIL y pegalo en NotebookLM.</p>
-                  <p className="mt-1 text-[10px] leading-5 text-white/50">Este texto ya incluye el curso, programa y criterios academicos.</p>
+                  <p className="text-[12px] font-semibold leading-5 text-white">Copia el texto preparado por SIGEISIL y pégalo en NotebookLM.</p>
+                  <p className="mt-1 text-[10px] leading-5 text-white/50">Este texto ya incluye el curso, programa y criterios académicos.</p>
                   <button type="button" onClick={() => setTextOpen(true)}
                     className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#007A8A] to-[#00B4CC] py-3 text-[12px] font-bold text-white transition hover:brightness-110">
-                    <Copy size={14} />Copiar texto de busqueda
+                    <Copy size={14} />Copiar texto de búsqueda
                   </button>
                 </>
               ) : (
@@ -196,8 +196,8 @@ const SUB_STEPS: SubStep[] = [
     id: 1,
     icon: Search,
     title: 'Abrir Deep Research',
-    description: 'Entra al modo de busqueda profunda dentro de NotebookLM.',
-    detail: 'Selecciona Deep Research en el menu de busqueda del cuaderno.',
+    description: 'Entra al modo de búsqueda profunda dentro de NotebookLM.',
+    detail: 'Selecciona Deep Research en el menú de búsqueda del cuaderno.',
     image: '/images/notebooklm_steps/step2d1.png',
     kind: 'image',
   },
@@ -205,7 +205,7 @@ const SUB_STEPS: SubStep[] = [
     id: 2,
     icon: Sparkles,
     title: 'Pegar texto y buscar',
-    description: 'Copia el texto preparado por SIGEISIL y ejecuta la busqueda.',
+    description: 'Copia el texto preparado por SIGEISIL y ejecuta la búsqueda.',
     detail: 'Pega el texto en NotebookLM y espera la respuesta completa.',
     image: '/images/notebooklm_steps/step2d2.png',
     kind: 'image+text',
@@ -277,7 +277,7 @@ export default function Step2A_2_DeepResearch() {
       <div className="h-full overflow-y-auto bg-[#041A3A] px-4 py-5 text-white sm:px-6">
         <button type="button" onClick={() => navigate('/creator/fuentes/notebook')}
           className="mb-4 flex items-center gap-1.5 text-[10px] text-white/40 transition hover:text-[#D4A351]">
-          <ArrowLeft size={11} />Guia NotebookLM
+          <ArrowLeft size={11} />Guía NotebookLM
         </button>
 
         <div className="mb-5">
@@ -287,12 +287,12 @@ export default function Step2A_2_DeepResearch() {
                 onError={(event) => { event.currentTarget.style.display = 'none'; }} />
             </div>
             <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#00B4CC]">
-              SUB-PASO - BUSQUEDA AUTOMATICA CON IA
+              SUB-PASO - BÚSQUEDA AUTOMÁTICA CON IA
             </span>
           </div>
           <h1 className="font-playfair text-2xl font-bold text-white">Deep Research</h1>
           <p className="mt-1 text-[11px] text-white/60">
-            3 mini pasos para buscar bibliografia academica y agregarla al cuaderno.
+            3 mini pasos para buscar bibliografía académica y agregarla al cuaderno.
           </p>
         </div>
 
