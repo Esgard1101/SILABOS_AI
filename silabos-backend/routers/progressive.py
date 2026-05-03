@@ -309,10 +309,9 @@ def _parse_week_range(value) -> set[int]:
 
 CANONICAL_GRADING_ROWS = [
     {"evidencia": "Tareas", "sigla": "TA", "porcentaje": 15, "cronograma": "Permanente"},
-    {"evidencia": "Producto Acreditable 1", "sigla": "PA1", "porcentaje": 15, "cronograma": "Semana 4"},
-    {"evidencia": "Producto Acreditable 2", "sigla": "PA2", "porcentaje": 20, "cronograma": "Semana 8"},
+    {"evidencia": "Producto Acreditable 1", "sigla": "PA1", "porcentaje": 35, "cronograma": "Semana 8"},
     {"evidencia": "Examen Parcial", "sigla": "EP", "porcentaje": 15, "cronograma": "Semana 12"},
-    {"evidencia": "Producto Acreditable 3", "sigla": "PA3", "porcentaje": 35, "cronograma": "Semana 16"},
+    {"evidencia": "Producto Acreditable 2", "sigla": "PA2", "porcentaje": 35, "cronograma": "Semana 16"},
 ]
 
 METHOD_EVIDENCE_PRODUCTS = {
@@ -421,15 +420,60 @@ def _resolve_evidence_method_key(method_name: str = "", method_code: str = "") -
     return "ABPro"
 
 
-def _canonical_grading_rows(method_name: str = "", method_code: str = "") -> list[dict]:
-    rows = [row.copy() for row in CANONICAL_GRADING_ROWS]
+def _build_accreditable_grading_rows(product_count: int = 2) -> list[dict]:
+    count = max(1, min(int(product_count or 2), 8))
+    task_pct = 15
+    exam_pct = 15
+    remaining = 100 - task_pct - exam_pct
+    base = remaining // count
+    rows = [{"evidencia": "Tareas", "sigla": "TA", "porcentaje": task_pct, "cronograma": "Permanente"}]
+    week_presets = {
+        1: [16],
+        2: [8, 16],
+        3: [4, 8, 16],
+        4: [4, 8, 12, 16],
+    }
+    product_weeks = week_presets.get(count)
+    for index in range(count):
+        pct = base if index < count - 1 else remaining - (base * (count - 1))
+        week = product_weeks[index] if product_weeks else max(1, round(16 * (index + 1) / count))
+        rows.append({
+            "evidencia": f"Producto Acreditable {index + 1}",
+            "sigla": f"PA{index + 1}",
+            "porcentaje": pct,
+            "cronograma": f"Semana {week}",
+        })
+        if index == max(0, count - 2):
+            rows.append({
+                "evidencia": "Examen Parcial",
+                "sigla": "EP",
+                "porcentaje": exam_pct,
+                "cronograma": "Semana 12",
+            })
     return rows
 
 
-def _normalize_grading_rows(rows: list[dict] | None) -> list[dict]:
+def _resolve_grading_product_count(payload: dict | None) -> int:
+    payload = payload or {}
+    purpose = payload.get("purpose", {}) if isinstance(payload.get("purpose"), dict) else {}
+    content = payload.get("content", {}) if isinstance(payload.get("content"), dict) else {}
+    content_plan = content.get("content_plan", {}) if isinstance(content.get("content_plan"), dict) else {}
+    candidates = [
+        len(content_plan.get("units", [])) if isinstance(content_plan.get("units"), list) else 0,
+        len(content.get("unidades_tematicas", [])) if isinstance(content.get("unidades_tematicas"), list) else 0,
+        len(purpose.get("performances", [])) if isinstance(purpose.get("performances"), list) else 0,
+    ]
+    return next((count for count in candidates if count > 0), 2)
+
+
+def _canonical_grading_rows(method_name: str = "", method_code: str = "", product_count: int = 2) -> list[dict]:
+    return _build_accreditable_grading_rows(product_count)
+
+
+def _normalize_grading_rows(rows: list[dict] | None, product_count: int = 2) -> list[dict]:
     cleaned = [row for row in (rows or []) if isinstance(row, dict)]
     if not cleaned:
-        return _canonical_grading_rows()
+        return _canonical_grading_rows(product_count=product_count)
 
     siglas = [_clean_text(row.get("sigla")).upper() for row in cleaned]
     percentages = []
@@ -439,9 +483,12 @@ def _normalize_grading_rows(rows: list[dict] | None) -> list[dict]:
         except (TypeError, ValueError):
             percentages.append(0)
 
-    is_legacy_default = siglas == ["TA", "PA1", "PA2"] and percentages == [40, 30, 30]
+    is_legacy_default = (
+        (siglas == ["TA", "PA1", "PA2"] and percentages == [40, 30, 30])
+        or (len([sigla for sigla in siglas if sigla.startswith("PA")]) != product_count)
+    )
     if is_legacy_default or round(sum(percentages), 2) != 100:
-        return _canonical_grading_rows()
+        return _canonical_grading_rows(product_count=product_count)
 
     return cleaned
 
@@ -2087,7 +2134,8 @@ async def sugerir_calificacion(
             method_name = _clean_text(method_raw.get("name")) or method_name
             method_code = _clean_text(method_raw.get("code")) or method_code
 
-    rows = _canonical_grading_rows(method_name, method_code)
+    product_count = _resolve_grading_product_count(payload)
+    rows = _canonical_grading_rows(method_name, method_code, product_count=product_count)
     method_key = _resolve_evidence_method_key(method_name, method_code)
 
     await supabase.guardar_ai_suggestion(
@@ -2100,6 +2148,7 @@ async def sugerir_calificacion(
             "method_key": method_key,
             "rule": "evidence_names_only_keep_structure",
             "products": METHOD_EVIDENCE_PRODUCTS[method_key],
+            "product_count": product_count,
         },
         output_json={"rows": rows},
         user_id=user_id,
@@ -2148,7 +2197,8 @@ async def ensamblar_final(
     # Deterministic assembly
     performances = purpose.get("performances", [])
 
-    grading_rows = _normalize_grading_rows(grading.get("rows", []))
+    product_count = _resolve_grading_product_count(payload)
+    grading_rows = _normalize_grading_rows(grading.get("rows", []), product_count=product_count)
     criterios = [
         {
             "nombre": r.get("evidencia", ""),

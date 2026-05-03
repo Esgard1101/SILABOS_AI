@@ -11,21 +11,51 @@ const SEGMENT_COLORS = ['#D4A351', '#00B4CC', '#6C85C2', '#A8D8A8', '#E8A0A0', '
 
 const DEFAULT_GRADING_ROWS: GradingRow[] = [
   { evidencia: 'Tareas', sigla: 'TA', porcentaje: 15, cronograma: 'Permanente' },
-  { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 15, cronograma: 'Semana 4' },
-  { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: 'Semana 8' },
+  { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 35, cronograma: 'Semana 8' },
   { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: 15, cronograma: 'Semana 12' },
-  { evidencia: 'Producto Acreditable 3', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
+  { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 35, cronograma: 'Semana 16' },
 ];
 
-function isLegacyDefault(rows: GradingRow[]) {
+function buildAccreditableRows(productCount = 2): GradingRow[] {
+  const count = Math.max(1, Math.min(Math.trunc(productCount || 2), 8));
+  const taskPct = 15;
+  const examPct = 15;
+  const remaining = 100 - taskPct - examPct;
+  const base = Math.floor(remaining / count);
+  const weekPresets: Record<number, number[]> = {
+    1: [16],
+    2: [8, 16],
+    3: [4, 8, 16],
+    4: [4, 8, 12, 16],
+  };
+  const productWeeks = weekPresets[count];
+  return [
+    { evidencia: 'Tareas', sigla: 'TA', porcentaje: taskPct, cronograma: 'Permanente' },
+    ...Array.from({ length: count }, (_, index) => {
+      const row = {
+        evidencia: `Producto Acreditable ${index + 1}`,
+        sigla: `PA${index + 1}`,
+        porcentaje: index < count - 1 ? base : remaining - base * (count - 1),
+        cronograma: `Semana ${productWeeks?.[index] ?? Math.max(1, Math.round((16 * (index + 1)) / count))}`,
+      };
+      return index === Math.max(0, count - 2)
+        ? [row, { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: examPct, cronograma: 'Semana 12' }]
+        : [row];
+    }).flat(),
+  ];
+}
+
+function isLegacyDefault(rows: GradingRow[], productCount = 2) {
+  const paCount = rows.filter((row) => /^PA\d+$/i.test(row.sigla)).length;
   return (
-    rows.length === 3
-    && rows[0]?.sigla === 'TA'
-    && rows[0]?.porcentaje === 40
-    && rows[1]?.sigla === 'PA1'
-    && rows[1]?.porcentaje === 30
-    && rows[2]?.sigla === 'PA2'
-    && rows[2]?.porcentaje === 30
+    (rows.length === 3
+      && rows[0]?.sigla === 'TA'
+      && rows[0]?.porcentaje === 40
+      && rows[1]?.sigla === 'PA1'
+      && rows[1]?.porcentaje === 30
+      && rows[2]?.sigla === 'PA2'
+      && rows[2]?.porcentaje === 30)
+    || paCount !== productCount
   );
 }
 
@@ -204,12 +234,14 @@ export default function Step6_Cierre() {
   const [assembling, setAssembling] = useState(false);
   const [aiRecoveryVisible, setAiRecoveryVisible] = useState(false);
 
+  const productCount = Math.max(draftPerformances.length || 0, 2);
+
   useEffect(() => {
-    if (isLegacyDefault(gradingRows)) {
-      setGradingRows(DEFAULT_GRADING_ROWS);
+    if (isLegacyDefault(gradingRows, productCount)) {
+      setGradingRows(productCount === 2 ? DEFAULT_GRADING_ROWS : buildAccreditableRows(productCount));
       setGradingOrigin('none');
     }
-  }, [gradingRows, setGradingOrigin, setGradingRows]);
+  }, [gradingRows, productCount, setGradingOrigin, setGradingRows]);
 
   const totalPct = gradingRows.reduce((s, r) => s + r.porcentaje, 0);
 
