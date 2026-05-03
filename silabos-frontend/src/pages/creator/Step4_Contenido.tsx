@@ -85,34 +85,66 @@ function shortText(text: string, max = 120): string {
   return text.length > max ? `${text.slice(0, max).trim()}...` : text;
 }
 
+function cleanDidacticTopic(text: string): string {
+  let value = String(text || '').trim().replace(/\s+/g, ' ');
+  const prefixes = [
+    /^Fundamentos conceptuales de\s+/i,
+    /^Contexto, alcance y categor[ií]as de\s+/i,
+    /^Principios y enfoques de\s+/i,
+    /^Integraci[oó]n diagn[oó]stica de\s+/i,
+    /^Modelos te[oó]ricos de\s+/i,
+    /^Procedimientos y estrategias de\s+/i,
+    /^An[aá]lisis comparado de\s+/i,
+    /^Producto parcial sobre\s+/i,
+    /^M[eé]todos de aplicaci[oó]n de\s+/i,
+    /^Criterios de dise[ñn]o e intervenci[oó]n en\s+/i,
+    /^Resoluci[oó]n de situaciones pr[aá]cticas vinculadas con\s+/i,
+    /^Evaluaci[oó]n parcial de resultados sobre\s+/i,
+    /^Proyecto integrador aplicado a\s+/i,
+    /^Validaci[oó]n y mejora de propuestas sobre\s+/i,
+    /^Sustentaci[oó]n de evidencias y toma de decisiones en\s+/i,
+    /^Cierre integrador y reflexi[oó]n acad[eé]mica sobre\s+/i,
+  ];
+  let previous = '';
+  while (previous !== value) {
+    previous = value;
+    prefixes.forEach((prefix) => {
+      value = value.replace(prefix, '').trim();
+    });
+  }
+  return value;
+}
+
 function skillNamesByPerformance(items: HabilidadPorDesempeno[], code: string): string[] {
   return items.find((item) => item.desempeno_code === code)?.habilidades || [];
 }
 
 function progressiveKnowledgeForWeek(items: string[], absoluteWeek: number): string[] {
-  const seeds = items.length ? items : ['fundamentos del curso', 'aplicación disciplinar'];
+  const seeds = (items.length ? items : ['fundamentos del curso', 'aplicación disciplinar'])
+    .map(cleanDidacticTopic)
+    .filter(Boolean);
   const seed = (index: number) => seeds[Math.min(seeds.length - 1, index % seeds.length)];
-  const templates = [
-    'Fundamentos conceptuales de {a}',
-    'Contexto, alcance y categorías de {a}',
-    'Principios y enfoques de {a}',
-    'Integración diagnóstica de {a} y {b}',
-    'Modelos teóricos de {a}',
-    'Procedimientos y estrategias de {a}',
-    'Análisis comparado de {a} y {b}',
-    'Producto parcial sobre {a}',
-    'Métodos de aplicación de {a}',
-    'Criterios de diseño e intervención en {a}',
-    'Resolución de situaciones prácticas vinculadas con {a}',
-    'Evaluación parcial de resultados sobre {a}',
-    'Proyecto integrador aplicado a {a}',
-    'Validación y mejora de propuestas sobre {a}',
-    'Sustentación de evidencias y toma de decisiones en {a}',
-    'Cierre integrador y reflexión académica sobre {a}',
+  const naturalSequence = [
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a} y {b}',
+    '{a}',
+    '{a}',
+    '{a} y {b}',
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a}',
+    '{a}',
   ];
   const idx = Math.max(0, absoluteWeek - 1);
   return [
-    templates[idx % templates.length]
+    naturalSequence[idx % naturalSequence.length]
       .replace('{a}', seed(idx))
       .replace('{b}', seed(idx + 1)),
   ];

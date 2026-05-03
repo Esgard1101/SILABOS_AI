@@ -23,6 +23,8 @@ from pydantic import BaseModel
 from auth.permissions import get_current_user_record
 from models.schemas import APIResponse
 from services.bibliography_parser import refs_a_bibliografia_json
+from services.content_generation_engine import get_content_generation_engine
+from services.method_suggestion_rules import suggest_method_by_rules
 from services.progressive_ai_service import get_progressive_ai_service
 
 logger = logging.getLogger(__name__)
@@ -1189,16 +1191,12 @@ def _validate_method_alignment(
     warnings: list[str] = []
     if not phases or not schedule:
         return warnings
-    phases_lower = [p.lower() for p in phases]
+    phases_lower = [_normalize_match_text(p) for p in phases]
     for row in schedule:
-        actividad = (row.get("actividad") or "").lower()
+        actividad = _normalize_match_text(row.get("actividad") or "")
         if not any(p in actividad for p in phases_lower):
             warnings.append(
                 f"Sem {row.get('semana')}: actividad no refleja ninguna fase del método ({method_short})."
-            )
-        if method_short and method_short.lower() not in actividad:
-            warnings.append(
-                f"Sem {row.get('semana')}: actividad no menciona el método ({method_short})."
             )
     return warnings
 
@@ -1934,7 +1932,7 @@ async def sugerir_metodo_progresivo(
     """IA rankea métodos basados en propósito + contenido del draft."""
     sv = _sv(request)
     supabase = _require_db(sv)
-    gemini = _require_ai(sv)
+    gemini = sv.get("gemini")
     user_id = str(current_user["id"])
 
     draft = await supabase.obtener_draft_progresivo(syllabus_id)
@@ -1991,6 +1989,23 @@ async def sugerir_metodo_progresivo(
         "reason": "Sugerencia por defecto",
         "reason_items": ["Se propone como punto de partida porque permite organizar la secuencia didáctica del curso."],
     }
+
+    rule_suggestion = suggest_method_by_rules(
+        curso=curso,
+        metodos_base=metodos_base,
+        content_block=content_block,
+        performances=purpose_block.get("performances", []),
+        skill_context=skill_context,
+    )
+    if rule_suggestion:
+        await supabase.guardar_ai_suggestion(
+            syllabus_id=syllabus_id,
+            step_key="method",
+            input_json={"course_id": str(course_id), "origin": rule_suggestion.get("origin")},
+            output_json=rule_suggestion,
+            user_id=user_id,
+        )
+        return APIResponse(success=True, data=rule_suggestion, error=None)
 
     if not gemini or not curso:
         return APIResponse(success=True, data=fallback, error=None)
@@ -2181,6 +2196,12 @@ async def ensamblar_final(
     method_products = _as_text_list((method_raw or {}).get("productos_tipicos"))
     method_instruments = await supabase.listar_instrumentos_metodo(str(method_id)) if method_id else []
     instrument_names = [_clean_text(i.get("name")) for i in method_instruments if _clean_text(i.get("name"))]
+    notebooklm_refs = await supabase.obtener_referencias_curso(str(course_id)) if course_id else []
+    bibliography_refs = _merge_unique_texts(
+        notebooklm_refs,
+        bibliography.get("references", []),
+    )
+    bibliography_sources = _as_text_list(bibliography.get("sources_consulted", []))
 
     desempenos_final = [
         {
@@ -2196,7 +2217,6 @@ async def ensamblar_final(
         }
         for index, item in enumerate(performances)
     ]
-    desempenos_text = [item["descripcion"] for item in desempenos_final]
 
     # AI generates course-specific instruments per desempeño (Motor Evaluativo, Módulo 7)
     ai_instruments_por_desempeno: list[dict] = []
@@ -2236,24 +2256,45 @@ async def ensamblar_final(
     fecha_fin = _clean_text(datos_generales_payload.get("fecha_fin")) or _compute_end_date(fecha_inicio, total_weeks=16)
     week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16, start_date=fecha_inicio)
 
-    unidades_tematicas, cronograma_semanal = _build_units_and_schedule(
-        performances=desempenos_text,
-        knowledge_items=knowledge_items,
-        skill_names=skill_names,
-        method_name=method_name,
-        phases=phases,
-        techniques=techniques,
-        grading_rows=grading_rows,
-        content_plan=content_plan,
-        method_code=method_code,
-        phase_rules=phase_rules,
-        week_dates=week_dates,
-        desempenos_final=desempenos_final,
-        attitudes_pool=attitudes,
-        method_products=method_products,
+    try:
+        content_engine_payload = await get_content_generation_engine().generate(
+            curso=curso or {},
+            performances=performances,
+            method_raw=method_raw or {
+                "id": method_id,
+                "name": method_name,
+                "code": method_code,
+                "phases": phases,
+                "productos_tipicos": method_products,
+            },
+            grading_rows=grading_rows,
+            knowledge_items=knowledge_items,
+            skill_names=_merge_unique_texts(skill_names, habilidades_sugeridas),
+            habilidades_por_desempeno=habilidades_por_desempeno,
+            bibliography_refs=bibliography_refs,
+            week_dates=week_dates,
+            force_provider=force_provider,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("content_engine_generate failed: %s", exc)
+        raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
+
+    unidades_tematicas = content_engine_payload["unidades_tematicas"]
+    cronograma_semanal = content_engine_payload["cronograma_semanal"]
+    knowledge_items = content_engine_payload.get("conocimientos", knowledge_items)
+    habilidades_sugeridas = content_engine_payload.get("habilidades_sugeridas", habilidades_sugeridas)
+    habilidades_por_desempeno = content_engine_payload.get(
+        "habilidades_por_desempeno",
+        habilidades_por_desempeno,
     )
 
-    method_warnings = _validate_method_alignment(cronograma_semanal, method_short, phases)
+    criterio_engine = content_engine_payload.get("criterio_metodologico")
+    engine_method_phases = _as_text_list(
+        criterio_engine.get("secuencia_visible") if isinstance(criterio_engine, dict) else None
+    ) or phases
+    method_warnings = _validate_method_alignment(cronograma_semanal, method_short, engine_method_phases)
     teacher_name = str(
         current_user.get("full_name")
         or draft.get("teacher_name")
@@ -2265,12 +2306,6 @@ async def ensamblar_final(
         or payload.get("datos_generales", {}).get("docente_email")
         or ""
     )
-    notebooklm_refs = await supabase.obtener_referencias_curso(str(course_id)) if course_id else []
-    bibliography_refs = _merge_unique_texts(
-        notebooklm_refs,
-        bibliography.get("references", []),
-    )
-    bibliography_sources = _as_text_list(bibliography.get("sources_consulted", []))
     competencia = curso.get("competencia_egreso", "") if curso else ""
     resultado_raw = curso.get("resultado_aprendizaje", "") if curso else ""
     resultado = _clean_text(resultado_raw) or _draft_ra_curso(curso or {}, desempenos_final, method_name)
@@ -2361,6 +2396,8 @@ async def ensamblar_final(
             "habilidades_seleccionadas": selected_skill_ids,
             "habilidades_nombres": skill_names,
         },
+        "entregable_integrador": content_engine_payload.get("entregable_integrador", {}),
+        "criterio_metodologico": content_engine_payload.get("criterio_metodologico", {}),
         "unidades_tematicas": unidades_tematicas,
         "cronograma_semanal": cronograma_semanal,
         "metodologia": metodologia_text,
@@ -2407,6 +2444,8 @@ async def ensamblar_final(
         "_meta": {
             **(payload.get("_meta") or {}),
             "method_alignment_warnings": method_warnings,
+            "content_engine": content_engine_payload.get("origin", "content_engine_v2"),
+            "content_engine_warnings": content_engine_payload.get("warnings", []),
         },
     }
 

@@ -129,6 +129,12 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         max_output_tokens=4096,
         json_mode=False,
     ),
+    "content_engine_generate": TaskConfig(
+        provider="gemini",
+        temperature=0.25,
+        max_output_tokens=8192,
+        json_mode=True,
+    ),
     "progressive_rsu_suggest": TaskConfig(
         provider="openrouter_light",
         temperature=0.25,
@@ -1086,6 +1092,15 @@ Reglas:
 - No inventes IDs, no uses numeros de orden y no devuelvas el nombre como ID.
 - reason_items debe tener entre 3 y 5 frases completas, sin puntos suspensivos y sin cortar ideas.
 - Si no hay un metodo complementario pertinente, usa null en complementario_id.
+- Si el curso exige construir productos pedagogicos o tecnicos guiados
+  (instrumentos, sesiones, secuencias, planificaciones, materiales, matrices,
+  mapeos o propuestas formativas), prioriza Taller.
+- Usa ABDe solo cuando exista un reto abierto de impacto real con definicion
+  de desafio, investigacion, solucion, implementacion o difusion.
+- Usa ABPro cuando el eje sea un proyecto aplicado amplio con planificacion,
+  desarrollo de producto/prototipo y presentacion final.
+- No confundas produccion pedagogica guiada con desafio: si la evidencia es
+  construir piezas curriculares o didacticas con modelado y revision, es Taller.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:400]}

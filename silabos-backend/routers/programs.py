@@ -12,6 +12,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from services.method_suggestion_rules import suggest_method_by_rules
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Programas y Cursos"])
@@ -158,7 +160,16 @@ async def sugerir_metodo(
     supabase = servicios.get("supabase")
 
     metodos_db = await supabase.listar_teaching_methods() if supabase else []
-    metodos_base = [{"id": m["id"], "name": m["name"], "description": m.get("description", "")} for m in metodos_db]
+    metodos_base = [
+        {
+            "id": m["id"],
+            "name": m["name"],
+            "code": m.get("code", ""),
+            "description": m.get("description", ""),
+            "phases": m.get("phases", []),
+        }
+        for m in metodos_db
+    ]
 
     fallback = {
         "method_id": metodos_base[0]["id"] if metodos_base else None,
@@ -166,7 +177,7 @@ async def sugerir_metodo(
         "reason": "Sugerencia por defecto (IA no disponible)",
     }
 
-    if not supabase or not gemini or not metodos_base:
+    if not supabase or not metodos_base:
         return {"success": True, "data": fallback, "error": None}
 
     curso = await supabase.obtener_curso(course_id)
@@ -174,6 +185,17 @@ async def sugerir_metodo(
         return {"success": True, "data": fallback, "error": None}
 
     skill_context = categories.replace(",", ", ") if categories else "Sin categorías explícitas"
+
+    rule_suggestion = suggest_method_by_rules(
+        curso=curso,
+        metodos_base=metodos_base,
+        skill_context=skill_context,
+    )
+    if rule_suggestion:
+        return {"success": True, "data": rule_suggestion, "error": None}
+
+    if not gemini:
+        return {"success": True, "data": fallback, "error": None}
 
     try:
         resultado_ia = await gemini.sugerir_metodo(
@@ -186,6 +208,7 @@ async def sugerir_metodo(
             "data": {
                 "method_id": metodo_encontrado["id"],
                 "method_name": metodo_encontrado["name"],
+                "method_code": metodo_encontrado.get("code", ""),
                 "reason": resultado_ia.get("reason", "Sugerido por IA"),
             },
             "error": None,
