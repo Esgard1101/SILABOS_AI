@@ -301,11 +301,24 @@ export interface ValidationObservation {
   mensaje: string;
 }
 
+export interface ValidationTargetCard {
+  id: string;
+  titulo: string;
+  objetivo: string;
+  estado: 'listo' | 'en_revision' | 'no_verificable' | string;
+  resumen: string;
+  evidencia?: string | null;
+  siguiente_accion?: string | null;
+}
+
 export interface ValidationResult {
   score: number;
   observaciones: ValidationObservation[];
   sugerencias: string[];
   aprobado: boolean;
+  audit_mode?: string | null;
+  dashboard_title?: string | null;
+  target_status_cards?: ValidationTargetCard[];
 }
 
 export interface SourceItem {

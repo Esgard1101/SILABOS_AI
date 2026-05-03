@@ -12,6 +12,7 @@ const WIDE_LAYOUT_PATHS = [
   '/catalog',
   '/review',
   '/analytics',
+  '/final-delivery',
   '/admin',
 ];
 

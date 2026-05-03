@@ -197,7 +197,7 @@ export default function SyllabusList() {
       };
 
       setCurrentSyllabus(syllabusForSession);
-      navigate('/editor');
+      navigate(`/final-delivery?id=${item.id}`);
     } catch (error) {
       showToast(getResponseErrorMessage(error, 'No se pudo abrir el sílabo'), 'error');
     }

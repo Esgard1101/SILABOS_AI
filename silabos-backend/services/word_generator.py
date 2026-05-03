@@ -26,6 +26,13 @@ def _pair(left: Any, right: Any, fallback: str = "-") -> str:
     return " / ".join(visible) if visible else fallback
 
 
+def _prerequisite_value(value: Any) -> str:
+    text = _val(value)
+    if not text or re.fullmatch(r"(?i)(no\s+registrado|ninguno|sin\s+prerrequisito.*)", text):
+        return "No aplica"
+    return text
+
+
 SEMESTER_WEEKS = 16
 
 
@@ -450,7 +457,7 @@ def _build_context(silabo: dict) -> dict:
         "escuela": _clean_program_label(dg.get("escuela_profesional") or dg.get("carrera")),
         "modalidad": _val(dg.get("modalidad"), "Presencial").capitalize(),
         "curso": _val(dg.get("nombre_curso")),
-        "prerrequisito": _val(dg.get("prerrequisito")),
+        "prerrequisito": _prerequisite_value(dg.get("prerrequisito")),
         "codigo_curso": _val(dg.get("codigo")),
         "semestre": _val(dg.get("semestre")),
         "periodo_academico": _val(

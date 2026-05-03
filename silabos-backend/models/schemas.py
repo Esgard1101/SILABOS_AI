@@ -119,11 +119,24 @@ class ObservacionValidacion(BaseModel):
     mensaje: str
 
 
+class VerificationCard(BaseModel):
+    id: str
+    titulo: str
+    objetivo: str
+    estado: str
+    resumen: str
+    evidencia: Optional[str] = None
+    siguiente_accion: Optional[str] = None
+
+
 class ValidacionData(BaseModel):
     score: int = Field(ge=0, le=100)
     observaciones: List[ObservacionValidacion]
     sugerencias: List[str]
     aprobado: bool
+    audit_mode: Optional[str] = None
+    dashboard_title: Optional[str] = None
+    target_status_cards: List[VerificationCard] = Field(default=[])
 
 
 # ─────────────────────────────────────────────

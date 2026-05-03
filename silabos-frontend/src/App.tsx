@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import SyllabusEditor from './pages/SyllabusEditor';
+import SyllabusFinalDelivery from './pages/SyllabusFinalDelivery';
 import SyllabusList from './pages/SyllabusList';
 import Analytics from './pages/Analytics';
 import Catalog from './pages/Catalog';
@@ -41,6 +41,7 @@ function ContextGuard({ children }: { children: React.ReactNode }) {
 }
 
 const MANAGEMENT_ROLES = ['admin', 'director', 'coordinador'];
+const SyllabusEditor = lazy(() => import('./pages/SyllabusEditor'));
 
 export default function App() {
   return (
@@ -160,13 +161,24 @@ export default function App() {
             <Route path="/creator/metodo" element={<Step5_Metodo />} />
             <Route path="/creator/cierre" element={<Step6_Cierre />} />
           </Route>
+          {/* Ruta avanzada reservada: no es parte del flujo docente principal y se carga solo bajo demanda. */}
           <Route
             path="/editor"
             element={
               <ProtectedRoute>
                 <ContextGuard>
-                  <SyllabusEditor />
+                  <Suspense fallback={<div className="p-6 text-sm text-slate-500">Cargando vista avanzada...</div>}>
+                    <SyllabusEditor />
+                  </Suspense>
                 </ContextGuard>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/final-delivery"
+            element={
+              <ProtectedRoute>
+                <SyllabusFinalDelivery />
               </ProtectedRoute>
             }
           />

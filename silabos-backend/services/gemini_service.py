@@ -365,10 +365,207 @@ def _default_validation_error(message: str) -> dict:
         ],
         "sugerencias": [],
         "aprobado": False,
+        "audit_mode": "product_positive_dashboard",
+        "dashboard_title": "Verificacion del silabo",
+        "target_status_cards": [],
     }
 
 
-def _normalize_validation_payload(payload: dict) -> dict:
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _extract_week_number(row: dict) -> int | None:
+    week = row.get("semana") or row.get("week")
+    if isinstance(week, int):
+        return week
+    match = re.search(r"\d+", str(week or ""))
+    return int(match.group(0)) if match else None
+
+
+def _source_text(source: Any) -> str:
+    if isinstance(source, dict):
+        return _as_text(
+            source.get("referencia")
+            or source.get("apa_format")
+            or source.get("display_text")
+            or source.get("title")
+        )
+    return _as_text(source)
+
+
+def _card(
+    card_id: str,
+    titulo: str,
+    objetivo: str,
+    estado: str,
+    resumen: str,
+    evidencia: str = "",
+    siguiente_accion: str = "",
+) -> dict:
+    return {
+        "id": card_id,
+        "titulo": titulo,
+        "objetivo": objetivo,
+        "estado": estado,
+        "resumen": resumen,
+        "evidencia": evidencia,
+        "siguiente_accion": siguiente_accion,
+    }
+
+
+def _build_validation_cards(silabo: dict) -> list[dict]:
+    unidades = [u for u in silabo.get("unidades_tematicas", []) if isinstance(u, dict)]
+    schedule = [r for r in silabo.get("cronograma_semanal", []) if isinstance(r, dict)]
+    evaluacion = silabo.get("sistema_evaluacion", {}) if isinstance(silabo.get("sistema_evaluacion"), dict) else {}
+    criterios = [c for c in evaluacion.get("criterios", []) if isinstance(c, dict)]
+    bibliography = [_source_text(s) for s in silabo.get("bibliografia", [])]
+    bibliography = [s for s in bibliography if s]
+
+    weeks = sorted({week for row in schedule if (week := _extract_week_number(row)) is not None})
+    content_rows = [
+        row for row in schedule
+        if _as_text(row.get("tema") or row.get("contenido") or row.get("conocimientos"))
+    ]
+    evidence_rows = [
+        row for row in schedule
+        if _as_text(row.get("producto") or row.get("evidencia") or row.get("actividad"))
+    ]
+    total_pct = sum(_as_int(c.get("porcentaje")) for c in criterios)
+    apa_like = [
+        source for source in bibliography
+        if re.search(r"\(\d{4}\)|\b\d{4}\b", source) and "." in source
+    ]
+
+    cards: list[dict] = []
+
+    if unidades and len(content_rows) >= 14:
+        estado = "listo"
+        resumen = f"{len(unidades)} unidades y {len(content_rows)} semanas con contenido visible."
+        siguiente = ""
+    elif unidades or content_rows:
+        estado = "en_revision"
+        resumen = f"{len(unidades)} unidades y {len(content_rows)} semanas detectadas; conviene completar la cobertura."
+        siguiente = "Completar temas faltantes antes de publicar."
+    else:
+        estado = "no_verificable"
+        resumen = "No se encontro estructura suficiente de unidades o contenidos."
+        siguiente = "Agregar unidades tematicas y programa semanal."
+    cards.append(_card(
+        "content_coverage",
+        "Cobertura de contenidos",
+        "Confirmar que el silabo cubre unidades y temas del curso.",
+        estado,
+        resumen,
+        evidencia=f"Unidades: {len(unidades)}; semanas con tema: {len(content_rows)}.",
+        siguiente_accion=siguiente,
+    ))
+
+    if weeks == list(range(1, 17)):
+        estado = "listo"
+        resumen = "La programacion recorre las 16 semanas esperadas."
+        siguiente = ""
+    elif len(weeks) >= 14:
+        estado = "en_revision"
+        resumen = f"La programacion cubre {len(weeks)} semanas; revisar numeracion o cierres puntuales."
+        siguiente = "Verificar semanas faltantes o repetidas."
+    else:
+        estado = "no_verificable" if not weeks else "en_revision"
+        resumen = f"Se detectaron {len(weeks)} semanas numeradas."
+        siguiente = "Completar el cronograma hasta 16 semanas."
+    cards.append(_card(
+        "weekly_sequencing",
+        "Secuencia semanal",
+        "Revisar progresion y continuidad del programa de 16 semanas.",
+        estado,
+        resumen,
+        evidencia=f"Semanas detectadas: {', '.join(str(w) for w in weeks) or 'ninguna'}.",
+        siguiente_accion=siguiente,
+    ))
+
+    if criterios and total_pct == 100 and len(evidence_rows) >= 12:
+        estado = "listo"
+        resumen = "Evaluacion y evidencias mantienen una articulacion verificable."
+        siguiente = ""
+    elif criterios or evidence_rows:
+        estado = "en_revision"
+        resumen = "Hay base de evaluacion y actividades; revisar pesos o evidencias incompletas."
+        siguiente = "Asegurar porcentajes al 100% y evidencias observables."
+    else:
+        estado = "no_verificable"
+        resumen = "No se encontro suficiente informacion sobre evaluacion o evidencias."
+        siguiente = "Agregar criterios, actividades y productos evaluables."
+    cards.append(_card(
+        "evidence_method_consistency",
+        "Evidencias y metodo",
+        "Confirmar consistencia entre actividades, evidencias y sistema de evaluacion.",
+        estado,
+        resumen,
+        evidencia=f"Criterios: {len(criterios)}; total: {total_pct}%; semanas con evidencia/actividad: {len(evidence_rows)}.",
+        siguiente_accion=siguiente,
+    ))
+
+    if len(bibliography) >= 5 and len(apa_like) >= max(1, len(bibliography) // 2):
+        estado = "listo"
+        resumen = "Las fuentes estan listas para revision academica en formato de referencia."
+        siguiente = ""
+    elif bibliography:
+        estado = "en_revision"
+        resumen = "Hay fuentes disponibles; conviene normalizar el formato APA antes del cierre."
+        siguiente = "Revisar autores, anio, titulo y datos editoriales."
+    else:
+        estado = "no_verificable"
+        resumen = "No se encontraron fuentes bibliograficas en el silabo."
+        siguiente = "Agregar bibliografia base y complementaria."
+    cards.append(_card(
+        "apa_source_readiness",
+        "APA y fuentes",
+        "Verificar preparacion de bibliografia y fuentes de soporte.",
+        estado,
+        resumen,
+        evidencia=f"Fuentes: {len(bibliography)}; con indicios APA/anio: {len(apa_like)}.",
+        siguiente_accion=siguiente,
+    ))
+
+    return cards
+
+
+def _normalize_validation_cards(cards: Any, fallback_cards: list[dict]) -> list[dict]:
+    required_ids = [
+        "content_coverage",
+        "weekly_sequencing",
+        "evidence_method_consistency",
+        "apa_source_readiness",
+    ]
+    by_id: dict[str, dict] = {}
+    if isinstance(cards, list):
+        for item in cards:
+            if not isinstance(item, dict):
+                continue
+            card_id = _as_text(item.get("id"))
+            if card_id in required_ids:
+                by_id[card_id] = {**item, "id": card_id}
+
+    fallback_by_id = {card["id"]: card for card in fallback_cards}
+    normalized: list[dict] = []
+    for card_id in required_ids:
+        card = {**fallback_by_id[card_id], **by_id.get(card_id, {})}
+        estado = _as_text(card.get("estado")) or fallback_by_id[card_id]["estado"]
+        if estado not in {"listo", "en_revision", "no_verificable"}:
+            estado = fallback_by_id[card_id]["estado"]
+        card["estado"] = estado
+        normalized.append(card)
+    return normalized
+
+
+def _normalize_validation_payload(payload: dict, silabo: dict | None = None) -> dict:
     score = payload.get("score", 0)
     if not isinstance(score, int):
         try:
@@ -388,11 +585,20 @@ def _normalize_validation_payload(payload: dict) -> dict:
     if not isinstance(aprobado, bool):
         aprobado = score >= 70
 
+    fallback_cards = _build_validation_cards(silabo or {})
+    target_status_cards = _normalize_validation_cards(
+        payload.get("target_status_cards"),
+        fallback_cards,
+    )
+
     return {
         "score": score,
         "observaciones": observaciones,
         "sugerencias": sugerencias,
         "aprobado": aprobado,
+        "audit_mode": payload.get("audit_mode") or "product_positive_dashboard",
+        "dashboard_title": payload.get("dashboard_title") or "Verificacion del silabo",
+        "target_status_cards": target_status_cards,
     }
 
 
@@ -405,7 +611,15 @@ Debes devolver SOLO un objeto JSON con esta forma:
     {{"criterio": "string", "nivel": "error|advertencia|sugerencia", "mensaje": "string"}}
   ],
   "sugerencias": ["string"],
-  "aprobado": false
+  "aprobado": false,
+  "audit_mode": "product_positive_dashboard",
+  "dashboard_title": "Verificacion del silabo",
+  "target_status_cards": [
+    {{"id": "content_coverage", "titulo": "string", "objetivo": "string", "estado": "listo|en_revision|no_verificable", "resumen": "string", "evidencia": "string", "siguiente_accion": "string"}},
+    {{"id": "weekly_sequencing", "titulo": "string", "objetivo": "string", "estado": "listo|en_revision|no_verificable", "resumen": "string", "evidencia": "string", "siguiente_accion": "string"}},
+    {{"id": "evidence_method_consistency", "titulo": "string", "objetivo": "string", "estado": "listo|en_revision|no_verificable", "resumen": "string", "evidencia": "string", "siguiente_accion": "string"}},
+    {{"id": "apa_source_readiness", "titulo": "string", "objetivo": "string", "estado": "listo|en_revision|no_verificable", "resumen": "string", "evidencia": "string", "siguiente_accion": "string"}}
+  ]
 }}
 
 Si falta información, usa valores por defecto razonables.
@@ -984,12 +1198,12 @@ class GeminiService:
             logger.error("Error al generar silabo v2: %s", exc)
             return {"error": str(exc), "_status_code": 500}
 
-    async def _repair_validation_json(self, raw_response: str) -> dict | None:
+    async def _repair_validation_json(self, raw_response: str, silabo: dict | None = None) -> dict | None:
         repair_prompt = _build_validation_repair_prompt(raw_response)
         try:
             repaired_text = await self.generate_text("syllabus_validate", repair_prompt)
             payload = _safe_json_loads(repaired_text)
-            normalized = _normalize_validation_payload(payload)
+            normalized = _normalize_validation_payload(payload, silabo)
             validated = ValidacionData.model_validate(normalized)
             return validated.model_dump()
         except (AIProviderError, ValidationError, json.JSONDecodeError) as exc:
@@ -1003,23 +1217,29 @@ class GeminiService:
         try:
             raw_text = await self.generate_text("syllabus_validate", prompt)
             payload = _safe_json_loads(raw_text)
-            normalized = _normalize_validation_payload(payload)
+            normalized = _normalize_validation_payload(payload, silabo)
             validated = ValidacionData.model_validate(normalized)
             logger.info("Validacion completada. Score: %s", validated.score)
             return validated.model_dump()
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Salida invalida del auditor, intentando reparacion: %s", exc)
-            repaired = await self._repair_validation_json(locals().get("raw_text", ""))
+            repaired = await self._repair_validation_json(locals().get("raw_text", ""), silabo)
             if repaired:
                 logger.info("Validacion reparada exitosamente. Score: %s", repaired["score"])
                 return repaired
-            return _default_validation_error("No se pudo procesar la validacion")
+            fallback = _default_validation_error("No se pudo procesar la validacion")
+            fallback["target_status_cards"] = _build_validation_cards(silabo)
+            return fallback
         except AIProviderError as exc:
             logger.error("Error al validar silabo: %s", exc)
-            return _default_validation_error(str(exc))
+            fallback = _default_validation_error(str(exc))
+            fallback["target_status_cards"] = _build_validation_cards(silabo)
+            return fallback
         except Exception as exc:
             logger.error("Error al validar silabo: %s", exc)
-            return _default_validation_error(str(exc))
+            fallback = _default_validation_error(str(exc))
+            fallback["target_status_cards"] = _build_validation_cards(silabo)
+            return fallback
 
     async def construir_queries_busqueda(self, tema: str, nivel: str = "pregrado") -> list[str]:
         try:

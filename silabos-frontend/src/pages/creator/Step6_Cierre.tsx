@@ -280,7 +280,7 @@ export default function Step6_Cierre() {
         setFinalSyllabusId(d.syllabus_id);
         setAssembled(true);
         setRequiresValidation(d.requires_academic_validation ?? false);
-        navigate(`/editor?id=${d.syllabus_id}`);
+        navigate(`/final-delivery?id=${d.syllabus_id}`);
       }
     } catch (error) {
       if (isTimeoutOrNetworkError(error)) {
@@ -290,10 +290,10 @@ export default function Step6_Cierre() {
         );
         const completed = await pollAssembledSyllabus(draftId);
         if (completed) {
-          showToast('Sílabo generado correctamente. Redirigiendo al editor...', 'success');
+          showToast('Silabo generado correctamente. Redirigiendo a la entrega final...', 'success');
           setFinalSyllabusId(draftId);
           setAssembled(true);
-          navigate(`/editor?id=${draftId}`);
+          navigate(`/final-delivery?id=${draftId}`);
         } else {
           showToast(
             'La IA aún no termina. Espera unos segundos e intenta de nuevo, o abre el sílabo desde la lista.',
@@ -446,7 +446,7 @@ export default function Step6_Cierre() {
           ) : (
             <>
               <BookOpen size={12} />
-              Ensamblar y abrir en Editor
+              Ensamblar y preparar entrega
             </>
           )}
         </button>

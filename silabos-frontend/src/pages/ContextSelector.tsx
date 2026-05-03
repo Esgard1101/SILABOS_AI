@@ -39,6 +39,14 @@ interface Course {
   prerequisites?: string | null;
 }
 
+function formatPrerequisite(value?: string | null) {
+  const clean = (value || '').trim();
+  if (!clean || /^no\s+registrado$/i.test(clean) || /^ninguno$/i.test(clean) || /^sin\s+prerrequisito/i.test(clean)) {
+    return 'No aplica';
+  }
+  return clean;
+}
+
 async function fetchFaculties(): Promise<Faculty[]> {
   const res = await fetch(`${BASE_URL}/api/institutional/faculties`);
   const json = await res.json();
@@ -460,7 +468,7 @@ export default function ContextSelector() {
                   Prerrequisito
                 </label>
                 <div className="flex h-9 items-center rounded border border-white/10 bg-[#041A3A]/60 px-3 text-[11px] text-white/65">
-                  {selectedCourse?.prerequisites?.trim() || 'No registrado'}
+                  {formatPrerequisite(selectedCourse?.prerequisites)}
                 </div>
               </div>
 

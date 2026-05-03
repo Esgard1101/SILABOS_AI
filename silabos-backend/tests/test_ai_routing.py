@@ -193,7 +193,62 @@ class GeminiServiceValidationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["score"], 90)
         self.assertTrue(result["aprobado"])
+        self.assertEqual(result["audit_mode"], "product_positive_dashboard")
+        self.assertEqual(len(result["target_status_cards"]), 4)
         self.assertEqual(service.generate_text.await_count, 2)
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False)
+    async def test_validation_adds_product_positive_dashboard_cards(self, _mock_client):
+        service = GeminiService()
+        service.generate_text = AsyncMock(
+            return_value='{"score": 92, "observaciones": [], "sugerencias": [], "aprobado": true}'
+        )
+        silabo = {
+            "datos_generales": {"nombre_curso": "Curso"},
+            "unidades_tematicas": [
+                {"numero": 1, "titulo": "Unidad 1", "temas": ["Tema 1"], "logro": "Logro 1"},
+                {"numero": 2, "titulo": "Unidad 2", "temas": ["Tema 2"], "logro": "Logro 2"},
+            ],
+            "cronograma_semanal": [
+                {
+                    "semana": week,
+                    "tema": f"Tema {week}",
+                    "actividad": f"Actividad {week}",
+                    "producto": f"Evidencia {week}",
+                }
+                for week in range(1, 17)
+            ],
+            "sistema_evaluacion": {
+                "criterios": [
+                    {"nombre": "Producto 1", "porcentaje": 40, "descripcion": "Rubrica"},
+                    {"nombre": "Producto 2", "porcentaje": 60, "descripcion": "Rubrica"},
+                ]
+            },
+            "bibliografia": [
+                {"referencia": "Autor, A. (2024). Titulo. Editorial."},
+                {"referencia": "Autor, B. (2023). Titulo. Revista."},
+                {"referencia": "Autor, C. (2022). Titulo. Editorial."},
+                {"referencia": "Autor, D. (2021). Titulo. Revista."},
+                {"referencia": "Autor, E. (2020). Titulo. Editorial."},
+            ],
+        }
+
+        result = await service.validar_silabo(silabo, "")
+
+        self.assertEqual(result["score"], 92)
+        self.assertEqual(
+            [card["id"] for card in result["target_status_cards"]],
+            [
+                "content_coverage",
+                "weekly_sequencing",
+                "evidence_method_consistency",
+                "apa_source_readiness",
+            ],
+        )
+        self.assertTrue(
+            all(card["estado"] == "listo" for card in result["target_status_cards"])
+        )
 
     @patch("services.gemini_service._get_client", return_value=Mock())
     @patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False)
