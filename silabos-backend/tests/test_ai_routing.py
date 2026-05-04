@@ -65,6 +65,9 @@ class GeminiServiceRoutingTests(unittest.TestCase):
             "OPENROUTER_API_KEY": "test-key",
             "OPENROUTER_AUDIT_MODEL": "audit-model",
             "OPENROUTER_LIGHT_MODEL": "light-model",
+            "OPENROUTER_UNIT_MODEL": "unit-model",
+            "OPENROUTER_UNIT_MODELS": "unit-fallback-1, unit-fallback-2",
+            "OPENROUTER_PRODUCT_MODEL": "product-model",
             "OPENROUTER_MODEL": "legacy-model",
         },
         clear=False,
@@ -74,8 +77,16 @@ class GeminiServiceRoutingTests(unittest.TestCase):
 
         self.assertEqual(service.openrouter_audit_model, "audit-model")
         self.assertEqual(service.openrouter_light_model, "light-model")
+        self.assertEqual(service.openrouter_unit_model, "unit-model")
+        self.assertEqual(
+            service.openrouter_unit_models,
+            ["unit-model", "unit-fallback-1", "unit-fallback-2"],
+        )
+        self.assertEqual(service.openrouter_product_model, "product-model")
         self.assertEqual(service._resolve_openrouter_model("openrouter_audit"), "audit-model")
         self.assertEqual(service._resolve_openrouter_model("openrouter_light"), "light-model")
+        self.assertEqual(service._resolve_openrouter_model("openrouter_unit"), "unit-model")
+        self.assertEqual(service._resolve_openrouter_model("openrouter_product"), "product-model")
 
     @patch("services.gemini_service._get_client", return_value=Mock())
     @patch.dict(
@@ -94,7 +105,7 @@ class GeminiServiceRoutingTests(unittest.TestCase):
         self.assertEqual(service.openrouter_audit_model, "legacy-model")
         self.assertEqual(service.openrouter_light_model, "legacy-model")
 
-    def test_openrouter_light_tasks_do_not_require_native_json_mode(self):
+    def test_light_tasks_do_not_require_native_json_mode(self):
         light_tasks = (
             "search_query_build",
             "search_result_filter",
@@ -113,34 +124,37 @@ class GeminiServiceRoutingTests(unittest.TestCase):
 
     def test_openrouter_audit_keeps_native_json_mode(self):
         self.assertTrue(TASK_CONFIGS["syllabus_validate"].json_mode)
+        self.assertEqual(TASK_CONFIGS["syllabus_validate"].provider, "gemini_audit")
+        self.assertEqual(TASK_CONFIGS["progressive_unit_context_extract"].provider, "gemini_unit")
+        self.assertEqual(TASK_CONFIGS["progressive_unit_generate"].provider, "gemini_unit")
 
 
-class GeminiServiceFinalFallbackTests(unittest.IsolatedAsyncioTestCase):
+class GeminiServiceUnitFallbackTests(unittest.IsolatedAsyncioTestCase):
     @patch("services.gemini_service._get_client", return_value=Mock())
     @patch.dict(
         os.environ,
         {
             "OPENAI_API_KEY": "test-openai-key",
-            "OPENAI_FINAL_MODEL": "gpt-5.4-mini",
+            "OPENAI_UNIT_MODEL": "gpt-unit",
             "OPENROUTER_API_KEY": "test-openrouter-key",
         },
         clear=False,
     )
-    async def test_final_generation_falls_back_from_gemini_to_openai(self, _mock_client):
+    async def test_unit_generation_falls_back_from_gemini_to_openai(self, _mock_client):
         service = GeminiService()
         service._call_gemini = AsyncMock(side_effect=Exception("unused"))
         service._call_gemini.side_effect = service._gemini_error(Exception("503 unavailable"))
         service._call_openai_final = AsyncMock(
             return_value=Mock(
-                text='{"datos_generales": {"nombre_curso": "Curso"}}',
+                text='{"weeks": [{"week": 1}]}',
                 provider="openai",
             )
         )
         service._call_openrouter = AsyncMock()
 
-        result = await service.generate_json("syllabus_generate", "prompt final")
+        result = await service.generate_json("progressive_unit_generate", "prompt unidad")
 
-        self.assertEqual(result["datos_generales"]["nombre_curso"], "Curso")
+        self.assertEqual(result["weeks"][0]["week"], 1)
         service._call_openai_final.assert_awaited_once()
         service._call_openrouter.assert_not_awaited()
 
@@ -149,12 +163,12 @@ class GeminiServiceFinalFallbackTests(unittest.IsolatedAsyncioTestCase):
         os.environ,
         {
             "OPENAI_API_KEY": "test-openai-key",
-            "OPENAI_FINAL_MODEL": "gpt-5.4-mini",
+            "OPENAI_UNIT_MODEL": "gpt-unit",
             "OPENROUTER_API_KEY": "test-openrouter-key",
         },
         clear=False,
     )
-    async def test_final_generation_falls_back_to_openrouter_if_openai_fails(self, _mock_client):
+    async def test_unit_generation_falls_back_to_openrouter_if_openai_fails(self, _mock_client):
         service = GeminiService()
         service._call_gemini = AsyncMock(side_effect=service._gemini_error(Exception("503 unavailable")))
         service._call_openai_final = AsyncMock(
@@ -167,15 +181,82 @@ class GeminiServiceFinalFallbackTests(unittest.IsolatedAsyncioTestCase):
         )
         service._call_openrouter = AsyncMock(
             return_value=Mock(
-                text='{"datos_generales": {"nombre_curso": "Curso OR"}}',
+                text='{"weeks": [{"week": 2}]}',
                 provider="openrouter",
             )
         )
 
-        result = await service.generate_json("syllabus_generate", "prompt final")
+        result = await service.generate_json("progressive_unit_generate", "prompt unidad")
 
-        self.assertEqual(result["datos_generales"]["nombre_curso"], "Curso OR")
+        self.assertEqual(result["weeks"][0]["week"], 2)
         service._call_openai_final.assert_awaited_once()
+        service._call_openrouter.assert_awaited_once()
+
+
+class GeminiServiceOperationalFallbackTests(unittest.IsolatedAsyncioTestCase):
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-openrouter-key"}, clear=False)
+    async def test_product_suggest_falls_back_to_openrouter_without_openai(self, _mock_client):
+        service = GeminiService()
+        service._call_gemini = AsyncMock(side_effect=service._gemini_error(Exception("503 unavailable")))
+        service._call_openai_final = AsyncMock()
+        service._call_openrouter = AsyncMock(
+            return_value=Mock(
+                text='{"options": [{"title": "Producto", "justification": "Justifica", "timeline_json": {}}]}',
+                provider="openrouter",
+            )
+        )
+
+        result = await service.generate_json("progressive_product_suggest", "payload producto")
+
+        self.assertEqual(result["options"][0]["title"], "Producto")
+        service._call_openai_final.assert_not_awaited()
+        service._call_openrouter.assert_awaited_once()
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "OPENAI_API_KEY": "test-openai-key",
+            "OPENAI_UNIT_MODEL": "openai-unit",
+            "OPENROUTER_API_KEY": "test-openrouter-key",
+        },
+        clear=False,
+    )
+    async def test_unit_repair_uses_openai_fallback_after_google(self, _mock_client):
+        service = GeminiService()
+        service._call_gemini = AsyncMock(side_effect=service._gemini_error(Exception("503 unavailable")))
+        service._call_openai_final = AsyncMock(
+            return_value=Mock(
+                text='{"weeks": [{"week": 1, "activity": "reparada"}]}',
+                provider="openai",
+            )
+        )
+        service._call_openrouter = AsyncMock()
+
+        result = await service.generate_json("progressive_unit_repair", "payload unidad")
+
+        self.assertEqual(result["weeks"][0]["activity"], "reparada")
+        service._call_openai_final.assert_awaited_once()
+        service._call_openrouter.assert_not_awaited()
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-openrouter-key"}, clear=False)
+    async def test_unit_context_uses_unit_route_without_openai(self, _mock_client):
+        service = GeminiService()
+        service._call_gemini = AsyncMock(side_effect=service._gemini_error(Exception("503 unavailable")))
+        service._call_openai_final = AsyncMock()
+        service._call_openrouter = AsyncMock(
+            return_value=Mock(
+                text='{"key_concepts": ["tema"], "cases_or_examples": []}',
+                provider="openrouter",
+            )
+        )
+
+        result = await service.generate_json("progressive_unit_context_extract", "payload notebook unidad")
+
+        self.assertEqual(result["key_concepts"], ["tema"])
+        service._call_openai_final.assert_not_awaited()
         service._call_openrouter.assert_awaited_once()
 
 
@@ -275,6 +356,128 @@ class GeminiServiceOpenRouterCompatibilityTests(unittest.IsolatedAsyncioTestCase
     @patch.dict(
         os.environ,
         {
+            "NVIDIA_API_KEY": "test-nvidia-key",
+            "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
+            "OPENROUTER_UNIT_MODEL": "nvidia:nvidia/test-model",
+            "OPENROUTER_UNIT_MODELS": "",
+            "OPENROUTER_FALLBACK_MODELS": "",
+        },
+        clear=False,
+    )
+    async def test_nvidia_prefix_uses_native_openai_compatible_payload(self, _mock_client):
+        service = GeminiService()
+        recorded_payloads = []
+        responses = [
+            FakeOpenRouterResponse(
+                200,
+                json_data={
+                    "model": "nvidia/test-model",
+                    "choices": [{"message": {"content": '{"weeks": []}'}}],
+                    "usage": {"total_tokens": 222},
+                },
+            )
+        ]
+
+        with patch(
+            "services.gemini_service.httpx.AsyncClient",
+            new=FakeAsyncClientFactory(responses, recorded_payloads),
+        ):
+            raw_text = await service.generate_text(
+                "progressive_unit_generate",
+                "Genera unidad",
+                force_provider="openrouter",
+            )
+
+        self.assertIn('"weeks": []', raw_text)
+        self.assertEqual(recorded_payloads[0]["model"], "nvidia/test-model")
+        self.assertIn("messages", recorded_payloads[0])
+        self.assertNotIn("store", recorded_payloads[0])
+        self.assertNotIn("input", recorded_payloads[0])
+        self.assertNotIn("response_format", recorded_payloads[0])
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "NVIDIA_API_KEY": "test-nvidia-key",
+            "OPENROUTER_API_KEY": "test-key",
+            "OPENROUTER_UNIT_MODEL": "unit-primary",
+            "OPENROUTER_UNIT_MODELS": "nvidia:nvidia/fallback-model",
+            "OPENROUTER_FALLBACK_MODELS": "",
+        },
+        clear=False,
+    )
+    async def test_openrouter_429_can_fallback_to_native_nvidia(self, _mock_client):
+        service = GeminiService()
+        recorded_payloads = []
+        responses = [
+            FakeOpenRouterResponse(429, text='{"error":"rate limit"}'),
+            FakeOpenRouterResponse(
+                200,
+                json_data={
+                    "model": "nvidia/fallback-model",
+                    "choices": [{"message": {"content": '{"weeks": []}'}}],
+                    "usage": {"total_tokens": 333},
+                },
+            ),
+        ]
+
+        with patch(
+            "services.gemini_service.httpx.AsyncClient",
+            new=FakeAsyncClientFactory(responses, recorded_payloads),
+        ):
+            raw_text = await service.generate_text(
+                "progressive_unit_generate",
+                "Genera unidad",
+                force_provider="openrouter",
+            )
+
+        self.assertIn('"weeks": []', raw_text)
+        self.assertEqual([payload["model"] for payload in recorded_payloads], ["unit-primary", "nvidia/fallback-model"])
+        self.assertNotIn("store", recorded_payloads[1])
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
+            "OPENROUTER_API_KEY": "test-key",
+            "OPENROUTER_UNIT_MODEL": "unit-primary",
+            "OPENROUTER_UNIT_MODELS": "unit-fallback-1, unit-fallback-2",
+        },
+        clear=False,
+    )
+    async def test_openrouter_unit_route_uses_model_cascade_on_429(self, _mock_client):
+        service = GeminiService()
+        recorded_payloads = []
+        responses = [
+            FakeOpenRouterResponse(429, text='{"error":"rate limit"}'),
+            FakeOpenRouterResponse(
+                200,
+                json_data={
+                    "model": "unit-fallback-1",
+                    "choices": [{"message": {"content": '{"weeks": []}'}}],
+                    "usage": {"total_tokens": 321},
+                },
+            ),
+        ]
+
+        with patch(
+            "services.gemini_service.httpx.AsyncClient",
+            new=FakeAsyncClientFactory(responses, recorded_payloads),
+        ):
+            raw_text = await service.generate_text(
+                "progressive_unit_generate",
+                "Genera unidad",
+                force_provider="openrouter",
+            )
+
+        self.assertIn('"weeks": []', raw_text)
+        self.assertEqual([payload["model"] for payload in recorded_payloads], ["unit-primary", "unit-fallback-1"])
+
+    @patch("services.gemini_service._get_client", return_value=Mock())
+    @patch.dict(
+        os.environ,
+        {
             "OPENROUTER_API_KEY": "test-key",
             "OPENROUTER_AUDIT_MODEL": "tencent/hy3-preview:free",
         },
@@ -305,7 +508,11 @@ class GeminiServiceOpenRouterCompatibilityTests(unittest.IsolatedAsyncioTestCase
             "services.gemini_service.httpx.AsyncClient",
             new=FakeAsyncClientFactory(responses, recorded_payloads),
         ):
-            raw_text = await service.generate_text("syllabus_validate", "Valida este silabo")
+            raw_text = await service.generate_text(
+                "syllabus_validate",
+                "Valida este silabo",
+                force_provider="openrouter",
+            )
 
         self.assertIn('"score": 91', raw_text)
         self.assertEqual(len(recorded_payloads), 2)
@@ -344,7 +551,11 @@ class GeminiServiceOpenRouterCompatibilityTests(unittest.IsolatedAsyncioTestCase
             "services.gemini_service.httpx.AsyncClient",
             new=FakeAsyncClientFactory(responses, recorded_payloads),
         ):
-            await service.generate_text("syllabus_validate", "Valida este silabo")
+            await service.generate_text(
+                "syllabus_validate",
+                "Valida este silabo",
+                force_provider="openrouter",
+            )
 
         self.assertEqual(len(recorded_payloads), 1)
         self.assertNotIn("response_format", recorded_payloads[0])

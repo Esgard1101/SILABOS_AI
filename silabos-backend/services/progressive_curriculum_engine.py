@@ -29,6 +29,10 @@ PRODUCT_CATEGORIES = [
 ]
 
 
+class ProgressiveContentGenerationError(RuntimeError):
+    """Señala que ningun proveedor IA produjo una unidad usable."""
+
+
 def _canonical_product_category(value: str) -> str:
     normalized = _normalize(value)
     for category in PRODUCT_CATEGORIES:
@@ -64,9 +68,18 @@ ROBOTIC_ACTIVITY_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 
+REPETITIVE_ACTIVITY_SYNTAX_RE = re.compile(
+    r"^\s*A partir de la fase de\b.+?\b(el estudiante|los estudiantes)\b.+?\bLo (desarrolla|trabaja) mediante\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def _has_robotic_activity_labels(value: Any) -> bool:
     return bool(ROBOTIC_ACTIVITY_LABEL_RE.search(str(value or "")))
+
+
+def _has_repetitive_activity_syntax(value: Any) -> bool:
+    return bool(REPETITIVE_ACTIVITY_SYNTAX_RE.search(str(value or "")))
 
 
 def _as_text_list(value: Any) -> list[str]:
@@ -115,6 +128,66 @@ def _merge_unique(*groups: Any, limit: int | None = None) -> list[str]:
             if limit and len(merged) >= limit:
                 return merged
     return merged
+
+
+def _clean_unit_title(value: Any, unit_number: int) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    text = re.sub(r"^\s*(?:unidad|u)\s*(?:[ivxlcdm]+|\d+)\s*[:.\-–—]?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip(" .:-")
+    if not text or _normalize(text) in {f"unidad {unit_number}", f"u {unit_number}", str(unit_number)}:
+        return ""
+    return text[:120].strip()
+
+
+def _unit_title_from_weeks(
+    *,
+    generation: dict[str, Any],
+    unit_weeks: list[dict[str, Any]],
+    unit_number: int,
+    performance_text: str = "",
+) -> str:
+    direct = _clean_unit_title(
+        generation.get("unit_title")
+        or generation.get("title")
+        or generation.get("titulo"),
+        unit_number,
+    )
+    if direct:
+        return direct
+    knowledge = _merge_unique(
+        [
+            week.get("knowledge")
+            or week.get("conocimientos")
+            or week.get("tema")
+            for week in unit_weeks
+        ],
+        limit=3,
+    )
+    for item in knowledge:
+        title = _clean_unit_title(item, unit_number)
+        if title and _normalize(title) not in {"contenido de la semana", "tema"}:
+            return title
+    words = _clean_text(performance_text).split()
+    if len(words) > 4:
+        return " ".join(words[:9]).strip(" .")
+    return ""
+
+
+def _provider_sequence(force_provider: str | None) -> list[str | None]:
+    forced = (force_provider or "").strip().lower()
+    if forced == "gemini":
+        return ["gemini", "openrouter"]
+    if forced == "openrouter":
+        return ["openrouter", "gemini"]
+    return [None, "openrouter"]
+
+
+def _expected_unit_weeks(unit_number: int, total_units: int) -> list[int]:
+    ranges = _unit_week_ranges(total_units)
+    start, end = ranges.get(unit_number, (1, 16))
+    return list(range(start, end + 1))
 
 
 def _coerce_json_object(value: Any) -> dict[str, Any]:
@@ -487,30 +560,35 @@ class ProgressiveCurriculumEngine:
             locked_rows=locked_rows or [],
             teacher_instruction=teacher_instruction,
         )
+        if not ai_service:
+            raise ProgressiveContentGenerationError("Servicio de IA no disponible para generar la unidad")
+
         generated_weeks: list[dict[str, Any]] = []
-        if ai_service:
+        provider_errors: list[str] = []
+        for provider in _provider_sequence(force_provider):
             try:
                 payload = await ai_service.generate_json(
                     "progressive_unit_generate",
                     prompt,
-                    force_provider=force_provider,
+                    force_provider=provider,
                 )
-                generated_weeks = _coerce_weeks(payload)
-            except Exception:
-                generated_weeks = []
+                candidate_weeks = _coerce_weeks(payload)
+                if self._generated_weeks_are_usable(
+                    generated_weeks=candidate_weeks,
+                    unit_number=unit_number,
+                    total_units=total_units,
+                    locked_weeks=locked_weeks,
+                    locked_rows=locked_rows or [],
+                ):
+                    generated_weeks = candidate_weeks
+                    break
+                provider_errors.append(f"{provider or 'default'}: JSON incompleto o sin actividades didacticas suficientes")
+            except Exception as exc:
+                provider_errors.append(f"{provider or 'default'}: {exc}")
 
         if not generated_weeks:
-            generated_weeks = self._fallback_unit_weeks(
-                unit_number=unit_number,
-                total_units=total_units,
-                curso=curso or {},
-                profile=profile,
-                performance=performance,
-                content_block=content_block or {},
-                grading_rows=grading_rows or [],
-                product_option=product_option or {},
-                extracted_context=extracted_context,
-                traceability_context=traceability_context,
+            raise ProgressiveContentGenerationError(
+                "No se pudo generar una unidad usable con IA. " + " | ".join(provider_errors[-3:])
             )
 
         weeks = self._normalize_unit_weeks(
@@ -522,25 +600,35 @@ class ProgressiveCurriculumEngine:
             locked_weeks=locked_weeks,
             locked_rows=locked_rows or [],
         )
-        if ai_service and self._needs_activity_repair(weeks, locked_weeks):
-            try:
-                repair_payload = await ai_service.generate_json(
-                    "progressive_unit_repair",
-                    self._repair_prompt(
-                        unit_number=unit_number,
-                        total_units=total_units,
-                        weeks=weeks,
-                        profile=profile,
-                        performance=performance,
-                        extracted_context=extracted_context,
-                        traceability_context=traceability_context,
-                        locked_weeks=locked_weeks,
-                    ),
-                    force_provider=force_provider,
-                )
-                repaired_weeks = _coerce_weeks(repair_payload)
-                if repaired_weeks:
-                    weeks = self._normalize_unit_weeks(
+        if self._needs_activity_repair(weeks, locked_weeks):
+            repaired = False
+            for provider in _provider_sequence(force_provider):
+                try:
+                    repair_payload = await ai_service.generate_json(
+                        "progressive_unit_repair",
+                        self._repair_prompt(
+                            unit_number=unit_number,
+                            total_units=total_units,
+                            weeks=weeks,
+                            profile=profile,
+                            performance=performance,
+                            extracted_context=extracted_context,
+                            traceability_context=traceability_context,
+                            locked_weeks=locked_weeks,
+                        ),
+                        force_provider=provider,
+                    )
+                    repaired_weeks = _coerce_weeks(repair_payload)
+                except Exception:
+                    repaired_weeks = []
+                if repaired_weeks and self._generated_weeks_are_usable(
+                    generated_weeks=repaired_weeks,
+                    unit_number=unit_number,
+                    total_units=total_units,
+                    locked_weeks=locked_weeks,
+                    locked_rows=locked_rows or [],
+                ):
+                    candidate = self._normalize_unit_weeks(
                         generated_weeks=repaired_weeks,
                         unit_number=unit_number,
                         total_units=total_units,
@@ -549,8 +637,14 @@ class ProgressiveCurriculumEngine:
                         locked_weeks=locked_weeks,
                         locked_rows=locked_rows or [],
                     )
-            except Exception:
-                pass
+                    if not self._needs_activity_repair(candidate, locked_weeks):
+                        weeks = candidate
+                        repaired = True
+                        break
+            if not repaired:
+                raise ProgressiveContentGenerationError(
+                    "La IA devolvio actividades repetitivas o roboticas; no se guardo contenido de relleno."
+                )
         return {
             "unit_number": unit_number,
             "status": "draft",
@@ -619,11 +713,55 @@ class ProgressiveCurriculumEngine:
 
     def _needs_activity_repair(self, weeks: list[dict[str, Any]], locked_weeks: list[int]) -> bool:
         locked = {int(week) for week in locked_weeks if str(week).isdigit()}
-        return any(
+        has_labels = any(
             int(row.get("week") or 0) not in locked
             and _has_robotic_activity_labels(row.get("activity"))
             for row in weeks
         )
+        repetitive_count = sum(
+            1
+            for row in weeks
+            if int(row.get("week") or 0) not in locked
+            and _has_repetitive_activity_syntax(row.get("activity"))
+        )
+        return has_labels or repetitive_count >= 3
+
+    def _generated_weeks_are_usable(
+        self,
+        *,
+        generated_weeks: list[dict[str, Any]],
+        unit_number: int,
+        total_units: int,
+        locked_weeks: list[int],
+        locked_rows: list[dict[str, Any]],
+    ) -> bool:
+        expected = set(_expected_unit_weeks(unit_number, total_units))
+        locked = {int(week) for week in locked_weeks if str(week).isdigit()}
+        locked_available = {
+            int(row.get("week") or row.get("semana") or 0)
+            for row in locked_rows
+            if str(row.get("week") or row.get("semana") or "").isdigit()
+        }
+        rows_by_week = {
+            int(row.get("week") or row.get("semana") or 0): row
+            for row in generated_weeks
+            if isinstance(row, dict) and str(row.get("week") or row.get("semana") or "").isdigit()
+        }
+        if not expected:
+            return False
+        for week in expected:
+            if week in locked and week in locked_available:
+                continue
+            row = rows_by_week.get(week)
+            if not row:
+                return False
+            if not _clean_text(row.get("knowledge") or row.get("conocimientos")):
+                return False
+            if not _clean_text(row.get("activity") or row.get("actividad")):
+                return False
+            if not _clean_text(row.get("evidence") or row.get("evidencia") or row.get("producto")):
+                return False
+        return True
 
     def _repair_prompt(
         self,
@@ -658,7 +796,9 @@ class ProgressiveCurriculumEngine:
                     "La fase metodologica debe integrarse en prosa natural.",
                     "La tecnica debe integrarse en prosa natural mediante expresiones como mediante, a partir de, con apoyo de o usando.",
                     "Cada activity debe tener maximo dos oraciones.",
-                    "Usa preferentemente el estilo: A partir de..., el estudiante...",
+                    "No repitas la misma apertura gramatical en semanas consecutivas.",
+                    "Alterna sujetos y estructuras: El docente..., Los estudiantes..., Durante..., En equipos..., Con apoyo de..., La sesion se centra en...",
+                    "Evita usar mas de dos veces en la unidad la formula exacta A partir de la fase de..., el estudiante... Lo desarrolla mediante...",
                     "No incluyas citas tipo [1] o [2].",
                     "Devuelve solo JSON con array weeks.",
                 ],
@@ -671,7 +811,7 @@ class ProgressiveCurriculumEngine:
                             "required_skills": ["texto intacto"],
                             "skill": "texto intacto",
                             "knowledge": "texto intacto",
-                            "activity": "A partir de la fase metodologica, el estudiante realiza una operacion cognitiva sobre el conocimiento movilizando la habilidad oficial. Lo desarrolla mediante una tecnica pertinente y concreta la evidencia indicada.",
+                            "activity": "Durante la fase metodologica, los estudiantes analizan el conocimiento semanal con una tecnica pertinente y elaboran una evidencia verificable sin usar etiquetas rigidas.",
                             "evidence": "texto intacto",
                             "phase": "texto intacto",
                         }
@@ -690,16 +830,72 @@ class ProgressiveCurriculumEngine:
             if not unit_weeks:
                 continue
             unit_number = int(generation.get("unit_number") or unit_weeks[0].get("unit_number") or 0)
+            export_weeks: list[dict[str, Any]] = []
+            for week in unit_weeks:
+                week_number = int(week.get("week") or week.get("semana") or 0)
+                skill_values = _as_text_list(week.get("required_skills") or week.get("habilidades_requeridas"))
+                skill = _clean_text(week.get("skill") or week.get("habilidad"))
+                if skill and skill not in skill_values:
+                    skill_values.append(skill)
+                export_week = dict(week)
+                export_week.update(
+                    {
+                        "week": week_number,
+                        "semana": week_number,
+                        "unit_number": unit_number,
+                        "desempeno": _clean_text(week.get("performance") or week.get("desempeno")),
+                        "habilidades_requeridas": skill_values,
+                        "conocimientos": _clean_text(week.get("knowledge") or week.get("conocimientos")),
+                        "tema": _clean_text(week.get("knowledge") or week.get("tema") or week.get("conocimientos")),
+                        "actividad": _clean_text(week.get("activity") or week.get("actividad")),
+                        "evidencia": _clean_text(week.get("evidence") or week.get("evidencia") or week.get("producto")),
+                        "producto": _clean_text(week.get("evidence") or week.get("producto") or week.get("evidencia")),
+                    }
+                )
+                export_weeks.append(export_week)
+            week_numbers = [week["week"] for week in export_weeks if week.get("week")]
+            unit_skills = _merge_unique(
+                [
+                    skill
+                    for week in export_weeks
+                    for skill in _as_text_list(week.get("habilidades_requeridas"))
+                ],
+                limit=12,
+            )
+            performance_text = export_weeks[0].get("desempeno") or ""
+            week_range = ""
+            if week_numbers:
+                week_range = str(min(week_numbers)) if min(week_numbers) == max(week_numbers) else f"{min(week_numbers)}-{max(week_numbers)}"
+            unit_title = _unit_title_from_weeks(
+                generation=generation,
+                unit_weeks=export_weeks,
+                unit_number=unit_number,
+                performance_text=performance_text,
+            )
             units.append(
                 {
                     "unit_number": unit_number,
-                    "weeks": [week.get("week") for week in unit_weeks],
-                    "desempeno": unit_weeks[0].get("performance") or unit_weeks[0].get("desempeno") or "",
-                    "knowledge": _merge_unique([week.get("knowledge") for week in unit_weeks], limit=16),
-                    "evidence": _clean_text(unit_weeks[-1].get("evidence")),
+                    "numero": str(unit_number),
+                    "titulo": unit_title,
+                    "weeks": week_numbers,
+                    "semanas": week_range,
+                    "desempeno": performance_text,
+                    "logro": performance_text,
+                    "ra_unidad": performance_text,
+                    "knowledge": _merge_unique([week.get("conocimientos") for week in export_weeks], limit=16),
+                    "temas": [
+                        {
+                            "semana": week.get("week"),
+                            "conocimientos": week.get("conocimientos") or week.get("tema") or "",
+                        }
+                        for week in export_weeks
+                    ],
+                    "required_skills": unit_skills,
+                    "habilidades_requeridas": unit_skills,
+                    "evidence": _clean_text(export_weeks[-1].get("evidencia")),
                 }
             )
-            weeks.extend(unit_weeks)
+            weeks.extend(export_weeks)
         weeks = sorted(weeks, key=lambda item: int(item.get("week") or 0))
         return {
             "progressive_curriculum": {
@@ -975,106 +1171,6 @@ class ProgressiveCurriculumEngine:
             "common_errors": [],
         }
 
-    def _fallback_unit_weeks(
-        self,
-        *,
-        unit_number: int,
-        total_units: int,
-        curso: dict[str, Any],
-        profile: dict[str, Any],
-        performance: dict[str, Any] | str | None,
-        content_block: dict[str, Any],
-        grading_rows: list[dict[str, Any]],
-        product_option: dict[str, Any],
-        extracted_context: dict[str, Any],
-        traceability_context: dict[str, Any],
-    ) -> list[dict[str, Any]]:
-        ranges = _unit_week_ranges(total_units)
-        start, end = ranges.get(unit_number, (1, 16))
-        week_numbers = list(range(start, end + 1))
-        official_topics = _merge_unique(
-            extracted_context.get("key_concepts"),
-            content_block.get("knowledge_items"),
-            curso.get("temas_conocimientos"),
-            curso.get("sumilla"),
-            limit=48,
-        )
-        unit_topics = _slice_for_unit(official_topics, unit_number, total_units)
-        unit_topics = _dedupe_against_traceability(unit_topics, traceability_context)
-        if not unit_topics:
-            unit_topics = [self._performance_text(performance) or _clean_text(curso.get("name"), "contenido del curso")]
-
-        skill_items = _merge_unique(
-            content_block.get("habilidades_sugeridas"),
-            content_block.get("skills"),
-            curso.get("habilidades_desempenos"),
-            self._performance_text(performance),
-            limit=24,
-        )
-        if not skill_items:
-            skill_items = ["analizar y producir evidencias academicas pertinentes"]
-
-        weeks: list[dict[str, Any]] = []
-        for index, week in enumerate(week_numbers):
-            knowledge = unit_topics[min(index, len(unit_topics) - 1)]
-            skill = skill_items[index % len(skill_items)]
-            phase = _phase_for_position(profile, index, len(week_numbers), unit_number == total_units)
-            evidence = _evidence_for(
-                profile=profile,
-                week=week,
-                unit_number=unit_number,
-                week_index=index,
-                week_count=len(week_numbers),
-                grading_rows=grading_rows,
-                product_option=product_option,
-                knowledge=knowledge,
-                is_final_unit=unit_number == total_units,
-            )
-            activity = self._compose_activity(
-                profile=profile,
-                phase=phase,
-                knowledge=knowledge,
-                skill=skill,
-                week_index=index,
-                evidence=evidence,
-            )
-            weeks.append(
-                {
-                    "week": week,
-                    "unit_number": unit_number,
-                    "performance": self._performance_text(performance),
-                    "required_skills": [skill],
-                    "skill": skill,
-                    "knowledge": knowledge,
-                    "activity": activity,
-                    "evidence": evidence,
-                    "locked": False,
-                    "phase": phase,
-                }
-            )
-        return weeks
-
-    def _compose_activity(
-        self,
-        *,
-        profile: dict[str, Any],
-        phase: str,
-        knowledge: str,
-        skill: str,
-        week_index: int,
-        evidence: str = "",
-    ) -> str:
-        operation = _operation_for_phase(profile, phase, week_index)
-        technique = _technique_for(profile, phase, week_index)
-        skill_text = _clean_text(skill, "la habilidad prevista")
-        knowledge_text = _clean_text(knowledge, "el contenido de la semana")
-        evidence_text = _clean_text(evidence, "una evidencia verificable")
-        return (
-            f"A partir de la fase de {phase}, el estudiante desarrolla una operacion de {operation} "
-            f"sobre {knowledge_text}, movilizando la habilidad de {skill_text}. Lo trabaja mediante {technique} y concreta "
-            f"{evidence_text}."
-        )
-
     def _normalize_unit_weeks(
         self,
         *,
@@ -1102,7 +1198,8 @@ class ProgressiveCurriculumEngine:
                 row["locked"] = True
                 locked_phase = _clean_text(row.get("phase") or row.get("fase"))
                 locked_skill = _clean_text(row.get("skill") or row.get("habilidad"))
-                row["validation"] = self.validate_week(row=row, phase=locked_phase, skill=locked_skill)
+                if "validation" not in row:
+                    row["validation"] = self.validate_week(row=row, phase=locked_phase, skill=locked_skill)
                 normalized.append(row)
                 continue
 
@@ -1116,16 +1213,7 @@ class ProgressiveCurriculumEngine:
             if not skill and required_skills:
                 skill = required_skills[0]
             activity = _clean_text(row.get("activity") or row.get("actividad"))
-            evidence = _clean_text(row.get("evidence") or row.get("evidencia") or row.get("producto"), "Evidencia de aprendizaje")
-            if not activity:
-                activity = self._compose_activity(
-                    profile=profile,
-                    phase=phase,
-                    knowledge=knowledge,
-                    skill=skill,
-                    week_index=index,
-                    evidence=evidence,
-                )
+            evidence = _clean_text(row.get("evidence") or row.get("evidencia") or row.get("producto"))
             clean_row = {
                 "week": week_number,
                 "unit_number": unit_number,
@@ -1263,13 +1351,15 @@ class ProgressiveCurriculumEngine:
                 "hard_rules": [
                     "Cada activity debe redactarse en prosa docente continua, maximo dos oraciones.",
                     "Prohibido usar prefijos o etiquetas como Fase:, Momento:, Proposito:, Tecnica:, Tecnicas:, Evidencia: o Actividad:.",
-                    "La fase metodologica debe integrarse naturalmente en la frase, por ejemplo: A partir de la fase de busqueda de fuentes, el estudiante...",
+                    "La fase metodologica debe integrarse naturalmente en la frase, sin convertirla en etiqueta.",
                     "La tecnica debe integrarse en prosa, por ejemplo: mediante debate academico y ficha de analisis.",
                     "No uses Inicio:, Desarrollo: ni Cierre: como etiquetas.",
                     "No repitas temas de traceability_context.covered_knowledge.",
                     "Respeta exactamente las semanas bloqueadas.",
                     "Aplica la triple coherencia sin volverla literal: fase del metodo + operacion sobre conocimiento + habilidad + tecnica + evidencia.",
-                    "Usa preferentemente el estilo: A partir de..., el estudiante...",
+                    "Varia la sintaxis semana a semana; no uses la misma apertura gramatical en semanas consecutivas.",
+                    "Alterna sujetos y estructuras: El docente..., Los estudiantes..., Durante..., En equipos..., Con apoyo de..., La sesion se centra en...",
+                    "Evita usar mas de dos veces en toda la unidad la formula exacta A partir de la fase de..., el estudiante... Lo desarrolla mediante...",
                     "No incluyas citas tipo [1] o [2].",
                     "Devuelve solo JSON.",
                 ],
@@ -1281,7 +1371,7 @@ class ProgressiveCurriculumEngine:
                             "performance": "desempeno oficial intacto",
                             "required_skills": ["habilidad requerida"],
                             "knowledge": "conocimiento semanal",
-                            "activity": "A partir de la fase metodologica, el estudiante realiza una operacion cognitiva sobre el conocimiento semanal movilizando la habilidad oficial. Lo desarrolla mediante una tecnica pertinente y concreta la evidencia indicada.",
+                            "activity": "El docente plantea una situacion propia de la fase metodologica y los estudiantes analizan el conocimiento semanal mediante una tecnica pertinente. El cierre deja una evidencia verificable vinculada a la habilidad oficial.",
                             "evidence": "evidencia verificable",
                             "phase": "fase metodologica",
                         }

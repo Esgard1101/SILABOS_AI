@@ -7,6 +7,7 @@ generacion didactica y ensamblaje final.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -14,7 +15,11 @@ from pydantic import BaseModel, Field
 
 from auth.permissions import get_current_user_record
 from models.schemas import APIResponse
-from services.progressive_curriculum_engine import get_progressive_curriculum_engine
+from services.bibliography_parser import refs_a_bibliografia_json
+from services.progressive_curriculum_engine import (
+    ProgressiveContentGenerationError,
+    get_progressive_curriculum_engine,
+)
 
 
 router = APIRouter(tags=["Motor Curricular Progresivo v1"])
@@ -119,6 +124,338 @@ def _performance_text(item: Any) -> str:
             or ""
         ).strip()
     return str(item or "").strip()
+
+
+def _clean_text(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _merge_unique_texts(*groups: Any, limit: int = 80) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        values = group if isinstance(group, list) else [group]
+        for item in values:
+            if isinstance(item, dict):
+                raw = (
+                    item.get("referencia")
+                    or item.get("reference")
+                    or item.get("ref_text")
+                    or item.get("apa_format")
+                    or item.get("text")
+                    or item.get("title")
+                )
+            else:
+                raw = item
+            text = _clean_text(raw)
+            key = " ".join(text.lower().split())
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(text)
+            if len(merged) >= limit:
+                return merged
+    return merged
+
+
+def _performance_export_rows(performances: list[Any]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for index, item in enumerate(performances or []):
+        if isinstance(item, dict):
+            statement = _clean_text(
+                item.get("statement")
+                or item.get("descripcion")
+                or item.get("description")
+                or item.get("desempeno")
+                or item.get("text"),
+                f"Desempeno {index + 1}",
+            )
+            code = _clean_text(item.get("code") or item.get("codigo"), f"D{index + 1}")
+        else:
+            statement = _clean_text(item, f"Desempeno {index + 1}")
+            code = f"D{index + 1}"
+        rows.append({"codigo": code, "descripcion": statement, "statement": statement})
+    return rows
+
+
+def _grading_criteria(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    criteria: list[dict[str, Any]] = []
+    for index, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            continue
+        criteria.append(
+            {
+                "nombre": _clean_text(
+                    row.get("evidencia")
+                    or row.get("nombre")
+                    or row.get("name"),
+                    f"Evaluacion {index + 1}",
+                ),
+                "porcentaje": row.get("porcentaje")
+                if row.get("porcentaje") is not None
+                else row.get("percentage", 0),
+                "sigla": _clean_text(row.get("sigla") or row.get("code"), f"EV{index + 1}"),
+                "cronograma": _clean_text(row.get("cronograma") or row.get("schedule"), "-"),
+                "descripcion": _clean_text(row.get("evidencia") or row.get("descripcion"), "-"),
+            }
+        )
+    return criteria
+
+
+def _methodology_text(method: dict | str | None, course_name: str = "") -> str:
+    if isinstance(method, dict):
+        name = _clean_text(method.get("name") or method.get("selected_method_name"), "metodologias activas")
+        description = _clean_text(method.get("description") or method.get("descripcion"))
+        teacher_role = _clean_text(method.get("rol_docente"))
+        student_role = _clean_text(method.get("rol_estudiante"))
+    else:
+        name = _clean_text(method, "metodologias activas")
+        description = teacher_role = student_role = ""
+    prefix = f"La asignatura de {course_name}" if course_name else "La asignatura"
+    parts = [
+        f"{prefix} se desarrolla mediante {name}, articulando el trabajo semanal con evidencias verificables y retroalimentacion docente.",
+    ]
+    if description:
+        parts.append(description)
+    if teacher_role:
+        parts.append(f"El docente orienta el proceso mediante {teacher_role.lower()}.")
+    if student_role:
+        parts.append(f"El estudiante participa mediante {student_role.lower()}.")
+    return " ".join(parts)
+
+
+def _tutorial_text(course_name: str = "") -> str:
+    course_fragment = f" del curso de {course_name}" if course_name else " del curso"
+    return (
+        f"Las actividades de tutoria academica{course_fragment} se desarrollan de manera presencial o virtual, "
+        "segun la necesidad del estudiante. Se prioriza el acompanamiento para resolver dificultades de comprension, "
+        "mejorar los avances del producto acreditable y fortalecer la sustentacion de evidencias."
+    )
+
+
+def _clean_unit_title(value: Any, unit_number: int) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    text = re.sub(r"^\s*(?:unidad|u)\s*(?:[ivxlcdm]+|\d+)\s*[:.\-–—]?\s*", "", text, flags=re.IGNORECASE)
+    text = " ".join(text.split()).strip(" .:-")
+    if not text or text.lower() in {f"unidad {unit_number}", f"u{unit_number}", f"u {unit_number}"}:
+        return ""
+    return text[:120].strip()
+
+
+def _knowledge_texts_from_unit(unit: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for item in unit.get("knowledge") or []:
+        values.append(_clean_text(item))
+    for tema in unit.get("temas") or []:
+        if isinstance(tema, dict):
+            values.append(_clean_text(tema.get("conocimientos") or tema.get("tema")))
+        else:
+            values.append(_clean_text(tema))
+    for week in unit.get("weeks") or []:
+        if isinstance(week, dict):
+            knowledge = week.get("knowledge") or week.get("conocimientos")
+            if isinstance(knowledge, list):
+                values.extend(_clean_text(item) for item in knowledge)
+            else:
+                values.append(_clean_text(knowledge))
+    return [value for value in values if value]
+
+
+def _title_from_content_unit(content_unit: dict[str, Any], fallback_unit: dict[str, Any], unit_number: int) -> str:
+    direct = _clean_unit_title(
+        content_unit.get("title")
+        or content_unit.get("titulo")
+        or content_unit.get("nombre"),
+        unit_number,
+    )
+    if direct:
+        return direct
+    candidates = _knowledge_texts_from_unit(content_unit) or _knowledge_texts_from_unit(fallback_unit)
+    for candidate in candidates:
+        title = _clean_unit_title(candidate, unit_number)
+        if title and title.lower() not in {"contenido de la semana", "tema"}:
+            return title
+    fallback_direct = _clean_unit_title(fallback_unit.get("titulo") or fallback_unit.get("title"), unit_number)
+    if fallback_direct:
+        return fallback_direct
+    performance = _clean_text(
+        content_unit.get("ra_unidad")
+        or fallback_unit.get("ra_unidad")
+        or fallback_unit.get("desempeno")
+        or fallback_unit.get("logro")
+    )
+    words = performance.split()
+    if len(words) >= 5:
+        return " ".join(words[:9]).strip(" .")
+    return ""
+
+
+def _apply_unit_titles_from_content(enriched: dict[str, Any], content: dict[str, Any]) -> None:
+    units = enriched.get("unidades_tematicas")
+    if not isinstance(units, list):
+        return
+    content_plan = content.get("content_plan") if isinstance(content, dict) else {}
+    plan_units = content_plan.get("units") if isinstance(content_plan, dict) else []
+    plan_by_number = {
+        int(unit.get("unit_number") or index + 1): unit
+        for index, unit in enumerate(plan_units or [])
+        if isinstance(unit, dict)
+    }
+    for index, unit in enumerate(units):
+        if not isinstance(unit, dict):
+            continue
+        unit_number = int(unit.get("unit_number") or unit.get("numero") or index + 1)
+        title = _title_from_content_unit(plan_by_number.get(unit_number, {}), unit, unit_number)
+        unit["titulo"] = title
+    progressive = enriched.get("progressive_curriculum")
+    if isinstance(progressive, dict) and isinstance(progressive.get("units"), list):
+        title_by_number = {
+            int(unit.get("unit_number") or unit.get("numero") or index + 1): unit.get("titulo")
+            for index, unit in enumerate(units)
+            if isinstance(unit, dict)
+        }
+        for index, unit in enumerate(progressive["units"]):
+            if isinstance(unit, dict):
+                unit_number = int(unit.get("unit_number") or unit.get("numero") or index + 1)
+                if title_by_number.get(unit_number):
+                    unit["titulo"] = title_by_number[unit_number]
+
+
+async def _enrich_assembly_with_previous_steps(
+    *,
+    supabase,
+    syllabus_id: str,
+    assembled: dict[str, Any],
+    current_user: dict,
+    user_id: str | None,
+) -> dict[str, Any]:
+    context = await _course_context(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        user_id=user_id,
+    )
+    payload = context["payload"] or {}
+    draft = context["draft"] or {}
+    curso = context["curso"] or {}
+    purpose = payload.get("purpose") or {}
+    content = payload.get("content") or {}
+    bibliography = payload.get("bibliography") or {}
+    method = context.get("method") or payload.get("method") or {}
+    grading_rows = context.get("grading_rows") or []
+    course_id = context.get("course_id") or ""
+    datos_payload = payload.get("datos_generales") or {}
+
+    selected_program_id = (
+        _clean_text(datos_payload.get("program_id"))
+        or _clean_text(payload.get("program_id"))
+        or _clean_text(draft.get("program_id"))
+        or _clean_text(curso.get("program_id"))
+    )
+    selected_program = await supabase.obtener_programa(selected_program_id) if selected_program_id else None
+
+    course_refs = await supabase.obtener_referencias_curso(str(course_id)) if course_id else []
+    bibliography_refs = _merge_unique_texts(
+        course_refs,
+        bibliography.get("references") if isinstance(bibliography, dict) else [],
+    )
+
+    teacher_name = _clean_text(
+        current_user.get("full_name")
+        or draft.get("teacher_name")
+        or datos_payload.get("docente")
+    )
+    teacher_email = _clean_text(
+        current_user.get("email")
+        or datos_payload.get("docente_email")
+    )
+    fecha_inicio = _clean_text(datos_payload.get("fecha_inicio"))
+    fecha_fin = _clean_text(datos_payload.get("fecha_fin"))
+    competencia = _clean_text(
+        curso.get("competencia_egreso")
+        or purpose.get("competencia")
+        or payload.get("competencia_profesional")
+    )
+    resultado = _clean_text(
+        curso.get("resultado_aprendizaje")
+        or payload.get("resultado_aprendizaje")
+        or curso.get("capacidad")
+        or purpose.get("capacidad")
+    )
+    capacidad = _clean_text(curso.get("capacidad") or purpose.get("capacidad") or resultado)
+    course_name = _clean_text(curso.get("name") or datos_payload.get("nombre_curso"))
+    method_name = _clean_text(
+        method.get("name") if isinstance(method, dict) else method
+    ) or _clean_text((payload.get("method") or {}).get("selected_method_name"))
+    rsu_text = _clean_text(content.get("responsabilidad_social"))
+    if not rsu_text:
+        rsu_text = (
+            "Los estudiantes desarrollan una actividad de aplicacion vinculada al curso, "
+            "orientada a responder una necesidad concreta del entorno academico o comunitario."
+        )
+
+    enriched = dict(assembled or {})
+    enriched.update(
+        {
+            "_assembled": True,
+            "_wizard_version": "v3-progressive",
+            "course_id": str(course_id),
+            "semester": draft.get("semester") or datos_payload.get("semestre") or "",
+            "teacher_name": teacher_name,
+            "datos_generales": {
+                "course_id": str(course_id),
+                "nombre_curso": course_name,
+                "creditos": curso.get("credits", ""),
+                "semestre": draft.get("semester") or datos_payload.get("semestre") or "",
+                "periodo_academico": draft.get("semester") or datos_payload.get("semestre") or "",
+                "docente": teacher_name,
+                "docente_email": teacher_email,
+                "codigo": curso.get("code", ""),
+                "program_id": selected_program_id,
+                "facultad": (selected_program or {}).get("faculty_name") or curso.get("faculty_name", ""),
+                "carrera": (selected_program or {}).get("career_name") or curso.get("career_name", ""),
+                "escuela_profesional": (selected_program or {}).get("career_name") or curso.get("career_name", ""),
+                "programa_estudios": (selected_program or {}).get("program_name") or curso.get("program_name", ""),
+                "modalidad": _clean_text(datos_payload.get("modalidad"), "Presencial"),
+                "prerrequisito": curso.get("prerequisites", ""),
+                "horas_teoria": curso.get("hours_theory", ""),
+                "horas_practica": curso.get("hours_practice", ""),
+                "fecha_inicio": fecha_inicio,
+                "fecha_fin": fecha_fin,
+            },
+            "sumilla": _clean_text(curso.get("sumilla") or payload.get("sumilla")),
+            "competencia_profesional": competencia,
+            "competencias": [competencia] if competencia else [],
+            "competencia_egreso": competencia,
+            "resultados_aprendizaje": [resultado] if resultado else [],
+            "resultado_aprendizaje": resultado,
+            "capacidad_del_curso": capacidad,
+            "desempenos": _performance_export_rows(context.get("performances") or purpose.get("performances") or []),
+            "metodologia": _clean_text(payload.get("metodologia")) or _methodology_text(method, course_name),
+            "tutoria": _clean_text(payload.get("tutoria")) or _tutorial_text(course_name),
+            "responsabilidad_social": {
+                "actividadPropuesta": rsu_text,
+                "descripcion": rsu_text,
+            },
+            "responsabilidadSocial": {
+                "actividadPropuesta": rsu_text,
+                "descripcion": rsu_text,
+            },
+            "method_id": _clean_text((payload.get("method") or {}).get("selected_method_id")),
+            "method_short_name": method_name,
+            "methodology_json": method if isinstance(method, dict) else {"name": method_name},
+            "sistema_evaluacion": {
+                "criterios": _grading_criteria(grading_rows),
+                "nota_aprobatoria": 14,
+            },
+            "bibliografia": refs_a_bibliografia_json(bibliography_refs),
+            "bibliography": bibliography_refs,
+            "bibliography_sources": _as_list(bibliography.get("sources_consulted")) if isinstance(bibliography, dict) else [],
+        }
+    )
+    _apply_unit_titles_from_content(enriched, content)
+    return enriched
 
 
 async def _course_context(
@@ -273,23 +610,34 @@ async def _generate_or_regenerate_unit(
     locked_weeks = [int(week) for week in locked_weeks if str(week).isdigit()]
     locked_rows = _locked_rows_from_generation(latest, locked_weeks)
 
-    result = await engine.generate_unit(
-        unit_number=unit_number,
-        total_units=total_units,
-        curso=context["curso"],
-        method=context["method"],
-        performance=_performance_for_unit(performances, unit_number),
-        content_block=context["content_block"],
-        grading_rows=context["grading_rows"],
-        product_option=context["product_option"],
-        extracted_context=extracted_context,
-        traceability_context=traceability_context,
-        locked_weeks=locked_weeks,
-        locked_rows=locked_rows,
-        teacher_instruction=body.teacher_instruction or "",
-        ai_service=ai_service,
-        force_provider=force_provider,
-    )
+    try:
+        result = await engine.generate_unit(
+            unit_number=unit_number,
+            total_units=total_units,
+            curso=context["curso"],
+            method=context["method"],
+            performance=_performance_for_unit(performances, unit_number),
+            content_block=context["content_block"],
+            grading_rows=context["grading_rows"],
+            product_option=context["product_option"],
+            extracted_context=extracted_context,
+            traceability_context=traceability_context,
+            locked_weeks=locked_weeks,
+            locked_rows=locked_rows,
+            teacher_instruction=body.teacher_instruction or "",
+            ai_service=ai_service,
+            force_provider=force_provider,
+        )
+    except ProgressiveContentGenerationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "PROGRESSIVE_UNIT_AI_FAILED",
+                "message": str(exc),
+                "retryable": True,
+                "unit_number": unit_number,
+            },
+        ) from exc
 
     generation = await supabase.guardar_unit_generation(
         syllabus_id=syllabus_id,
@@ -591,6 +939,13 @@ async def ensamblar_progressive_curriculum(
         raise HTTPException(400, "No hay unidades aprobadas para ensamblar")
     engine = get_progressive_curriculum_engine()
     assembled = engine.assemble_units(approved_generations)
+    assembled = await _enrich_assembly_with_previous_steps(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        assembled=assembled,
+        current_user=current_user,
+        user_id=user_id,
+    )
     saved = await supabase.guardar_progressive_assembly(
         syllabus_id,
         assembled,

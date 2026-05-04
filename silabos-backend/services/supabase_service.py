@@ -5027,7 +5027,62 @@ class SupabaseService:
                 payload = {}
             payload.setdefault("progressive_curriculum", {})
             payload["progressive_curriculum"].update(final_payload.get("progressive_curriculum") or {})
-            payload["final_syllabus"] = final_payload
+            if final_payload.get("cronograma_semanal"):
+                payload["cronograma_semanal"] = final_payload.get("cronograma_semanal")
+            if final_payload.get("unidades_tematicas"):
+                payload["unidades_tematicas"] = final_payload.get("unidades_tematicas")
+
+            sistema_evaluacion = payload.get("sistema_evaluacion")
+            if not isinstance(sistema_evaluacion, dict):
+                sistema_evaluacion = {}
+            if not sistema_evaluacion.get("criterios"):
+                grading_block = payload.get("grading") if isinstance(payload.get("grading"), dict) else {}
+                grading_rows = grading_block.get("rows") if isinstance(grading_block, dict) else []
+                criterios = []
+                for index, grading_row in enumerate(grading_rows or []):
+                    if not isinstance(grading_row, dict):
+                        continue
+                    criterios.append(
+                        {
+                            "nombre": grading_row.get("evidencia")
+                            or grading_row.get("nombre")
+                            or grading_row.get("name")
+                            or f"Evaluacion {index + 1}",
+                            "sigla": grading_row.get("sigla")
+                            or grading_row.get("code")
+                            or f"EV{index + 1}",
+                            "porcentaje": grading_row.get("porcentaje")
+                            if grading_row.get("porcentaje") is not None
+                            else grading_row.get("percentage", 0),
+                            "cronograma": grading_row.get("cronograma")
+                            or grading_row.get("schedule")
+                            or "-",
+                        }
+                    )
+                if criterios:
+                    sistema_evaluacion = dict(sistema_evaluacion)
+                    sistema_evaluacion["criterios"] = criterios
+                    payload["sistema_evaluacion"] = sistema_evaluacion
+
+            enriched_final_payload = dict(final_payload or {})
+            for key in (
+                "datos_generales",
+                "sumilla",
+                "competencia_profesional",
+                "capacidad_del_curso",
+                "resultado_aprendizaje",
+                "resultados_aprendizaje",
+                "bibliografia",
+                "metodologia",
+                "tutoria",
+                "responsabilidad_social",
+                "sistema_evaluacion",
+                "evaluacion_matriz",
+                "grading",
+            ):
+                if payload.get(key) and not enriched_final_payload.get(key):
+                    enriched_final_payload[key] = payload.get(key)
+            payload["final_syllabus"] = enriched_final_payload
             payload["_meta"] = payload.get("_meta") or {}
             payload["_meta"]["progressive_curriculum_assembled_at"] = datetime.now(timezone.utc).isoformat()
             sesion.execute(
@@ -5046,7 +5101,7 @@ class SupabaseService:
             return {
                 "syllabus_id": syllabus_id,
                 "saved": True,
-                "final_syllabus": final_payload,
+                "final_syllabus": enriched_final_payload,
             }
 
     async def guardar_progressive_assembly(

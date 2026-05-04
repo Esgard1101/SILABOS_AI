@@ -1,11 +1,12 @@
-# Servicio principal de IA con enrutamiento por criticidad.
-# Mantiene Gemini para generacion critica y embeddings.
-# Mueve tareas no criticas a OpenRouter para controlar costos.
+# Servicio principal de IA con enrutamiento por familias de agentes.
+# Unidad con payload NotebookLM: Google -> OpenAI -> cascada OpenRouter.
+# Producto, tareas ligeras y auditoria: Google -> cascada OpenRouter.
 
 import json
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,7 +28,11 @@ DEFAULT_OPENAI_FINAL_MODEL = "gpt-5.4-mini"
 DEFAULT_OPENROUTER_AUDIT_MODEL = "google/gemma-4-26b-a4b-it:free"
 OPENROUTER_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 OPENAI_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
-FINAL_SYLLABUS_TASKS = {"syllabus_generate", "syllabus_generate_v2"}
+OPENAI_UNIT_TASKS = {
+    "progressive_unit_generate",
+    "progressive_unit_repair",
+}
+OPENAI_FALLBACK_TASKS = OPENAI_UNIT_TASKS
 
 _gemini_client: genai.Client | None = None
 _router_service: "GeminiService | None" = None
@@ -70,115 +75,139 @@ class AIProviderError(RuntimeError):
 
 TASK_CONFIGS: dict[str, TaskConfig] = {
     "syllabus_generate": TaskConfig(
-        provider="gemini",
+        provider="gemini_product",
         temperature=0.4,
         max_output_tokens=8192,
         json_mode=True,
     ),
     "syllabus_generate_v2": TaskConfig(
-        provider="gemini",
+        provider="gemini_product",
         temperature=0.4,
         max_output_tokens=8192,
         json_mode=True,
     ),
     "syllabus_validate": TaskConfig(
-        provider="openrouter_audit",
+        provider="gemini_audit",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=True,
         reasoning=True,
     ),
     "document_chat": TaskConfig(
-        provider="openrouter_audit",
+        provider="gemini_audit",
         temperature=0.3,
         max_output_tokens=2048,
     ),
     "search_query_build": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.2,
         max_output_tokens=512,
         json_mode=False,
     ),
     "search_result_filter": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "bibliography_format": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "method_suggest": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.1,
         max_output_tokens=512,
         json_mode=False,
     ),
+    "suggest_performances": TaskConfig(
+        provider="gemini_light",
+        temperature=0.2,
+        max_output_tokens=2048,
+        json_mode=True,
+    ),
+    "suggest_content": TaskConfig(
+        provider="gemini_light",
+        temperature=0.2,
+        max_output_tokens=4096,
+        json_mode=True,
+    ),
+    "suggest_grading": TaskConfig(
+        provider="gemini_light",
+        temperature=0.2,
+        max_output_tokens=2048,
+        json_mode=True,
+    ),
     "progressive_purpose_suggest": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "progressive_content_suggest": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.2,
         max_output_tokens=4096,
         json_mode=False,
     ),
     "content_engine_generate": TaskConfig(
-        provider="gemini",
+        provider="gemini_unit",
         temperature=0.25,
         max_output_tokens=8192,
         json_mode=True,
     ),
     "progressive_rsu_suggest": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.25,
         max_output_tokens=1024,
         json_mode=False,
     ),
     "progressive_grading_suggest": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_light",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "progressive_product_suggest": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_product",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "progressive_unit_context_extract": TaskConfig(
-        provider="openrouter_light",
+        provider="gemini_unit",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "progressive_unit_generate": TaskConfig(
-        provider="gemini",
+        provider="gemini_unit",
         temperature=0.25,
         max_output_tokens=4096,
         json_mode=True,
     ),
+    "progressive_unit_repair": TaskConfig(
+        provider="gemini_unit",
+        temperature=0.2,
+        max_output_tokens=4096,
+        json_mode=True,
+    ),
     "suggest_instruments": TaskConfig(
-        provider="gemini",
+        provider="gemini_unit",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=True,
     ),
     "progressive_methodology_text": TaskConfig(
-        provider="gemini",
+        provider="gemini_light",
         temperature=0.25,
         max_output_tokens=2048,
         json_mode=True,
     ),
     "progressive_tutoria_text": TaskConfig(
-        provider="gemini",
+        provider="gemini_light",
         temperature=0.25,
         max_output_tokens=1536,
         json_mode=True,
@@ -204,6 +233,44 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_model_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _unique_models(*groups: Any) -> list[str]:
+    models: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        items = group if isinstance(group, list) else [group]
+        for item in items:
+            model = str(item or "").strip()
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            models.append(model)
+    return models
+
+
+def _provider_prefixed_models(value: str | None, provider: str) -> list[str]:
+    prefix = f"{provider}:"
+    models: list[str] = []
+    for model in _parse_model_list(value):
+        if model.lower().startswith(prefix):
+            models.append(model)
+        else:
+            models.append(f"{prefix}{model}")
+    return models
+
+
+def _split_cascade_model(model_ref: str) -> tuple[str, str]:
+    value = str(model_ref or "").strip()
+    if value.lower().startswith("nvidia:"):
+        return "nvidia", value.split(":", 1)[1].strip()
+    return "openrouter", value
 
 
 def _normalize_text_from_message(content: Any) -> str:
@@ -706,7 +773,15 @@ class GeminiService:
 
     def __init__(self):
         self.client = _get_client()
-        self.gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        self.gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+        self.gemini_light_model = os.getenv("GEMINI_LIGHT_MODEL", "").strip() or self.gemini_model
+        self.gemini_unit_model = os.getenv("GEMINI_UNIT_MODEL", "").strip() or self.gemini_model
+        self.gemini_product_model = (
+            os.getenv("GEMINI_PRODUCT_MODEL", "").strip()
+            or os.getenv("GEMINI_NOTEBOOK_MODEL", "").strip()
+            or self.gemini_model
+        )
+        self.gemini_audit_model = os.getenv("GEMINI_AUDIT_MODEL", "").strip() or self.gemini_light_model
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.openai_base_url = os.getenv(
             "OPENAI_BASE_URL",
@@ -716,6 +791,15 @@ class GeminiService:
             "OPENAI_FINAL_MODEL",
             DEFAULT_OPENAI_FINAL_MODEL,
         ).strip() or DEFAULT_OPENAI_FINAL_MODEL
+        self.openai_unit_model = (
+            os.getenv("OPENAI_UNIT_MODEL", "").strip()
+            or self.openai_final_model
+        )
+        self.nvidia_api_key = os.getenv("NVIDIA_API_KEY", "").strip()
+        self.nvidia_base_url = os.getenv(
+            "NVIDIA_BASE_URL",
+            "https://integrate.api.nvidia.com/v1",
+        ).rstrip("/")
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         self.openrouter_base_url = os.getenv(
             "OPENROUTER_BASE_URL",
@@ -731,28 +815,121 @@ class GeminiService:
             os.getenv("OPENROUTER_LIGHT_MODEL", "").strip()
             or self.openrouter_audit_model
         )
-        self.openrouter_fallback_model = os.getenv(
-            "OPENROUTER_FALLBACK_MODEL",
-            "",
-        ).strip()
+        self.openrouter_unit_model = os.getenv("OPENROUTER_UNIT_MODEL", "").strip()
+        self.openrouter_product_model = (
+            os.getenv("OPENROUTER_PRODUCT_MODEL", "").strip()
+            or os.getenv("OPENROUTER_NOTEBOOK_MODEL", "").strip()
+        )
+        self.openrouter_global_fallback_models = _parse_model_list(
+            os.getenv("OPENROUTER_FALLBACK_MODELS")
+            or os.getenv("OPENROUTER_FALLBACK_MODEL")
+        )
+        self.openrouter_product_models = _unique_models(
+            self.openrouter_product_model,
+            _parse_model_list(os.getenv("OPENROUTER_PRODUCT_MODELS")),
+            _provider_prefixed_models(os.getenv("NVIDIA_PRODUCT_MODELS"), "nvidia"),
+            self.openrouter_global_fallback_models,
+        )
+        if not self.openrouter_product_models:
+            self.openrouter_product_models = [self.openrouter_light_model]
+        self.openrouter_unit_models = _unique_models(
+            self.openrouter_unit_model,
+            _parse_model_list(os.getenv("OPENROUTER_UNIT_MODELS")),
+            _provider_prefixed_models(os.getenv("NVIDIA_UNIT_MODELS"), "nvidia"),
+            self.openrouter_global_fallback_models,
+        )
+        if not self.openrouter_unit_models:
+            self.openrouter_unit_models = [self.openrouter_light_model]
+        self.openrouter_light_models = _unique_models(
+            self.openrouter_light_model,
+            _parse_model_list(os.getenv("OPENROUTER_LIGHT_MODELS")),
+            _provider_prefixed_models(os.getenv("NVIDIA_LIGHT_MODELS"), "nvidia"),
+            self.openrouter_global_fallback_models,
+        )
+        self.openrouter_audit_models = _unique_models(
+            self.openrouter_audit_model,
+            _parse_model_list(os.getenv("OPENROUTER_AUDIT_MODELS")),
+            _provider_prefixed_models(os.getenv("NVIDIA_AUDIT_MODELS"), "nvidia"),
+            self.openrouter_global_fallback_models,
+        )
+        self.ai_usage_log_path = os.getenv("AI_USAGE_LOG_PATH", "").strip()
         self.openrouter_audit_reasoning = _as_bool(
             os.getenv("OPENROUTER_AUDIT_REASONING"),
             default=False,
         )
         self.openrouter_no_native_json_models: set[str] = set()
         logger.info(
-            "GeminiService inicializado | gemini=%s | openai_final=%s | openrouter_audit=%s | openrouter_light=%s",
+            (
+                "GeminiService inicializado | gemini_default=%s | gemini_product=%s | "
+                "gemini_unit=%s | gemini_light=%s | gemini_audit=%s | openai_unit=%s | "
+                "openrouter_product=%s | openrouter_unit=%s | openrouter_light=%s | "
+                "openrouter_audit=%s"
+            ),
             self.gemini_model,
-            self.openai_final_model,
-            self.openrouter_audit_model,
-            self.openrouter_light_model,
+            self.gemini_product_model,
+            self.gemini_unit_model,
+            self.gemini_light_model,
+            self.gemini_audit_model,
+            self.openai_unit_model,
+            self.openrouter_product_models,
+            self.openrouter_unit_models,
+            self.openrouter_light_models,
+            self.openrouter_audit_models,
         )
 
+    def _provider_route(self, provider: str) -> str:
+        normalized = (provider or "").strip().lower()
+        if normalized.endswith("_product"):
+            return "product"
+        if normalized.endswith("_notebook"):
+            return "product"
+        if normalized.endswith("_unit"):
+            return "unit"
+        if normalized.endswith("_light"):
+            return "light"
+        if normalized.endswith("_audit"):
+            return "audit"
+        return "default"
+
+    def _resolve_gemini_model(self, provider: str) -> str:
+        route = self._provider_route(provider)
+        if route == "product":
+            return self.gemini_product_model
+        if route == "unit":
+            return self.gemini_unit_model
+        if route == "light":
+            return self.gemini_light_model
+        if route == "audit":
+            return self.gemini_audit_model
+        return self.gemini_model
+
+    def _resolve_openai_model(self, task_name: str, provider: str) -> str:
+        if task_name in OPENAI_UNIT_TASKS or self._provider_route(provider) == "unit":
+            return self.openai_unit_model
+        return self.openai_final_model
+
+    def _openrouter_provider_for(self, provider: str) -> str:
+        route = self._provider_route(provider)
+        if route == "product":
+            return "openrouter_product"
+        if route == "unit":
+            return "openrouter_unit"
+        if route == "light":
+            return "openrouter_light"
+        return "openrouter_audit"
+
     def _resolve_openrouter_model(self, route_type: str) -> str:
+        return self._resolve_openrouter_models(route_type)[0]
+
+    def _resolve_openrouter_models(self, route_type: str) -> list[str]:
+        if route_type in {"openrouter_product", "openrouter_notebook"}:
+            return self.openrouter_product_models or [self.openrouter_product_model]
+        if route_type == "openrouter_unit":
+            return self.openrouter_unit_models or [self.openrouter_unit_model]
         if route_type == "openrouter_audit":
-            return self.openrouter_audit_model
+            return self.openrouter_audit_models or [self.openrouter_audit_model]
         if route_type == "openrouter_light":
-            return self.openrouter_light_model or self.openrouter_audit_model
+            return self.openrouter_light_models or [self.openrouter_light_model]
         raise ValueError(f"Tipo de ruta OpenRouter no soportado: {route_type}")
 
     def _log_result(self, task_name: str, result: AIResult) -> None:
@@ -764,14 +941,39 @@ class GeminiService:
             result.fallback_used,
             _usage_to_loggable(result.usage),
         )
+        self._write_usage_snapshot(task_name, result)
 
-    def _gemini_error(self, exc: Exception) -> AIProviderError:
+    def _write_usage_snapshot(self, task_name: str, result: AIResult) -> None:
+        if not self.ai_usage_log_path:
+            return
+        path = self.ai_usage_log_path
+        if not os.path.isabs(path):
+            backend_dir = os.path.dirname(os.path.dirname(__file__))
+            path = os.path.join(backend_dir, path)
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "task": task_name,
+            "successful_provider": result.provider,
+            "successful_model": result.model,
+            "fallback_used": result.fallback_used,
+            "usage": _usage_to_loggable(result.usage),
+        }
+        try:
+            directory = os.path.dirname(path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as file:
+                file.write(json.dumps(event, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            logger.warning("No se pudo escribir AI_USAGE_LOG_PATH=%s | error=%s", path, exc)
+
+    def _gemini_error(self, exc: Exception, *, model: str | None = None) -> AIProviderError:
         message = str(exc)
         return AIProviderError(
             f"Gemini falló: {message}",
             retryable=_error_is_retryable(message),
             provider="gemini",
-            model=self.gemini_model,
+            model=model or self.gemini_model,
         )
 
     async def _call_gemini(
@@ -780,9 +982,10 @@ class GeminiService:
         prompt: str,
         config: TaskConfig,
     ) -> AIResult:
+        model = self._resolve_gemini_model(config.provider)
         try:
             response = self.client.models.generate_content(
-                model=self.gemini_model,
+                model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=config.temperature,
@@ -792,13 +995,13 @@ class GeminiService:
             result = AIResult(
                 text=response.text or "",
                 provider="gemini",
-                model=self.gemini_model,
+                model=model,
                 usage=getattr(response, "usage_metadata", None),
             )
             self._log_result(task_name, result)
             return result
         except Exception as exc:
-            raise self._gemini_error(exc) from exc
+            raise self._gemini_error(exc, model=model) from exc
 
     async def _call_openai_final(
         self,
@@ -808,15 +1011,16 @@ class GeminiService:
         *,
         fallback_used: bool,
     ) -> AIResult:
+        model = self._resolve_openai_model(task_name, config.provider)
         if not self.openai_api_key:
             raise AIProviderError(
                 "OPENAI_API_KEY no configurada",
                 provider="openai",
-                model=self.openai_final_model,
+                model=model,
             )
 
         payload: dict[str, Any] = {
-            "model": self.openai_final_model,
+            "model": model,
             "input": prompt,
             "max_output_tokens": config.max_output_tokens,
             "store": False,
@@ -842,7 +1046,7 @@ class GeminiService:
                 "OpenAI timeout",
                 retryable=True,
                 provider="openai",
-                model=self.openai_final_model,
+                model=model,
             ) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500]
@@ -851,14 +1055,14 @@ class GeminiService:
                 retryable=exc.response.status_code in OPENAI_RETRYABLE_STATUS_CODES,
                 status_code=exc.response.status_code,
                 provider="openai",
-                model=self.openai_final_model,
+                model=model,
             ) from exc
         except httpx.RequestError as exc:
             raise AIProviderError(
                 f"OpenAI request error: {exc}",
                 retryable=True,
                 provider="openai",
-                model=self.openai_final_model,
+                model=model,
             ) from exc
 
         data = response.json()
@@ -869,13 +1073,13 @@ class GeminiService:
                 f"OpenAI respuesta incompleta para {task_name}: {incomplete_details or status}",
                 retryable=True,
                 provider="openai",
-                model=self.openai_final_model,
+                model=model,
             )
 
         result = AIResult(
             text=_extract_openai_output_text(data),
             provider="openai",
-            model=data.get("model") or self.openai_final_model,
+            model=data.get("model") or model,
             usage=data.get("usage"),
             fallback_used=fallback_used,
         )
@@ -994,6 +1198,89 @@ class GeminiService:
         self._log_result(task_name, result)
         return result
 
+    async def _post_nvidia(
+        self,
+        *,
+        task_name: str,
+        prompt: str,
+        model: str,
+        config: TaskConfig,
+        fallback_used: bool,
+    ) -> AIResult:
+        if not self.nvidia_api_key:
+            raise AIProviderError(
+                "NVIDIA_API_KEY no configurada",
+                retryable=True,
+                provider="nvidia",
+                model=model,
+            )
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": config.temperature,
+            "max_tokens": config.max_output_tokens,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.nvidia_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    f"{self.nvidia_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise AIProviderError(
+                "NVIDIA timeout",
+                retryable=True,
+                provider="nvidia",
+                model=model,
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500]
+            raise AIProviderError(
+                f"NVIDIA HTTP {exc.response.status_code}: {body}",
+                retryable=exc.response.status_code in OPENAI_RETRYABLE_STATUS_CODES,
+                status_code=exc.response.status_code,
+                provider="nvidia",
+                model=model,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise AIProviderError(
+                f"NVIDIA request error: {exc}",
+                retryable=True,
+                provider="nvidia",
+                model=model,
+            ) from exc
+
+        data = response.json()
+        choice = (data.get("choices") or [{}])[0]
+        finish_reason = str(choice.get("finish_reason") or "").lower()
+        if finish_reason in {"length", "max_tokens", "content_filter"}:
+            raise AIProviderError(
+                f"NVIDIA respuesta incompleta para {task_name}: finish_reason={finish_reason}",
+                retryable=True,
+                provider="nvidia",
+                model=data.get("model") or model,
+            )
+
+        message = choice.get("message") or {}
+        result = AIResult(
+            text=_normalize_text_from_message(message.get("content")),
+            provider="nvidia",
+            model=data.get("model") or model,
+            usage=data.get("usage"),
+            fallback_used=fallback_used,
+        )
+        self._log_result(task_name, result)
+        return result
+
     async def _call_openrouter(
         self,
         task_name: str,
@@ -1002,43 +1289,56 @@ class GeminiService:
         *,
         fallback_used: bool = False,
     ) -> AIResult:
-        provider = config.provider if config.provider.startswith("openrouter") else "openrouter_audit"
-        primary_model = self._resolve_openrouter_model(provider)
+        provider = (
+            config.provider
+            if config.provider.startswith("openrouter")
+            else self._openrouter_provider_for(config.provider)
+        )
+        models = self._resolve_openrouter_models(provider)
         reasoning_enabled = config.reasoning and self.openrouter_audit_reasoning
+        last_error: AIProviderError | None = None
 
-        try:
-            return await self._post_openrouter(
-                task_name=task_name,
-                prompt=prompt,
-                model=primary_model,
-                config=config,
-                reasoning_enabled=reasoning_enabled,
-                fallback_used=fallback_used,
-            )
-        except AIProviderError as exc:
-            fallback_model = self.openrouter_fallback_model
-            can_retry = (
-                exc.retryable
-                and fallback_model
-                and fallback_model != primary_model
-            )
-            if not can_retry:
-                raise
+        for index, model_ref in enumerate(models):
+            provider_name, model = _split_cascade_model(model_ref)
+            if not model:
+                continue
+            try:
+                if provider_name == "nvidia":
+                    return await self._post_nvidia(
+                        task_name=task_name,
+                        prompt=prompt,
+                        model=model,
+                        config=config,
+                        fallback_used=fallback_used or index > 0,
+                    )
+                return await self._post_openrouter(
+                    task_name=task_name,
+                    prompt=prompt,
+                    model=model,
+                    config=config,
+                    reasoning_enabled=reasoning_enabled if index == 0 else False,
+                    fallback_used=fallback_used or index > 0,
+                )
+            except AIProviderError as exc:
+                last_error = exc
+                logger.warning(
+                    "Cascada IA %s %s:%s fallo para %s | error=%s",
+                    "primario" if index == 0 else "fallback",
+                    provider_name,
+                    model,
+                    task_name,
+                    exc,
+                )
+                if not exc.retryable:
+                    break
 
-            logger.warning(
-                "OpenRouter primario falló para %s; usando fallback %s | error=%s",
-                task_name,
-                fallback_model,
-                exc,
-            )
-            return await self._post_openrouter(
-                task_name=task_name,
-                prompt=prompt,
-                model=fallback_model,
-                config=config,
-                reasoning_enabled=False,
-                fallback_used=True,
-            )
+        logger.error("Se agoto la cascada IA para %s | modelos=%s", task_name, models)
+        if last_error:
+            raise last_error
+        raise AIProviderError(
+            f"No hay modelos OpenRouter configurados para {task_name}",
+            provider="openrouter",
+        )
 
     async def _run_task(
         self,
@@ -1052,8 +1352,10 @@ class GeminiService:
             raise ValueError(f"Proveedor forzado no soportado: {force_provider}")
 
         if forced == "openai":
-            if task_name not in FINAL_SYLLABUS_TASKS:
-                raise ValueError(f"OpenAI solo está habilitado para tareas finales: {task_name}")
+            if task_name not in OPENAI_FALLBACK_TASKS:
+                raise ValueError(
+                    f"OpenAI solo esta habilitado para generacion o reparacion de unidades: {task_name}"
+                )
             return await self._call_openai_final(
                 task_name,
                 prompt,
@@ -1064,13 +1366,11 @@ class GeminiService:
         if forced == "openrouter":
             return await self._call_openrouter(task_name, prompt, config, fallback_used=True)
 
-        if config.provider == "gemini":
+        if config.provider.startswith("gemini"):
             try:
                 return await self._call_gemini(task_name, prompt, config)
             except AIProviderError as exc:
-                if not exc.retryable:
-                    raise
-                if task_name in FINAL_SYLLABUS_TASKS:
+                if task_name in OPENAI_FALLBACK_TASKS:
                     try:
                         logger.warning(
                             "Gemini no disponible para %s; reintentando con OpenAI | error=%s",
@@ -1120,12 +1420,13 @@ class GeminiService:
 
         On JSONDecodeError, retries up to ``max_retries`` total attempts with:
           - stiffened prompt suffix (CRITICAL JSON-only directive)
-          - alternating provider (gemini <-> openrouter) starting attempt 2
+          - Unit generation/repair: Google -> OpenAI -> OpenRouter cascade
+          - Product/light/audit tasks: Google -> OpenRouter cascade, without OpenAI
 
         Raises ``json.JSONDecodeError`` if all attempts fail.
         """
         config = _task_config(task_name)
-        default_provider = "gemini" if config.provider == "gemini" else "openrouter"
+        default_provider = "gemini" if config.provider.startswith("gemini") else "openrouter"
         last_error: json.JSONDecodeError | None = None
         last_raw: str = ""
 
@@ -1133,7 +1434,7 @@ class GeminiService:
             if attempt == 0:
                 provider_for_attempt = force_provider
                 attempt_prompt = prompt
-            elif task_name in FINAL_SYLLABUS_TASKS and not force_provider:
+            elif task_name in OPENAI_FALLBACK_TASKS and not force_provider:
                 provider_for_attempt = "openai" if attempt == 1 else "openrouter"
                 attempt_prompt = prompt + _STIFFENED_JSON_SUFFIX
             else:

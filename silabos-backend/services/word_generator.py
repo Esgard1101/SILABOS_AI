@@ -6,7 +6,7 @@ import re
 from html import escape
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -157,12 +157,292 @@ def _clean_program_label(value: Any) -> str:
     return text
 
 
+def _non_empty(value: Any) -> bool:
+    return value is not None and value != "" and value != [] and value != {}
+
+
+def _overlay_non_empty(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base or {})
+    for key, value in (overlay or {}).items():
+        if _non_empty(value):
+            merged[key] = value
+    return merged
+
+
+def _as_week_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    text = _val(value)
+    if not text:
+        return None
+    match = re.search(r"\d+", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_text_items(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items: list[str] = []
+        for item in value:
+            items.extend(_as_text_items(item))
+        return items
+    if isinstance(value, dict):
+        if isinstance(value.get("items"), list):
+            return _as_text_items(value.get("items"))
+        text = _val(
+            value.get("name")
+            or value.get("nombre")
+            or value.get("title")
+            or value.get("titulo")
+            or value.get("descripcion")
+            or value.get("statement")
+            or value.get("text")
+        )
+        return [text] if text else []
+    if isinstance(value, str):
+        return [part.strip(" -\t") for part in re.split(r"[\n;]+", value) if part.strip(" -\t")]
+    text = _val(value)
+    return [text] if text else []
+
+
+def _merge_text_items(values: list[Any], limit: int = 16) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in _as_text_items(value):
+            key = re.sub(r"\s+", " ", item.lower()).strip()
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(item)
+            if len(merged) >= limit:
+                return merged
+    return merged
+
+
+def _week_range_text(values: Any) -> str:
+    if isinstance(values, str):
+        parts = re.findall(r"\d+", values)
+        numbers = [int(part) for part in parts]
+    elif isinstance(values, list):
+        numbers = [
+            week
+            for week in (_as_week_int(value) for value in values)
+            if week is not None
+        ]
+    else:
+        week = _as_week_int(values)
+        numbers = [week] if week is not None else []
+    if not numbers:
+        return ""
+    start, end = min(numbers), max(numbers)
+    return str(start) if start == end else f"{start}-{end}"
+
+
+def _clean_export_unit_title(value: Any, unit_number: int) -> str:
+    title = _val(value)
+    title = re.sub(r"^\s*(?:unidad|u)\s*(?:[ivxlcdm]+|\d+)\s*[:.\-–—]?\s*", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"\s+", " ", title).strip(" .:-")
+    if not title or title.lower() in {f"unidad {unit_number}", f"u {unit_number}", f"u{unit_number}"}:
+        return ""
+    return title
+
+
+def _normalize_schedule_rows(rows: Any) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    if not isinstance(rows, list):
+        return normalized
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        week_number = _as_week_int(row.get("semana") or row.get("week"))
+        if week_number is None:
+            continue
+        unit_number = _as_week_int(row.get("unit_number") or row.get("unidad") or row.get("unit"))
+        skill_items = _merge_text_items(
+            [
+                row.get("habilidades_requeridas"),
+                row.get("required_skills"),
+                row.get("skill"),
+                row.get("habilidad"),
+            ],
+            limit=8,
+        )
+        normalized_row = dict(row)
+        normalized_row.update(
+            {
+                "semana": week_number,
+                "week": week_number,
+                "unit_number": unit_number,
+                "desempeno": _val(row.get("desempeno") or row.get("performance")),
+                "habilidades_requeridas": skill_items,
+                "conocimientos": row.get("conocimientos") or row.get("knowledge") or row.get("tema") or "",
+                "tema": row.get("tema") or row.get("knowledge") or row.get("conocimientos") or "",
+                "actividad": row.get("actividad") or row.get("activity") or "",
+                "evidencia": row.get("evidencia") or row.get("evidence") or row.get("producto") or "",
+                "producto": row.get("producto") or row.get("evidence") or row.get("evidencia") or "",
+            }
+        )
+        normalized.append(normalized_row)
+    return sorted(normalized, key=lambda item: int(item.get("semana") or 0))
+
+
+def _normalize_units(units: Any, schedule_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unit_rows: dict[int, list[dict[str, Any]]] = {}
+    for row in schedule_rows:
+        unit_number = _as_week_int(row.get("unit_number"))
+        if unit_number is not None:
+            unit_rows.setdefault(unit_number, []).append(row)
+
+    source_units = units if isinstance(units, list) else []
+    if not source_units and unit_rows:
+        source_units = [{"unit_number": unit_number} for unit_number in sorted(unit_rows)]
+
+    normalized: list[dict[str, Any]] = []
+    for index, unit in enumerate(source_units):
+        if not isinstance(unit, dict):
+            continue
+        unit_number = _as_week_int(unit.get("unit_number") or unit.get("numero") or unit.get("unidad")) or (index + 1)
+        rows_for_unit = unit_rows.get(unit_number, [])
+        week_values = unit.get("weeks") or unit.get("semanas")
+        if not week_values and rows_for_unit:
+            week_values = [row.get("semana") for row in rows_for_unit]
+        exact_week_values = unit.get("weeks") if isinstance(unit.get("weeks"), list) else []
+        if not exact_week_values and rows_for_unit:
+            exact_week_values = [row.get("semana") for row in rows_for_unit]
+        week_numbers = [
+            week
+            for week in (_as_week_int(value) for value in exact_week_values)
+            if week is not None
+        ]
+        semanas = _val(unit.get("semanas")) or _week_range_text(week_values)
+        performance = _val(
+            unit.get("logro")
+            or unit.get("ra_unidad")
+            or unit.get("desempeno")
+            or unit.get("performance")
+            or (rows_for_unit[0].get("desempeno") if rows_for_unit else "")
+        )
+        skills = unit.get("habilidades_requeridas") or unit.get("required_skills")
+        if not _as_text_items(skills):
+            skills = _merge_text_items([row.get("habilidades_requeridas") for row in rows_for_unit], limit=12)
+        temas = unit.get("temas")
+        if not temas and rows_for_unit:
+            temas = [
+                {
+                    "semana": row.get("semana"),
+                    "conocimientos": row.get("conocimientos") or row.get("tema") or "",
+                }
+                for row in rows_for_unit
+            ]
+        normalized_unit = dict(unit)
+        normalized_unit.update(
+            {
+                "unit_number": unit_number,
+                "numero": _val(unit.get("numero"), str(unit_number)),
+                "titulo": _clean_export_unit_title(unit.get("titulo"), unit_number),
+                "weeks": unit.get("weeks") if isinstance(unit.get("weeks"), list) else week_numbers,
+                "semanas": semanas,
+                "logro": performance,
+                "desempeno": performance,
+                "ra_unidad": _val(unit.get("ra_unidad"), performance),
+                "required_skills": skills,
+                "habilidades_requeridas": skills,
+                "temas": temas or [],
+            }
+        )
+        normalized.append(normalized_unit)
+    return normalized
+
+
+def _percentage_value(value: Any) -> Any:
+    text = _val(value)
+    if not text:
+        return 0
+    match = re.search(r"\d+(?:[.,]\d+)?", text)
+    if not match:
+        return value
+    number_text = match.group(0).replace(",", ".")
+    try:
+        number = float(number_text)
+    except ValueError:
+        return value
+    return int(number) if number.is_integer() else number
+
+
+def _criteria_from_grading_payload(grading_payload: Any) -> list[dict[str, Any]]:
+    rows: Any = []
+    if isinstance(grading_payload, dict):
+        rows = grading_payload.get("rows") or grading_payload.get("criterios") or []
+    elif isinstance(grading_payload, list):
+        rows = grading_payload
+    if not isinstance(rows, list):
+        return []
+    criteria: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        week = _as_week_int(row.get("week") or row.get("semana") or row.get("cronograma"))
+        criteria.append(
+            {
+                "nombre": _val(
+                    row.get("nombre")
+                    or row.get("name")
+                    or row.get("evidencia")
+                    or row.get("evidence"),
+                    f"Evaluacion {index + 1}",
+                ),
+                "sigla": _val(row.get("sigla") or row.get("code") or row.get("label"), f"EV{index + 1}"),
+                "porcentaje": _percentage_value(row.get("porcentaje") or row.get("percentage") or row.get("peso")),
+                "cronograma": _val(row.get("cronograma") or row.get("schedule"), f"Semana {week}" if week else "-"),
+            }
+        )
+    return criteria
+
+
+def _prepare_export_payload(silabo: dict) -> dict:
+    payload = dict(silabo or {})
+    final_syllabus = payload.get("final_syllabus")
+    if isinstance(final_syllabus, dict):
+        payload = _overlay_non_empty(payload, final_syllabus)
+
+    progressive = payload.get("progressive_curriculum")
+    if isinstance(progressive, dict):
+        prefer_progressive = isinstance(final_syllabus, dict)
+        if (prefer_progressive or not payload.get("cronograma_semanal")) and isinstance(progressive.get("content_plan"), list):
+            payload["cronograma_semanal"] = progressive.get("content_plan")
+        if (prefer_progressive or not payload.get("unidades_tematicas")) and isinstance(progressive.get("units"), list):
+            payload["unidades_tematicas"] = progressive.get("units")
+
+    schedule_rows = _normalize_schedule_rows(payload.get("cronograma_semanal") or [])
+    if schedule_rows:
+        payload["cronograma_semanal"] = schedule_rows
+    payload["unidades_tematicas"] = _normalize_units(payload.get("unidades_tematicas") or [], schedule_rows)
+
+    sistema = payload.get("sistema_evaluacion")
+    if not isinstance(sistema, dict):
+        sistema = {}
+    if not sistema.get("criterios"):
+        criteria = _criteria_from_grading_payload(payload.get("grading"))
+        if criteria:
+            sistema = dict(sistema)
+            sistema["criterios"] = criteria
+            payload["sistema_evaluacion"] = sistema
+    return payload
+
+
 def _build_context(silabo: dict) -> dict:
     """
     Construye el contexto de exportación del sílabo.
     Con rowspan en exportación: desempeño y habilidades se muestran una vez por unidad.
     Matriz programa de contenidos: 6 cols (Desempeños|Habilidades|Semana/Fecha|K|Actividades|Evidencias).
     """
+    silabo = _prepare_export_payload(silabo)
     dg = silabo.get("datos_generales") or {}
 
     def _list_to_lines(value: Any) -> str:
@@ -226,13 +506,20 @@ def _build_context(silabo: dict) -> dict:
         habilidades_raw = unidad.get("required_skills") or unidad.get("habilidades_requeridas")
         habilidades_txt = _list_to_lines(habilidades_raw) if habilidades_raw else _val(unidad.get("logro"), "-")
 
-        semanas_str = _val(unidad.get("semanas"), "")
-        partes = re.findall(r"\d+", semanas_str)
         semanas: list[int] = []
-        if len(partes) >= 2:
-            semanas = list(range(int(partes[0]), int(partes[1]) + 1))
-        elif len(partes) == 1:
-            semanas = [int(partes[0])]
+        if isinstance(unidad.get("weeks"), list):
+            semanas = [
+                week
+                for week in (_as_week_int(value) for value in unidad.get("weeks", []))
+                if week is not None
+            ]
+        semanas_str = _val(unidad.get("semanas"), "")
+        if not semanas:
+            partes = re.findall(r"\d+", semanas_str)
+            if len(partes) >= 2:
+                semanas = list(range(int(partes[0]), int(partes[1]) + 1))
+            elif len(partes) == 1:
+                semanas = [int(partes[0])]
 
         filas = []
         if semanas:
@@ -786,26 +1073,9 @@ def _generar_docx_programatico(context: dict) -> bytes:
     return buffer.getvalue()
 
 
-def generar_docx(silabo: dict, template_path: Optional[str] = None) -> bytes:
-    """Genera el DOCX del sílabo usando docxtpl con fallback estable."""
+def generar_docx(silabo: dict) -> bytes:
+    """Genera el DOCX del silabo con el constructor programatico estable."""
     context = _build_context(silabo)
-
-    if template_path and os.path.exists(template_path):
-        try:
-            from docxtpl import DocxTemplate
-
-            template = DocxTemplate(template_path)
-            template.render(context)
-
-            buffer = BytesIO()
-            template.save(buffer)
-            return buffer.getvalue()
-        except Exception as exc:
-            logger.warning(
-                "La plantilla DOCX falló y se usará el generador programático: %s",
-                exc,
-            )
-
     return _generar_docx_programatico(context)
 
 

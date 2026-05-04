@@ -6,7 +6,6 @@
 
 import json
 import logging
-import os
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -816,17 +815,8 @@ async def exportar_silabo(
             raise HTTPException(500, f"Error generando PDF: {e}")
 
     if format == "docx":
-        template_path = os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "templates",
-            "anexo_c_template.docx",
-        )
         try:
-            docx_bytes = generar_docx(
-                silabo_data,
-                template_path if os.path.exists(template_path) else None,
-            )
+            docx_bytes = generar_docx(silabo_data)
             return Response(
                 content=docx_bytes,
                 media_type=(
