@@ -429,7 +429,7 @@ export default function Step5_Metodo() {
         suggestion_reason: suggestReason,
         suggestion_reason_items: suggestReasonItems,
       });
-      navigate('/creator/cierre');
+      navigate('/creator/producto');
     } catch {
       showToast('Error al guardar método', 'error');
     } finally {

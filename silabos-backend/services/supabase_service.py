@@ -4198,6 +4198,874 @@ class SupabaseService:
         except Exception as e:
             logger.warning(f"No se pudo guardar sugerencia IA ({step_key}): {e}")
 
+    def _mapear_progressive_row(self, fila) -> Optional[dict]:
+        if not fila:
+            return None
+        data = dict(fila)
+        for campo in ("id", "syllabus_id", "generation_id", "parent_generation_id"):
+            if data.get(campo) is not None:
+                data[campo] = str(data[campo])
+        for campo in ("created_at", "updated_at"):
+            if campo in data:
+                data[campo] = self._serializar_fecha(data.get(campo))
+        for campo in (
+            "timeline_json",
+            "extracted_context_json",
+            "locked_weeks_json",
+            "traceability_context_json",
+            "output_json",
+            "validation_summary_json",
+        ):
+            if isinstance(data.get(campo), str):
+                try:
+                    data[campo] = json.loads(data[campo])
+                except Exception:
+                    pass
+        return data
+
+    def _progressive_syllabus_access_clause(
+        self,
+        user_id: Optional[str],
+        prefix: str = "s",
+    ) -> tuple[str, dict]:
+        if not user_id:
+            return "", {}
+        return f" AND ({prefix}.user_id = :uid OR {prefix}.user_id IS NULL)", {"uid": user_id}
+
+    def _guardar_curricular_product_options_sync(
+        self,
+        syllabus_id: str,
+        options: list[dict],
+        user_id: Optional[str] = None,
+    ) -> list[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            exists = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not exists:
+                return []
+
+            rows: list[dict] = []
+            for option in options[:6]:
+                fila = sesion.execute(
+                    text(
+                        """
+                        INSERT INTO curricular_product_options (
+                            id, syllabus_id, category, title, justification,
+                            timeline_json, selected, created_at
+                        )
+                        VALUES (
+                            gen_random_uuid(), :sid, :category, :title, :justification,
+                            CAST(:timeline AS JSONB), :selected, now()
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "sid": syllabus_id,
+                        "category": option.get("category") or "Libre de proponer por IA",
+                        "title": option.get("title") or "Producto integrador",
+                        "justification": option.get("justification") or "",
+                        "timeline": json.dumps(option.get("timeline_json") or {}, ensure_ascii=False),
+                        "selected": bool(option.get("selected", False)),
+                    },
+                ).mappings().first()
+                mapped = self._mapear_progressive_row(fila)
+                if mapped:
+                    rows.append(mapped)
+            sesion.commit()
+            return rows
+
+    async def guardar_curricular_product_options(
+        self,
+        syllabus_id: str,
+        options: list[dict],
+        user_id: Optional[str] = None,
+    ) -> list[dict]:
+        try:
+            return await self._ejecutar(
+                self._guardar_curricular_product_options_sync,
+                syllabus_id, options, user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar opciones de producto {syllabus_id}: {e}")
+            return []
+
+    def _seleccionar_curricular_product_option_sync(
+        self,
+        syllabus_id: str,
+        option_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            syllabus_row = sesion.execute(
+                text(f"SELECT payload_json FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).mappings().first()
+            if not syllabus_row:
+                return None
+
+            option = sesion.execute(
+                text(
+                    """
+                    SELECT * FROM curricular_product_options
+                    WHERE id = :oid AND syllabus_id = :sid
+                    """
+                ),
+                {"oid": option_id, "sid": syllabus_id},
+            ).mappings().first()
+            if not option:
+                return None
+
+            sesion.execute(
+                text("UPDATE curricular_product_options SET selected = false WHERE syllabus_id = :sid"),
+                {"sid": syllabus_id},
+            )
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE curricular_product_options
+                    SET selected = true
+                    WHERE id = :oid AND syllabus_id = :sid
+                    RETURNING *
+                    """
+                ),
+                {"oid": option_id, "sid": syllabus_id},
+            ).mappings().first()
+            selected = self._mapear_progressive_row(fila)
+
+            payload = syllabus_row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if not isinstance(payload, dict):
+                payload = {}
+            progressive = payload.setdefault("progressive_curriculum", {})
+            progressive["selected_product"] = selected
+            progressive["updated_at"] = datetime.now(timezone.utc).isoformat()
+            sesion.execute(
+                text(
+                    """
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload AS JSONB), updated_at = now()
+                    WHERE id = :sid
+                    """
+                ),
+                {"sid": syllabus_id, "payload": json.dumps(payload, ensure_ascii=False)},
+            )
+            sesion.commit()
+            return selected
+
+    async def seleccionar_curricular_product_option(
+        self,
+        syllabus_id: str,
+        option_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._seleccionar_curricular_product_option_sync,
+                syllabus_id, option_id, user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al seleccionar producto {option_id}: {e}")
+            return None
+
+    def _upsert_unit_context_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        raw_context_text: str,
+        extracted_context_json: dict,
+        notebook_prompt_version: str = "v1",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            exists = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not exists:
+                return None
+            fila = sesion.execute(
+                text(
+                    """
+                    INSERT INTO syllabus_unit_contexts (
+                        id, syllabus_id, unit_number, raw_context_text,
+                        extracted_context_json, notebook_prompt_version,
+                        created_at, updated_at
+                    )
+                    VALUES (
+                        gen_random_uuid(), :sid, :unit_number, :raw_context_text,
+                        CAST(:extracted AS JSONB), :prompt_version, now(), now()
+                    )
+                    ON CONFLICT (syllabus_id, unit_number)
+                    DO UPDATE SET
+                        raw_context_text = EXCLUDED.raw_context_text,
+                        extracted_context_json = EXCLUDED.extracted_context_json,
+                        notebook_prompt_version = EXCLUDED.notebook_prompt_version,
+                        updated_at = now()
+                    RETURNING *
+                    """
+                ),
+                {
+                    "sid": syllabus_id,
+                    "unit_number": int(unit_number),
+                    "raw_context_text": raw_context_text or "",
+                    "extracted": json.dumps(extracted_context_json or {}, ensure_ascii=False),
+                    "prompt_version": notebook_prompt_version,
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def upsert_unit_context(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        raw_context_text: str,
+        extracted_context_json: dict,
+        notebook_prompt_version: str = "v1",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._upsert_unit_context_sync,
+                syllabus_id,
+                unit_number,
+                raw_context_text,
+                extracted_context_json,
+                notebook_prompt_version,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar contexto de unidad {unit_number}: {e}")
+            return None
+
+    def _obtener_unit_context_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    f"""
+                    SELECT c.*
+                    FROM syllabus_unit_contexts c
+                    JOIN syllabi s ON s.id = c.syllabus_id
+                    WHERE c.syllabus_id = :sid
+                      AND c.unit_number = :unit_number
+                      {access_clause}
+                    """
+                ),
+                {"sid": syllabus_id, "unit_number": int(unit_number), **access_params},
+            ).mappings().first()
+        return self._mapear_progressive_row(fila)
+
+    async def obtener_unit_context(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._obtener_unit_context_sync, syllabus_id, unit_number, user_id
+            )
+        except Exception as e:
+            logger.error(f"Error al obtener contexto de unidad {unit_number}: {e}")
+            return None
+
+    def _listar_unit_generations_sync(
+        self,
+        syllabus_id: str,
+        unit_number: Optional[int] = None,
+        status: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> list[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        query = f"""
+            SELECT g.*
+            FROM syllabus_unit_generations g
+            JOIN syllabi s ON s.id = g.syllabus_id
+            WHERE g.syllabus_id = :sid
+              {access_clause}
+        """
+        params: dict = {"sid": syllabus_id, **access_params}
+        if unit_number is not None:
+            query += " AND g.unit_number = :unit_number"
+            params["unit_number"] = int(unit_number)
+        if status:
+            query += " AND g.status = :status"
+            params["status"] = status
+        query += " ORDER BY g.unit_number ASC, g.version DESC"
+        with self._Session() as sesion:
+            filas = sesion.execute(text(query), params).mappings().all()
+        return [self._mapear_progressive_row(fila) for fila in filas if fila]
+
+    async def listar_unit_generations(
+        self,
+        syllabus_id: str,
+        unit_number: Optional[int] = None,
+        status: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> list[dict]:
+        try:
+            return await self._ejecutar(
+                self._listar_unit_generations_sync,
+                syllabus_id,
+                unit_number,
+                status,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al listar generaciones de unidad {syllabus_id}: {e}")
+            return []
+
+    def _obtener_latest_unit_generation_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        rows = self._listar_unit_generations_sync(
+            syllabus_id,
+            unit_number=unit_number,
+            status=None,
+            user_id=user_id,
+        )
+        return rows[0] if rows else None
+
+    async def obtener_latest_unit_generation(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._obtener_latest_unit_generation_sync,
+                syllabus_id,
+                unit_number,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al obtener ultima generacion de unidad {unit_number}: {e}")
+            return None
+
+    def _guardar_unit_generation_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        output_json: list[dict] | dict,
+        validation_summary_json: dict,
+        traceability_context_json: dict,
+        locked_weeks_json: list[int] | None = None,
+        teacher_instruction: str = "",
+        parent_generation_id: Optional[str] = None,
+        status: str = "draft",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            exists = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not exists:
+                return None
+            next_version = sesion.execute(
+                text(
+                    """
+                    SELECT COALESCE(MAX(version), 0) + 1
+                    FROM syllabus_unit_generations
+                    WHERE syllabus_id = :sid AND unit_number = :unit_number
+                    """
+                ),
+                {"sid": syllabus_id, "unit_number": int(unit_number)},
+            ).scalar_one()
+            fila = sesion.execute(
+                text(
+                    """
+                    INSERT INTO syllabus_unit_generations (
+                        id, syllabus_id, unit_number, version, parent_generation_id,
+                        status, locked_weeks_json, teacher_instruction,
+                        traceability_context_json, output_json, validation_summary_json,
+                        created_at
+                    )
+                    VALUES (
+                        gen_random_uuid(), :sid, :unit_number, :version, :parent_id,
+                        :status, CAST(:locked AS JSONB), :teacher_instruction,
+                        CAST(:traceability AS JSONB), CAST(:output AS JSONB),
+                        CAST(:summary AS JSONB), now()
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "sid": syllabus_id,
+                    "unit_number": int(unit_number),
+                    "version": int(next_version),
+                    "parent_id": parent_generation_id,
+                    "status": status,
+                    "locked": json.dumps(locked_weeks_json or [], ensure_ascii=False),
+                    "teacher_instruction": teacher_instruction or "",
+                    "traceability": json.dumps(traceability_context_json or {}, ensure_ascii=False),
+                    "output": json.dumps(output_json or [], ensure_ascii=False),
+                    "summary": json.dumps(validation_summary_json or {}, ensure_ascii=False),
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def guardar_unit_generation(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        output_json: list[dict] | dict,
+        validation_summary_json: dict,
+        traceability_context_json: dict,
+        locked_weeks_json: list[int] | None = None,
+        teacher_instruction: str = "",
+        parent_generation_id: Optional[str] = None,
+        status: str = "draft",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._guardar_unit_generation_sync,
+                syllabus_id,
+                unit_number,
+                output_json,
+                validation_summary_json,
+                traceability_context_json,
+                locked_weeks_json,
+                teacher_instruction,
+                parent_generation_id,
+                status,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar generacion de unidad {unit_number}: {e}")
+            return None
+
+    def _guardar_week_validations_sync(
+        self,
+        generation_id: str,
+        syllabus_id: str,
+        unit_number: int,
+        weeks: list[dict],
+    ) -> int:
+        with self._Session() as sesion:
+            sesion.execute(
+                text("DELETE FROM syllabus_week_validations WHERE generation_id = :gid"),
+                {"gid": generation_id},
+            )
+            count = 0
+            for row in weeks:
+                validation = row.get("validation") or row
+                week = row.get("week") or validation.get("week")
+                if not str(week).isdigit():
+                    continue
+                sesion.execute(
+                    text(
+                        """
+                        INSERT INTO syllabus_week_validations (
+                            id, generation_id, syllabus_id, unit_number, week,
+                            methodological_score, cognitive_score, formative_score,
+                            technique_score, evidence_score, total_score, diagnosis,
+                            created_at
+                        )
+                        VALUES (
+                            gen_random_uuid(), :gid, :sid, :unit_number, :week,
+                            :methodological, :cognitive, :formative,
+                            :technique, :evidence, :total, :diagnosis,
+                            now()
+                        )
+                        """
+                    ),
+                    {
+                        "gid": generation_id,
+                        "sid": syllabus_id,
+                        "unit_number": int(unit_number),
+                        "week": int(week),
+                        "methodological": validation.get("methodological_score"),
+                        "cognitive": validation.get("cognitive_score"),
+                        "formative": validation.get("formative_score"),
+                        "technique": validation.get("technique_score"),
+                        "evidence": validation.get("evidence_score"),
+                        "total": validation.get("total_score"),
+                        "diagnosis": validation.get("diagnosis") or "",
+                    },
+                )
+                count += 1
+            sesion.commit()
+            return count
+
+    async def guardar_week_validations(
+        self,
+        generation_id: str,
+        syllabus_id: str,
+        unit_number: int,
+        weeks: list[dict],
+    ) -> int:
+        try:
+            return await self._ejecutar(
+                self._guardar_week_validations_sync,
+                generation_id,
+                syllabus_id,
+                unit_number,
+                weeks,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar validaciones semanales {generation_id}: {e}")
+            return 0
+
+    def _aprobar_unit_generation_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        generation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            exists = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not exists:
+                return None
+            if not generation_id:
+                target = sesion.execute(
+                    text(
+                        """
+                        SELECT id FROM syllabus_unit_generations
+                        WHERE syllabus_id = :sid AND unit_number = :unit_number
+                        ORDER BY version DESC LIMIT 1
+                        """
+                    ),
+                    {"sid": syllabus_id, "unit_number": int(unit_number)},
+                ).mappings().first()
+                generation_id = str(target["id"]) if target else None
+            if not generation_id:
+                return None
+            sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_unit_generations
+                    SET status = 'rejected'
+                    WHERE syllabus_id = :sid
+                      AND unit_number = :unit_number
+                      AND status = 'approved'
+                      AND id <> :gid
+                    """
+                ),
+                {"sid": syllabus_id, "unit_number": int(unit_number), "gid": generation_id},
+            )
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_unit_generations
+                    SET status = 'approved'
+                    WHERE id = :gid
+                      AND syllabus_id = :sid
+                      AND unit_number = :unit_number
+                    RETURNING *
+                    """
+                ),
+                {"gid": generation_id, "sid": syllabus_id, "unit_number": int(unit_number)},
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def aprobar_unit_generation(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        generation_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._aprobar_unit_generation_sync,
+                syllabus_id,
+                unit_number,
+                generation_id,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al aprobar unidad {unit_number}: {e}")
+            return None
+
+    def _actualizar_week_lock_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        week: int,
+        locked: bool,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        latest = self._obtener_latest_unit_generation_sync(syllabus_id, unit_number, user_id)
+        if not latest:
+            return None
+        locked_weeks = {
+            int(item) for item in (latest.get("locked_weeks_json") or [])
+            if str(item).isdigit()
+        }
+        if locked:
+            locked_weeks.add(int(week))
+        else:
+            locked_weeks.discard(int(week))
+
+        weeks = latest.get("output_json") or []
+        if isinstance(weeks, dict):
+            weeks = weeks.get("weeks") or []
+        for row in weeks:
+            if int(row.get("week") or 0) == int(week):
+                row["locked"] = bool(locked)
+
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_unit_generations
+                    SET locked_weeks_json = CAST(:locked AS JSONB),
+                        output_json = CAST(:output AS JSONB)
+                    WHERE id = :gid
+                    RETURNING *
+                    """
+                ),
+                {
+                    "gid": latest["id"],
+                    "locked": json.dumps(sorted(locked_weeks), ensure_ascii=False),
+                    "output": json.dumps(weeks, ensure_ascii=False),
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def actualizar_week_lock(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        week: int,
+        locked: bool,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._actualizar_week_lock_sync,
+                syllabus_id,
+                unit_number,
+                week,
+                locked,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al actualizar lock semana {week}: {e}")
+            return None
+
+    def _actualizar_unit_week_sync(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        week: int,
+        row_patch: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        latest = self._obtener_latest_unit_generation_sync(syllabus_id, unit_number, user_id)
+        if not latest:
+            return None
+        weeks = latest.get("output_json") or []
+        if isinstance(weeks, dict):
+            weeks = weeks.get("weeks") or []
+        allowed = {
+            "performance", "required_skills", "skill", "knowledge",
+            "activity", "evidence", "phase", "validation", "locked",
+        }
+        updated = False
+        for row in weeks:
+            if int(row.get("week") or 0) == int(week):
+                for key, value in row_patch.items():
+                    if key in allowed:
+                        row[key] = value
+                updated = True
+                break
+        if not updated:
+            return None
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_unit_generations
+                    SET output_json = CAST(:output AS JSONB)
+                    WHERE id = :gid
+                    RETURNING *
+                    """
+                ),
+                {"gid": latest["id"], "output": json.dumps(weeks, ensure_ascii=False)},
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def actualizar_unit_week(
+        self,
+        syllabus_id: str,
+        unit_number: int,
+        week: int,
+        row_patch: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._actualizar_unit_week_sync,
+                syllabus_id,
+                unit_number,
+                week,
+                row_patch,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al actualizar semana {week}: {e}")
+            return None
+
+    def _obtener_progressive_curriculum_state_sync(
+        self,
+        syllabus_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            syllabus = sesion.execute(
+                text(f"SELECT id, payload_json FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).mappings().first()
+            if not syllabus:
+                return None
+            products = sesion.execute(
+                text(
+                    """
+                    SELECT * FROM curricular_product_options
+                    WHERE syllabus_id = :sid
+                    ORDER BY selected DESC, created_at DESC
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().all()
+            contexts = sesion.execute(
+                text(
+                    """
+                    SELECT * FROM syllabus_unit_contexts
+                    WHERE syllabus_id = :sid
+                    ORDER BY unit_number ASC
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().all()
+            generations = sesion.execute(
+                text(
+                    """
+                    SELECT DISTINCT ON (unit_number) *
+                    FROM syllabus_unit_generations
+                    WHERE syllabus_id = :sid
+                    ORDER BY unit_number ASC, version DESC
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().all()
+        payload = syllabus["payload_json"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        return {
+            "syllabus_id": syllabus_id,
+            "progressive_curriculum": (payload or {}).get("progressive_curriculum", {}),
+            "product_options": [self._mapear_progressive_row(row) for row in products],
+            "unit_contexts": [self._mapear_progressive_row(row) for row in contexts],
+            "unit_generations": [self._mapear_progressive_row(row) for row in generations],
+        }
+
+    async def obtener_progressive_curriculum_state(
+        self,
+        syllabus_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._obtener_progressive_curriculum_state_sync,
+                syllabus_id,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al obtener estado progressive curriculum {syllabus_id}: {e}")
+            return None
+
+    def _guardar_progressive_assembly_sync(
+        self,
+        syllabus_id: str,
+        final_payload: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            row = sesion.execute(
+                text(f"SELECT payload_json FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).mappings().first()
+            if not row:
+                return None
+            payload = row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if not isinstance(payload, dict):
+                payload = {}
+            payload.setdefault("progressive_curriculum", {})
+            payload["progressive_curriculum"].update(final_payload.get("progressive_curriculum") or {})
+            payload["final_syllabus"] = final_payload
+            payload["_meta"] = payload.get("_meta") or {}
+            payload["_meta"]["progressive_curriculum_assembled_at"] = datetime.now(timezone.utc).isoformat()
+            sesion.execute(
+                text(
+                    """
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload AS JSONB),
+                        current_step = 'progressive_curriculum',
+                        updated_at = now()
+                    WHERE id = :sid
+                    """
+                ),
+                {"sid": syllabus_id, "payload": json.dumps(payload, ensure_ascii=False)},
+            )
+            sesion.commit()
+            return {
+                "syllabus_id": syllabus_id,
+                "saved": True,
+                "final_syllabus": final_payload,
+            }
+
+    async def guardar_progressive_assembly(
+        self,
+        syllabus_id: str,
+        final_payload: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._guardar_progressive_assembly_sync,
+                syllabus_id,
+                final_payload,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar ensamblaje progressive curriculum {syllabus_id}: {e}")
+            return None
+
     def _obtener_draft_progresivo_sync(
         self,
         syllabus_id: str,

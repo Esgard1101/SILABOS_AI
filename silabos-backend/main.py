@@ -102,6 +102,7 @@ from routers.analytics import router as analytics_router  # noqa: E402
 from routers.institutional_catalog import router as catalog_router  # noqa: E402
 from routers.programs import router as programs_router  # noqa: E402
 from routers.progressive import router as progressive_router  # noqa: E402
+from routers.progressive_curriculum import router as progressive_curriculum_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(syllabus.router, prefix="/api")
@@ -114,6 +115,7 @@ app.include_router(catalog_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
 app.include_router(programs_router, prefix="/api")
 app.include_router(progressive_router, prefix="/api")
+app.include_router(progressive_curriculum_router, prefix="/api")
 
 static_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_path):

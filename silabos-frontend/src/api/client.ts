@@ -860,5 +860,133 @@ export const api = {
     request<APIResponse<{ items: import('./types').InstrumentCatalogItem[] }>>(
       `/api/methods/${encodeURIComponent(methodId)}/instruments`,
     ),
+
+  getProgressiveCurriculumState: (syllabusId: string) =>
+    request<APIResponse<import('./types').ProgressiveCurriculumState>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/state`,
+    ),
+
+  suggestProgressiveProducts: (
+    syllabusId: string,
+    category: string,
+    options?: { forceProvider?: 'gemini' | 'openrouter'; notebookContextText?: string },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<{ options: import('./types').ProgressiveProductOption[] }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/products/suggest${q}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, notebook_context_text: options?.notebookContextText || '' }),
+      },
+      90000,
+    );
+  },
+
+  selectProgressiveProduct: (syllabusId: string, optionId: string) =>
+    request<APIResponse<import('./types').ProgressiveProductOption>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/products/select`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ option_id: optionId }),
+      },
+    ),
+
+  extractProgressiveUnitContext: (
+    syllabusId: string,
+    unitNumber: number,
+    rawContextText: string,
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').ProgressiveUnitContext>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/unit-contexts/${unitNumber}/extract${q}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_context_text: rawContextText }),
+      },
+      60000,
+    );
+  },
+
+  generateProgressiveUnit: (
+    syllabusId: string,
+    unitNumber: number,
+    data: { raw_context_text?: string; teacher_instruction?: string; locked_weeks?: number[] },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').ProgressiveUnitGenerateResponse>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/generate${q}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      120000,
+    );
+  },
+
+  regenerateProgressiveUnit: (
+    syllabusId: string,
+    unitNumber: number,
+    data: { raw_context_text?: string; teacher_instruction?: string; locked_weeks?: number[] },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').ProgressiveUnitGenerateResponse>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/regenerate${q}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      120000,
+    );
+  },
+
+  lockProgressiveWeek: (syllabusId: string, unitNumber: number, week: number, locked: boolean) =>
+    request<APIResponse<import('./types').ProgressiveUnitGeneration>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/weeks/${week}/lock`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locked }),
+      },
+    ),
+
+  updateProgressiveWeek: (
+    syllabusId: string,
+    unitNumber: number,
+    week: number,
+    data: Partial<import('./types').ProgressiveUnitWeek>,
+  ) =>
+    request<APIResponse<import('./types').ProgressiveUnitGeneration>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/weeks/${week}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+    ),
+
+  approveProgressiveUnit: (syllabusId: string, unitNumber: number, generationId?: string | null) =>
+    request<APIResponse<{ approved: import('./types').ProgressiveUnitGeneration; traceability_context: Record<string, unknown> }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/approve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generation_id: generationId ?? null }),
+      },
+    ),
+
+  assembleProgressiveCurriculum: (syllabusId: string) =>
+    request<APIResponse<{ syllabus_id: string; saved: boolean; final_syllabus: Record<string, unknown> }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/assemble`,
+      { method: 'POST' },
+      90000,
+    ),
 };
 

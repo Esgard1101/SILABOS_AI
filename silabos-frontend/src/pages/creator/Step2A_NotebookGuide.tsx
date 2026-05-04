@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Copy, Download, ExternalLink, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Copy, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';

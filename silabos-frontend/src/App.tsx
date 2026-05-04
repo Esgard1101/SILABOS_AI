@@ -33,6 +33,9 @@ import Step3_Desempenos from './pages/creator/Step3_Desempenos';
 import Step4_Contenido from './pages/creator/Step4_Contenido';
 import Step5_Metodo from './pages/creator/Step5_Metodo';
 import Step6_Cierre from './pages/creator/Step6_Cierre';
+import Step7_ProductoIntegrador from './pages/creator/Step7_ProductoIntegrador';
+import Step8_ProgramaProgresivo from './pages/creator/Step8_ProgramaProgresivo';
+import Step9_CierreProgresivo from './pages/creator/Step9_CierreProgresivo';
 
 function ContextGuard({ children }: { children: React.ReactNode }) {
   const { isContextSet } = useAppContext();
@@ -159,7 +162,10 @@ export default function App() {
             <Route path="/creator/desempenos" element={<Step3_Desempenos />} />
             <Route path="/creator/contenido" element={<Step4_Contenido />} />
             <Route path="/creator/metodo" element={<Step5_Metodo />} />
-            <Route path="/creator/cierre" element={<Step6_Cierre />} />
+            <Route path="/creator/producto" element={<Step7_ProductoIntegrador />} />
+            <Route path="/creator/evaluacion" element={<Step6_Cierre />} />
+            <Route path="/creator/programa" element={<Step8_ProgramaProgresivo />} />
+            <Route path="/creator/cierre" element={<Step9_CierreProgresivo />} />
           </Route>
           {/* Ruta avanzada reservada: no es parte del flujo docente principal y se carga solo bajo demanda. */}
           <Route

@@ -10,152 +10,174 @@ export interface PanelMessage {
 export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   '/login': {
     pantalla: 1,
-    paso: 'Paso 1 de 8',
+    paso: 'Paso 1 de 11',
     titulo: 'Bienvenida e ingreso',
     mensajePrincipal:
-      'Plataforma académica impulsada por la Dirección de la Escuela Profesional de Educación para transformar la elaboración de sílabos, fortalecer la coherencia curricular y elevar la calidad formativa con apoyo de inteligencia artificial.',
-    mensajeAcompanamiento: 'Innovación curricular para una docencia de calidad.',
+      'Plataforma academica impulsada por la Direccion de la Escuela Profesional de Educacion para transformar la elaboracion de silabos, fortalecer la coherencia curricular y elevar la calidad formativa con apoyo de inteligencia artificial.',
+    mensajeAcompanamiento: 'Innovacion curricular para una docencia de calidad.',
     instruccion:
-      'Revise la presentación del sistema e ingrese con su cuenta institucional. A partir de su acceso, el sistema lo guiará paso a paso y le irá presentando propuestas que usted deberá revisar, confirmar o ajustar antes de continuar.',
+      'Revise la presentacion del sistema e ingrese con su cuenta institucional. A partir de su acceso, el sistema lo guiara paso a paso y le presentara propuestas que usted podra revisar, confirmar o ajustar antes de continuar.',
   },
   '/select-context': {
     pantalla: 2,
-    paso: 'Paso 2 de 8',
+    paso: 'Paso 2 de 11',
     titulo: 'Contexto institucional y curso',
     mensajePrincipal:
-      'En este paso, el sistema le presenta la estructura institucional disponible para que usted seleccione el contexto académico desde el cual se elaborará el sílabo.',
+      'En este paso, el sistema presenta la estructura institucional disponible para seleccionar el contexto academico desde el cual se elaborara el silabo.',
     mensajeAcompanamiento:
-      'El sistema organizará su trabajo a partir de la ruta: Universidad → Facultad → Escuela → Programa → Plan → Curso → Sílabo.',
+      'El sistema organizara su trabajo a partir de la ruta Universidad, Facultad, Escuela, Programa, Plan, Curso y Silabo.',
     instruccion:
-      'Seleccione el programa, el plan de estudios, el curso y el periodo académico. Revise cuidadosamente la información propuesta por el sistema y confirme que corresponde al sílabo que desea elaborar antes de continuar.',
+      'Seleccione el programa, plan de estudios, curso y periodo academico. Confirme que la informacion corresponde al silabo que desea elaborar antes de continuar.',
   },
   '/creator/repositorio': {
     pantalla: 3,
-    paso: 'Paso 3 de 8',
+    paso: 'Paso 3 de 11',
     titulo: 'Repositorio curricular oficial',
     mensajePrincipal:
-      'En este paso, el sistema le propone como base de trabajo los componentes curriculares oficiales del curso: sumilla, competencia, capacidad o resultado de aprendizaje, plantilla oficial y anexos institucionales.',
+      'El sistema propone como base de trabajo los componentes curriculares oficiales del curso: sumilla, competencia, capacidad, plantilla oficial y anexos institucionales.',
     mensajeAcompanamiento:
-      'Estos componentes constituyen la base formal del sílabo y serán utilizados por el sistema para generar propuestas en los pasos siguientes.',
+      'Estos componentes constituyen la base formal del silabo y se usan como ancla para las propuestas de los pasos siguientes.',
     instruccion:
-      'Revise los componentes curriculares oficiales importados. Verifique sumilla, competencia, capacidad o resultado, plantilla y anexos. Confirme que la base curricular es correcta antes de avanzar.',
+      'Revise los componentes curriculares oficiales importados. Verifique sumilla, competencia, capacidad, plantilla y anexos antes de avanzar.',
   },
   '/creator/fuentes': {
     pantalla: 4,
-    paso: 'Paso 4 de 8',
-    titulo: 'Fuentes del curso y soporte documental',
+    paso: 'Paso 4 de 11',
+    titulo: 'Fuentes del curso',
     mensajePrincipal:
-      'En este paso construya la base documental del curso mediante carga docente y curaduría asistida por IA.',
+      'Construya la base documental del curso mediante carga docente y curaduria asistida por IA.',
     mensajeAcompanamiento:
-      'Las fuentes activas del curso respaldarán las propuestas de desempeños, contenido y selección metodológica.',
+      'Las fuentes activas respaldaran desempenos, contenido, metodo y contexto disciplinar para el programa progresivo.',
     instruccion:
-      'Cargue sus propias fuentes o solicite sugerencias a la IA. Revise, seleccione y valide las fuentes antes de continuar.',
+      'Cargue sus fuentes o solicite sugerencias. Revise, seleccione y valide la base documental antes de continuar.',
   },
   '/creator/fuentes/notebook': {
     pantalla: 4,
     paso: 'Sub-paso Fuentes',
-    titulo: 'Guía NotebookLM',
+    titulo: 'Guia NotebookLM',
     mensajePrincipal:
-      'NotebookLM es el cuaderno documental del curso. Organiza, consulta y sintetiza las fuentes con IA avanzada de Google.',
+      'NotebookLM funciona como cuaderno documental del curso para organizar fuentes y preparar referencias verificables.',
     mensajeAcompanamiento:
-      'Sigue el roadmap visual de 8 pasos para crear el cuaderno, subir fuentes y obtener referencias APA verificadas.',
+      'Use el roadmap visual para cargar fuentes, verificar el cuaderno y traer referencias a SIGEISIL.',
     instruccion:
-      'Haz clic en cada tarjeta del roadmap para ver las instrucciones detalladas con imágenes. Cuando termines, vuelve a Fuentes para cargar las referencias en SIGEISIL.',
+      'Haga clic en cada tarjeta para ver imagen, mini video o prompt. Cuando termine, vuelva a Fuentes para cargar las referencias.',
   },
   '/creator/desempenos': {
     pantalla: 5,
-    paso: 'Paso 5 de 8',
-    titulo: 'Desempeños oficiales o sugeridos',
+    paso: 'Paso 5 de 11',
+    titulo: 'Desempenos oficiales',
     mensajePrincipal:
-      'El sistema presenta los desempeños oficiales y, cuando no existan, propone desempeños sugeridos desde la sumilla, competencia y capacidad del curso.',
+      'El sistema presenta los desempenos oficiales y, cuando no existan, propone desempenos sugeridos desde la sumilla, competencia y capacidad del curso.',
     mensajeAcompanamiento:
-      'Los desempeños oficiales son referencia institucional. Los sugeridos requieren revisión académica antes de consolidarse en el sílabo.',
+      'Los desempenos oficiales se respetan como data curricular no manipulable; cada desempeno define una unidad del programa.',
     instruccion:
-      'Revise los desempeños, confirme su alineamiento o registre observaciones y ajustes antes de continuar.',
+      'Revise los desempenos, confirme su alineamiento o registre observaciones antes de continuar.',
   },
   '/creator/contenido': {
     pantalla: 6,
-    paso: 'Paso 6 de 8',
-    titulo: 'Propuesta de contenido formativo',
+    paso: 'Paso 6 de 11',
+    titulo: 'Contenido formativo',
     mensajePrincipal:
-      'El sistema propone habilidades y conocimientos derivados del propósito validado y las fuentes activas del curso.',
+      'El sistema propone habilidades y conocimientos derivados del proposito validado, los desempenos y las fuentes activas del curso.',
     mensajeAcompanamiento:
-      'La propuesta se construye desde los desempeños confirmados, las fuentes documentales y la biblioteca institucional de habilidades.',
+      'Esta matriz alimentara al motor progresivo, pero la redaccion didactica se construira por unidad mas adelante.',
     instruccion:
-      'Revise la propuesta derivada, confirme lo pertinente y ajuste lo necesario antes de seleccionar el método.',
+      'Revise habilidades y conocimientos. Ajuste lo necesario antes de seleccionar el metodo pedagogico.',
   },
   '/creator/metodo': {
     pantalla: 7,
-    paso: 'Paso 7 de 8',
-    titulo: 'Método y secuencia didáctica',
+    paso: 'Paso 7 de 11',
+    titulo: 'Metodo y secuencia didactica',
     mensajePrincipal:
-      'El sistema propone el método más pertinente para operativizar el propósito y el contenido del sílabo.',
+      'El sistema propone el metodo mas pertinente para operativizar el proposito, el contenido y el tipo de producto del curso.',
     mensajeAcompanamiento:
-      'La propuesta incluye método troncal, apoyos complementarios y relación entre método, actividades y evidencias.',
+      'La seleccion metodologica orienta fases, tecnicas y tono docente del motor de triple coherencia.',
     instruccion:
-      'Revise el método sugerido, confirme su pertinencia y ajuste la propuesta antes de pasar al bloque de evaluación.',
+      'Revise el metodo sugerido, confirme su pertinencia y ajuste la propuesta antes de definir el producto integrador.',
+  },
+  '/creator/producto': {
+    pantalla: 8,
+    paso: 'Paso 8 de 11',
+    titulo: 'Producto integrador',
+    mensajePrincipal:
+      'Antes de redactar las semanas, el sistema fija el horizonte del curso mediante propuestas de producto acreditable y linea de tiempo PA.',
+    mensajeAcompanamiento:
+      'Este paso evita actividades sueltas: cada unidad debe aportar un avance verificable hacia el mismo producto final.',
+    instruccion:
+      'Seleccione una categoria, genere opciones y elija el producto que mejor represente el aprendizaje esperado del curso.',
   },
   '/creator/evaluacion': {
-    pantalla: 8,
-    paso: 'Paso 8 de 8',
-    titulo: 'Evaluación y consistencia final',
+    pantalla: 9,
+    paso: 'Paso 9 de 11',
+    titulo: 'Sistema de evaluacion',
     mensajePrincipal:
-      'El sistema articula evidencias, instrumentos y sistema de calificación para cerrar la coherencia curricular del sílabo.',
+      'El sistema define pesos, siglas y semanas de entrega antes de redactar el programa para que la cronologia quede anclada a evidencias reales.',
     mensajeAcompanamiento:
-      'Se verifica el alineamiento entre desempeños, habilidades, método, actividades, evidencias e instrumentos.',
+      'Los hitos PA orientan la secuencia de cada unidad y ayudan al validador a revisar coherencia formativa.',
     instruccion:
-      'Revise la tabla de evaluación, valide porcentajes y asegúrese de que la propuesta responde al método y al tipo de aprendizaje.',
+      'Revise la tabla de evaluacion, valide porcentajes y confirme que cada unidad tenga un avance acreditable claro.',
+  },
+  '/creator/programa': {
+    pantalla: 10,
+    paso: 'Paso 10 de 11',
+    titulo: 'Programa progresivo',
+    mensajePrincipal:
+      'Trabaje cada unidad en dos pantallas:\n1. Contexto docente obligatorio: pegue el resumen de NotebookLM o sus apuntes de unidad.\n2. Sugerencia IA: genere, revise, edite, bloquee semanas y apruebe la unidad.',
+    mensajeAcompanamiento:
+      'Triple coherencia: cada actividad debe cruzar fase del metodo, operacion sobre conocimiento, habilidad, tecnica y evidencia verificable.',
+    instruccion:
+      'Uso recomendado:\n1. Copie el prompt de NotebookLM.\n2. Pegue el resumen o apuntes de la unidad.\n3. Guarde el contexto y pase a sugerencia IA.\n4. Genere y revise la tabla.\n5. Fije semanas aprobadas y regenere solo si necesita otro enfoque.',
   },
   '/creator/cierre': {
-    pantalla: 8,
-    paso: 'Cierre',
-    titulo: 'Validación y publicación',
+    pantalla: 11,
+    paso: 'Paso 11 de 11',
+    titulo: 'Ensamblaje final',
     mensajePrincipal:
-      'El sistema ensambla la versión final del sílabo y prepara su apertura en el editor o su envío a revisión académica.',
+      'El sistema consolida las unidades aprobadas en el silabo final y prepara la vista completa para entrega o edicion.',
     mensajeAcompanamiento:
-      'Este es el momento para revisar el resumen de bloques antes de cerrar la fase de creación.',
+      'Solo se ensambla contenido aprobado, conservando semanas bloqueadas, producto integrador y sistema de evaluacion.',
     instruccion:
-      'Verifica cada bloque, corrige lo necesario y confirma la versión final antes de enviarlo a revisión o abrirlo en el editor.',
+      'Verifique que las unidades esten aprobadas. Luego ensamble el programa y abra la entrega final.',
   },
   '/catalog': {
     pantalla: 4,
-    paso: 'Catálogo',
-    titulo: 'Catálogo de cursos',
+    paso: 'Catalogo',
+    titulo: 'Catalogo de cursos',
     mensajePrincipal: 'Consulta el repositorio de cursos disponibles en el programa.',
-    mensajeAcompanamiento: 'Explora sílabos existentes como referencia.',
+    mensajeAcompanamiento: 'Explora silabos existentes como referencia.',
     instruccion: 'Selecciona un curso para ver su detalle o usar como plantilla.',
   },
   '/syllabi': {
     pantalla: 5,
-    paso: 'Paso 5 de 8',
-    titulo: 'Desempeños oficiales o sugeridos',
+    paso: 'Desempenos',
+    titulo: 'Desempenos oficiales o sugeridos',
     mensajePrincipal:
-      'En este paso, el sistema le presenta los desempeños oficiales disponibles y, cuando no existan o estén incompletos, le propone desempeños sugeridos construidos a partir de la sumilla, la competencia y la capacidad o resultado de aprendizaje.',
+      'El sistema presenta desempenos oficiales disponibles y desempenos sugeridos cuando la informacion curricular este incompleta.',
     mensajeAcompanamiento:
-      'Los desempeños oficiales se mantienen como referencia institucional. Los desempeños sugeridos por el sistema requieren revisión y validación académica antes de consolidarse en el sílabo.',
+      'Los desempenos sugeridos requieren revision academica antes de consolidarse en el silabo.',
     instruccion:
-      'Si existen desempeños oficiales, revíselos y confirme su alineamiento. Si el sistema le presenta desempeños sugeridos, analícelos cuidadosamente, valide su pertinencia o registre observaciones y ajustes antes de continuar.',
+      'Revise, confirme o ajuste los desempenos antes de continuar con el diseno curricular.',
   },
   '/editor': {
-    pantalla: 8,
-    paso: 'Paso 8 de 8',
-    titulo: 'Evaluación, validación y publicación',
+    pantalla: 11,
+    paso: 'Editor',
+    titulo: 'Edicion y publicacion',
     mensajePrincipal:
-      'En este paso, el sistema le propone la articulación final del sílabo mediante evidencias, instrumentos, sistema de calificación y validación automática de coherencia curricular, didáctica y metodológica.',
+      'Revise la version final del silabo con sus evidencias, actividades, evaluacion y validacion curricular.',
     mensajeAcompanamiento:
-      'Aquí se verifica el alineamiento entre sumilla, competencia y desempeños; desempeños y habilidades; habilidades y evidencias; método y actividades; evidencias e instrumentos; y la consistencia del sistema de calificación.',
+      'Aqui puede ajustar el documento final antes de enviarlo a revision academica o publicarlo segun su rol.',
     instruccion:
-      'Revise la propuesta final de evidencias, instrumentos y sistema de calificación. Verifique los resultados de la validación automática. Si todo está conforme, confirme la versión final del sílabo y envíelo a revisión académica o publíquelo según su rol.',
+      'Verifique el documento completo, corrija lo necesario y confirme la version final.',
   },
   '/dashboard': {
     pantalla: 1,
     paso: 'Panel principal',
     titulo: 'Bienvenido a SIGEISIL',
     mensajePrincipal:
-      'Aquí puede revisar sus sílabos recientes, iniciar un nuevo proceso de elaboración o acceder al repositorio de sílabos del programa.',
+      'Aqui puede revisar sus silabos recientes, iniciar un nuevo proceso de elaboracion o acceder al repositorio de silabos del programa.',
     mensajeAcompanamiento: 'Sistema de Gestion Inteligente de Silabos - UNPRG.',
     instruccion:
-      'Seleccione una acción del panel para continuar. Para crear un nuevo sílabo, use el botón "Crear Sílabo".',
+      'Seleccione una accion del panel para continuar. Para crear un nuevo silabo, use el boton Crear Silabo.',
   },
 };
 
@@ -166,8 +188,8 @@ export function getPanelMessage(pathname: string): PanelMessage {
       paso: '',
       titulo: 'SIGEISIL UNPRG',
       mensajePrincipal: 'Sistema de Gestion Inteligente de Silabos.',
-      mensajeAcompanamiento: 'Innovación curricular para una docencia de calidad.',
-      instruccion: 'Navegue usando el menú lateral.',
+      mensajeAcompanamiento: 'Innovacion curricular para una docencia de calidad.',
+      instruccion: 'Navegue usando el menu lateral.',
     }
   );
 }

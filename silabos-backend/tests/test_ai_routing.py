@@ -103,6 +103,8 @@ class GeminiServiceRoutingTests(unittest.TestCase):
             "progressive_purpose_suggest",
             "progressive_content_suggest",
             "progressive_grading_suggest",
+            "progressive_product_suggest",
+            "progressive_unit_context_extract",
         )
 
         for task_name in light_tasks:

@@ -823,3 +823,96 @@ export interface GradingSuggestion {
   rows: GradingRow[];
   origin: 'method_template' | 'ai_suggested';
 }
+
+export interface ProgressiveProductOption {
+  id?: string;
+  syllabus_id?: string;
+  category: string;
+  title: string;
+  justification: string;
+  timeline_json: Record<string, string>;
+  selected?: boolean;
+  created_at?: string;
+}
+
+export interface ProgressiveWeekValidation {
+  methodological_score?: number;
+  cognitive_score?: number;
+  formative_score?: number;
+  technique_score?: number;
+  evidence_score?: number;
+  total_score: number;
+  diagnosis: string;
+}
+
+export interface ProgressiveUnitWeek {
+  week: number;
+  unit_number: number;
+  performance?: string;
+  required_skills?: string[];
+  skill?: string;
+  knowledge: string;
+  activity: string;
+  evidence: string;
+  phase?: string;
+  locked?: boolean;
+  validation?: ProgressiveWeekValidation;
+}
+
+export interface ProgressiveUnitGeneration {
+  id: string;
+  syllabus_id: string;
+  unit_number: number;
+  version: number;
+  status: 'draft' | 'approved' | 'regenerating' | 'rejected' | string;
+  locked_weeks_json: number[];
+  teacher_instruction?: string;
+  traceability_context_json?: Record<string, unknown>;
+  output_json: ProgressiveUnitWeek[];
+  validation_summary_json?: {
+    overall_score?: number;
+    status?: string;
+    weeks_count?: number;
+  };
+  created_at?: string;
+}
+
+export interface ProgressiveUnitContext {
+  id?: string;
+  syllabus_id?: string;
+  unit_number: number;
+  raw_context_text?: string;
+  extracted_context_json?: Record<string, unknown>;
+  notebook_prompt_version?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProgressiveCurriculumState {
+  syllabus_id: string;
+  progressive_curriculum?: {
+    selected_product?: ProgressiveProductOption;
+    engine_version?: string;
+    assembled_units?: number;
+    content_plan?: ProgressiveUnitWeek[];
+    units?: unknown[];
+  };
+  product_options: ProgressiveProductOption[];
+  unit_contexts: ProgressiveUnitContext[];
+  unit_generations: ProgressiveUnitGeneration[];
+}
+
+export interface ProgressiveUnitGenerateResponse {
+  generation_id: string;
+  version?: number;
+  unit_number: number;
+  status: string;
+  validation_summary: {
+    overall_score: number;
+    status: string;
+    weeks_count?: number;
+  };
+  weeks: ProgressiveUnitWeek[];
+  locked_weeks?: number[];
+  traceability_context?: Record<string, unknown>;
+}
