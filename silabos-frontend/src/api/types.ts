@@ -916,3 +916,26 @@ export interface ProgressiveUnitGenerateResponse {
   locked_weeks?: number[];
   traceability_context?: Record<string, unknown>;
 }
+
+export type AiGenerationJobStatus = 'pending' | 'running' | 'done' | 'error';
+
+export interface AiGenerationJobQueued {
+  id: string;
+  job_id: string;
+  job_type: string;
+  status: AiGenerationJobStatus;
+  unit_number?: number | null;
+  already_running?: boolean;
+  message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AiGenerationJob<T = unknown> extends AiGenerationJobQueued {
+  result?: T | null;
+  result_json?: T | null;
+  error_message?: string | null;
+  attempts?: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+}

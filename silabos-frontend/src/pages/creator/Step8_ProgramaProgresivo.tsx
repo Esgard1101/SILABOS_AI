@@ -264,12 +264,14 @@ function UnitStageTabs({
 function WeekTable({
   weeks,
   busyWeek,
+  disabled,
   onLock,
   onEdit,
   onRetry,
 }: {
   weeks: ProgressiveUnitWeek[];
   busyWeek: number | null;
+  disabled?: boolean;
   onLock: (week: ProgressiveUnitWeek) => void;
   onEdit: (week: ProgressiveUnitWeek) => void;
   onRetry: (week?: ProgressiveUnitWeek) => void;
@@ -331,7 +333,7 @@ function WeekTable({
                       type="button"
                       title={week.locked ? 'Desbloquear semana' : 'Fijar semana'}
                       onClick={() => onLock(week)}
-                      disabled={busyWeek === week.week}
+                      disabled={disabled || busyWeek === week.week}
                       className="flex h-8 w-8 items-center justify-center border border-white/10 bg-[#0B192C] text-white/55 transition hover:border-[#00B4D8]/50 hover:text-[#00B4D8]"
                     >
                       {busyWeek === week.week ? <Loader2 size={13} className="animate-spin" /> : week.locked ? <Lock size={13} /> : <Unlock size={13} />}
@@ -340,6 +342,7 @@ function WeekTable({
                       type="button"
                       title="Editar semana"
                       onClick={() => onEdit(week)}
+                      disabled={disabled}
                       className="flex h-8 w-8 items-center justify-center border border-white/10 bg-[#0B192C] text-white/55 transition hover:border-[#E9B44C]/50 hover:text-[#E9B44C]"
                     >
                       <Pencil size={13} />
@@ -348,6 +351,7 @@ function WeekTable({
                       type="button"
                       title="Reintentar con IA"
                       onClick={() => onRetry(week)}
+                      disabled={disabled}
                       className="flex h-8 w-8 items-center justify-center border border-white/10 bg-[#0B192C] text-white/55 transition hover:border-[#00A896]/50 hover:text-[#7EE7D4]"
                     >
                       <Sparkles size={13} />
@@ -483,6 +487,8 @@ export default function Step8_ProgramaProgresivo() {
   const [editingWeek, setEditingWeek] = useState<ProgressiveUnitWeek | null>(null);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatusText, setJobStatusText] = useState('');
 
   const unitCount = Math.max(1, draftPerformances.length || state?.unit_generations?.length || 1);
   const currentPerformance = textOfPerformance(draftPerformances[selectedUnit - 1]);
@@ -524,6 +530,10 @@ export default function Step8_ProgramaProgresivo() {
   }, [loadState]);
 
   const selectUnit = (unit: number) => {
+    if (loading) {
+      showToast('La IA esta generando. Espera a que termine para cambiar de unidad.', 'warning');
+      return;
+    }
     setSelectedUnit(unit);
     setScreenByUnit((prev) => ({
       ...prev,
@@ -556,15 +566,34 @@ export default function Step8_ProgramaProgresivo() {
       return;
     }
     setLoading(true);
+    setActiveJobId(null);
+    setJobStatusText('Preparando extraccion del contexto de unidad...');
     try {
-      await api.extractProgressiveUnitContext(draftId, selectedUnit, currentContext);
+      const queued = await api.extractProgressiveUnitContext(draftId, selectedUnit, currentContext);
+      const jobId = queued.data.job_id || queued.data.id;
+      if (!jobId) throw new Error('El servidor no devolvio job_id para el contexto');
+      setActiveJobId(jobId);
+      setJobStatusText('La IA esta sintetizando el consolidado de NotebookLM.');
+      await api.pollAiGenerationJob(jobId, {
+        intervalMs: 3000,
+        timeoutMs: 180000,
+        onUpdate: (job) => {
+          setJobStatusText(
+            job.status === 'running'
+              ? 'Extrayendo temas, casos, operaciones cognitivas y evidencias...'
+              : 'Solicitud en cola. Esperando proveedor disponible...',
+          );
+        },
+      });
       await loadState();
       setCurrentScreen('workshop');
       showToast('Contexto de unidad guardado', 'success');
-    } catch {
-      showToast('No se pudo guardar el contexto de la unidad', 'error');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo guardar el contexto de la unidad', 'error');
     } finally {
       setLoading(false);
+      setActiveJobId(null);
+      setJobStatusText('');
     }
   };
 
@@ -576,31 +605,55 @@ export default function Step8_ProgramaProgresivo() {
       return;
     }
     setLoading(true);
+    setActiveJobId(null);
+    setJobStatusText(regenerate ? 'Preparando regeneracion de unidad...' : 'Preparando generacion de unidad...');
     try {
       const rawContextText = contextSaved ? '' : currentContext;
+      const queued = regenerate && currentGeneration
+        ? await api.regenerateProgressiveUnit(draftId, selectedUnit, {
+            raw_context_text: rawContextText,
+            teacher_instruction: teacherInstruction,
+            locked_weeks: lockedWeeks,
+          })
+        : await api.generateProgressiveUnit(draftId, selectedUnit, {
+            raw_context_text: rawContextText,
+            teacher_instruction: teacherInstruction,
+            locked_weeks: lockedWeeks,
+          });
+      const jobId = queued.data.job_id || queued.data.id;
+      if (!jobId) throw new Error('El servidor no devolvio job_id para la unidad');
+      setActiveJobId(jobId);
+      setJobStatusText(
+        queued.data.already_running
+          ? 'La IA ya esta trabajando esta solicitud. Seguimos revisando el avance.'
+          : 'La IA esta estructurando la matriz semanal con triple coherencia.',
+      );
+      await api.pollAiGenerationJob(jobId, {
+        intervalMs: 4000,
+        timeoutMs: 300000,
+        onUpdate: (job) => {
+          setJobStatusText(
+            job.status === 'running'
+              ? 'Analizando contexto curricular y redactando actividades docentes...'
+              : 'Solicitud en cola. Esperando proveedor disponible...',
+          );
+        },
+      });
       if (regenerate && currentGeneration) {
-        await api.regenerateProgressiveUnit(draftId, selectedUnit, {
-          raw_context_text: rawContextText,
-          teacher_instruction: teacherInstruction,
-          locked_weeks: lockedWeeks,
-        });
         showToast('Unidad regenerada con trazabilidad', 'success');
       } else {
-        await api.generateProgressiveUnit(draftId, selectedUnit, {
-          raw_context_text: rawContextText,
-          teacher_instruction: teacherInstruction,
-          locked_weeks: lockedWeeks,
-        });
         showToast('Unidad generada', 'success');
       }
       setTeacherInstruction('');
       setDialogMode(null);
       setCurrentScreen('workshop');
       await loadState();
-    } catch {
-      showToast('No se pudo generar la unidad', 'error');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo generar la unidad', 'error');
     } finally {
       setLoading(false);
+      setActiveJobId(null);
+      setJobStatusText('');
     }
   };
 
@@ -759,6 +812,19 @@ export default function Step8_ProgramaProgresivo() {
               ) : null}
             </div>
 
+            {activeJobId ? (
+              <div className="mb-4 flex items-center justify-between gap-3 border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Loader2 size={16} className="shrink-0 animate-spin text-[#72E7F6]" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#72E7F6]">IA generando en segundo plano</p>
+                    <p className="mt-1 text-[11px] leading-5 text-white/64">{jobStatusText || 'Procesando solicitud...'}</p>
+                  </div>
+                </div>
+                <span className="hidden font-jetbrains text-[10px] text-white/34 sm:inline">job {activeJobId.slice(0, 8)}</span>
+              </div>
+            ) : null}
+
             {currentScreen === 'context' ? (
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_340px]">
                 <label className="block">
@@ -830,6 +896,7 @@ export default function Step8_ProgramaProgresivo() {
                 <WeekTable
                   weeks={weeks}
                   busyWeek={busyWeek}
+                  disabled={loading}
                   onLock={handleLock}
                   onEdit={openEdit}
                   onRetry={openRetry}

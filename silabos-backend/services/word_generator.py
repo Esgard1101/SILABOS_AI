@@ -3,6 +3,7 @@
 import logging
 import os
 import re
+from datetime import date, datetime, timedelta
 from html import escape
 from io import BytesIO
 from pathlib import Path
@@ -34,6 +35,57 @@ def _prerequisite_value(value: Any) -> str:
 
 
 SEMESTER_WEEKS = 16
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    text = _val(value)
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_end_date(start_value: Any, total_weeks: int = SEMESTER_WEEKS) -> str:
+    start = _parse_iso_date(start_value)
+    if not start:
+        return ""
+    return (start + timedelta(weeks=total_weeks)).strftime("%Y-%m-%d")
+
+
+def _compute_week_dates(
+    semester: Any,
+    total_weeks: int = SEMESTER_WEEKS,
+    start_date: Any = None,
+) -> list[str]:
+    explicit_start = _parse_iso_date(start_date)
+    if explicit_start:
+        return [(explicit_start + timedelta(weeks=i)).strftime("%Y-%m-%d") for i in range(total_weeks)]
+
+    semester_text = _val(semester).upper()
+    match = re.match(r"\s*(\d{4})\s*[-_]?\s*(I{1,2})\s*$", semester_text)
+    if not match:
+        return ["---"] * total_weeks
+
+    year = int(match.group(1))
+    period = match.group(2)
+    target_month = 3 if period == "I" else 8
+    first = date(year, target_month, 1)
+    days_until_monday = (7 - first.weekday()) % 7
+    first_monday = first + timedelta(days=days_until_monday)
+    start = first_monday + timedelta(weeks=3)
+    return [(start + timedelta(weeks=i)).strftime("%Y-%m-%d") for i in range(total_weeks)]
+
+
+def _week_date_from_row(row: dict[str, Any], week_number: int, week_dates: list[str]) -> str:
+    direct = _val(row.get("fecha") or row.get("date_range") or row.get("date"))
+    if direct:
+        return direct
+    index = int(week_number) - 1
+    if 0 <= index < len(week_dates):
+        return _val(week_dates[index], "---")
+    return "---"
 
 
 def _format_hour_value(value: Any) -> str:
@@ -286,10 +338,42 @@ def _normalize_schedule_rows(rows: Any) -> list[dict[str, Any]]:
                 "actividad": row.get("actividad") or row.get("activity") or "",
                 "evidencia": row.get("evidencia") or row.get("evidence") or row.get("producto") or "",
                 "producto": row.get("producto") or row.get("evidence") or row.get("evidencia") or "",
+                "fecha": _val(row.get("fecha") or row.get("date_range") or row.get("date")),
             }
         )
         normalized.append(normalized_row)
     return sorted(normalized, key=lambda item: int(item.get("semana") or 0))
+
+
+def _apply_week_dates_to_schedule(payload: dict[str, Any], schedule_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not schedule_rows:
+        return schedule_rows
+
+    dg = payload.get("datos_generales") if isinstance(payload.get("datos_generales"), dict) else {}
+    semester = (
+        dg.get("semestre")
+        or dg.get("periodo_academico")
+        or payload.get("semester")
+        or payload.get("semestre")
+    )
+    start_date = dg.get("fecha_inicio") or payload.get("fecha_inicio")
+    max_week = max([SEMESTER_WEEKS, *[int(row.get("semana") or 0) for row in schedule_rows]])
+    week_dates = _compute_week_dates(semester, total_weeks=max_week, start_date=start_date)
+
+    dated_rows: list[dict[str, Any]] = []
+    for row in schedule_rows:
+        week = int(row.get("semana") or row.get("week") or 0)
+        next_row = dict(row)
+        next_row["fecha"] = _week_date_from_row(next_row, week, week_dates)
+        next_row["date_range"] = next_row["fecha"]
+        dated_rows.append(next_row)
+
+    if isinstance(dg, dict) and start_date and not _val(dg.get("fecha_fin")):
+        dg = dict(dg)
+        dg["fecha_fin"] = _compute_end_date(start_date, total_weeks=SEMESTER_WEEKS)
+        payload["datos_generales"] = dg
+
+    return dated_rows
 
 
 def _normalize_units(units: Any, schedule_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -420,6 +504,7 @@ def _prepare_export_payload(silabo: dict) -> dict:
             payload["unidades_tematicas"] = progressive.get("units")
 
     schedule_rows = _normalize_schedule_rows(payload.get("cronograma_semanal") or [])
+    schedule_rows = _apply_week_dates_to_schedule(payload, schedule_rows)
     if schedule_rows:
         payload["cronograma_semanal"] = schedule_rows
     payload["unidades_tematicas"] = _normalize_units(payload.get("unidades_tematicas") or [], schedule_rows)
@@ -444,6 +529,21 @@ def _build_context(silabo: dict) -> dict:
     """
     silabo = _prepare_export_payload(silabo)
     dg = silabo.get("datos_generales") or {}
+    semester_for_dates = (
+        dg.get("semestre")
+        or dg.get("periodo_academico")
+        or silabo.get("semester")
+        or silabo.get("semestre")
+    )
+    week_dates = _compute_week_dates(
+        semester_for_dates,
+        total_weeks=SEMESTER_WEEKS,
+        start_date=dg.get("fecha_inicio") or silabo.get("fecha_inicio"),
+    )
+    fecha_fin = _val(dg.get("fecha_fin")) or _compute_end_date(
+        dg.get("fecha_inicio") or silabo.get("fecha_inicio"),
+        total_weeks=SEMESTER_WEEKS,
+    )
 
     def _list_to_lines(value: Any) -> str:
         if isinstance(value, list):
@@ -553,7 +653,7 @@ def _build_context(silabo: dict) -> dict:
                         "desempeno": desempeno_celda,
                         "habilidades": habilidades_celda,
                         "semana": f"{semana}",
-                        "fecha": _val(sem_data.get("fecha"), "-"),
+                        "fecha": _week_date_from_row(sem_data, semana, week_dates),
                         "conocimientos": conocimientos_celda,
                         "actividades": _val(sem_data.get("actividad"), "-"),
                         "evidencias": evidencia_celda,
@@ -570,7 +670,7 @@ def _build_context(silabo: dict) -> dict:
                     "desempeno": f"D{i + 1}. {desempeno_txt}",
                     "habilidades": habilidades_txt,
                     "semana": semanas_str or "-",
-                    "fecha": "-",
+                    "fecha": _week_date_from_row({}, semanas[0], week_dates) if semanas else "-",
                     "conocimientos": temas_txt or "-",
                     "actividades": "-",
                     "evidencias": "-",
@@ -754,7 +854,7 @@ def _build_context(silabo: dict) -> dict:
         "horas_teoria": _format_hour_value(dg.get("horas_teoria")),
         "horas_practica": _format_hour_value(dg.get("horas_practica")),
         "fecha_inicio": _val(dg.get("fecha_inicio")),
-        "fecha_fin": _val(dg.get("fecha_fin")),
+        "fecha_fin": fecha_fin,
         "horas_semanales": _format_hours(dg.get("horas_teoria"), dg.get("horas_practica")),
         "docente_nombre": _val(dg.get("docente")),
         "docente_email": _val(dg.get("docente_email")),

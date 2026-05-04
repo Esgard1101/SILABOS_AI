@@ -201,6 +201,46 @@ class SupabaseService:
                     """
                 )
             )
+            sesion.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ai_generation_jobs (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        syllabus_id UUID NOT NULL REFERENCES syllabi(id) ON DELETE CASCADE,
+                        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                        job_type VARCHAR(80) NOT NULL,
+                        status VARCHAR(30) NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'running', 'done', 'error')),
+                        unit_number INT,
+                        request_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        result_json JSONB,
+                        error_message TEXT,
+                        attempts INT NOT NULL DEFAULT 0,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        started_at TIMESTAMPTZ,
+                        finished_at TIMESTAMPTZ,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_ai_generation_jobs_user_active
+                    ON ai_generation_jobs(user_id, status, created_at DESC)
+                    WHERE status IN ('pending', 'running')
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_ai_generation_jobs_syllabus
+                    ON ai_generation_jobs(syllabus_id, created_at DESC)
+                    """
+                )
+            )
             sesion.commit()
 
     # ──────────────────────────────────────────────
@@ -4205,7 +4245,7 @@ class SupabaseService:
         for campo in ("id", "syllabus_id", "generation_id", "parent_generation_id"):
             if data.get(campo) is not None:
                 data[campo] = str(data[campo])
-        for campo in ("created_at", "updated_at"):
+        for campo in ("created_at", "updated_at", "started_at", "finished_at"):
             if campo in data:
                 data[campo] = self._serializar_fecha(data.get(campo))
         for campo in (
@@ -4215,6 +4255,8 @@ class SupabaseService:
             "traceability_context_json",
             "output_json",
             "validation_summary_json",
+            "request_json",
+            "result_json",
         ):
             if isinstance(data.get(campo), str):
                 try:
@@ -4231,6 +4273,225 @@ class SupabaseService:
         if not user_id:
             return "", {}
         return f" AND ({prefix}.user_id = :uid OR {prefix}.user_id IS NULL)", {"uid": user_id}
+
+    def _crear_ai_generation_job_sync(
+        self,
+        syllabus_id: str,
+        job_type: str,
+        request_json: dict,
+        user_id: Optional[str] = None,
+        unit_number: Optional[int] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            syllabus = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not syllabus:
+                return None
+
+            if user_id:
+                active = sesion.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM ai_generation_jobs
+                        WHERE user_id = :uid
+                          AND status IN ('pending', 'running')
+                          AND created_at >= NOW() - INTERVAL '15 minutes'
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"uid": user_id},
+                ).mappings().first()
+                if active:
+                    mapped = self._mapear_progressive_row(active)
+                    if mapped:
+                        mapped["reused"] = True
+                    return mapped
+
+            fila = sesion.execute(
+                text(
+                    """
+                    INSERT INTO ai_generation_jobs (
+                        id, syllabus_id, user_id, job_type, status, unit_number,
+                        request_json, attempts, created_at, updated_at
+                    )
+                    VALUES (
+                        gen_random_uuid(), :sid, :uid, :job_type, 'pending', :unit_number,
+                        CAST(:request_json AS JSONB), 0, now(), now()
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "sid": syllabus_id,
+                    "uid": user_id,
+                    "job_type": job_type,
+                    "unit_number": int(unit_number) if unit_number is not None else None,
+                    "request_json": json.dumps(request_json or {}, ensure_ascii=False),
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def crear_ai_generation_job(
+        self,
+        syllabus_id: str,
+        job_type: str,
+        request_json: dict,
+        user_id: Optional[str] = None,
+        unit_number: Optional[int] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._crear_ai_generation_job_sync,
+                syllabus_id,
+                job_type,
+                request_json,
+                user_id,
+                unit_number,
+            )
+        except Exception as e:
+            logger.error(f"Error al crear job IA {job_type} para silabo {syllabus_id}: {e}")
+            return None
+
+    def _obtener_ai_generation_job_sync(
+        self,
+        job_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    f"""
+                    SELECT j.*
+                    FROM ai_generation_jobs j
+                    JOIN syllabi s ON s.id = j.syllabus_id
+                    WHERE j.id = :job_id
+                      {access_clause}
+                    """
+                ),
+                {"job_id": job_id, **access_params},
+            ).mappings().first()
+        return self._mapear_progressive_row(fila)
+
+    async def obtener_ai_generation_job(
+        self,
+        job_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_ai_generation_job_sync, job_id, user_id)
+        except Exception as e:
+            logger.error(f"Error al obtener job IA {job_id}: {e}")
+            return None
+
+    def _marcar_ai_generation_job_running_sync(self, job_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE ai_generation_jobs
+                    SET status = 'running',
+                        attempts = attempts + 1,
+                        started_at = COALESCE(started_at, now()),
+                        updated_at = now()
+                    WHERE id = :job_id
+                      AND status IN ('pending', 'running')
+                    RETURNING *
+                    """
+                ),
+                {"job_id": job_id},
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def marcar_ai_generation_job_running(self, job_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._marcar_ai_generation_job_running_sync, job_id)
+        except Exception as e:
+            logger.error(f"Error al marcar job IA running {job_id}: {e}")
+            return None
+
+    def _completar_ai_generation_job_sync(self, job_id: str, result_json: dict) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE ai_generation_jobs
+                    SET status = 'done',
+                        result_json = CAST(:result_json AS JSONB),
+                        error_message = NULL,
+                        finished_at = now(),
+                        updated_at = now()
+                    WHERE id = :job_id
+                    RETURNING *
+                    """
+                ),
+                {
+                    "job_id": job_id,
+                    "result_json": json.dumps(result_json or {}, ensure_ascii=False),
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def completar_ai_generation_job(self, job_id: str, result_json: dict) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._completar_ai_generation_job_sync, job_id, result_json)
+        except Exception as e:
+            logger.error(f"Error al completar job IA {job_id}: {e}")
+            return None
+
+    def _fallar_ai_generation_job_sync(
+        self,
+        job_id: str,
+        error_message: str,
+        result_json: Optional[dict] = None,
+    ) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE ai_generation_jobs
+                    SET status = 'error',
+                        error_message = :error_message,
+                        result_json = CAST(:result_json AS JSONB),
+                        finished_at = now(),
+                        updated_at = now()
+                    WHERE id = :job_id
+                    RETURNING *
+                    """
+                ),
+                {
+                    "job_id": job_id,
+                    "error_message": error_message,
+                    "result_json": json.dumps(result_json or {}, ensure_ascii=False),
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_progressive_row(fila)
+
+    async def fallar_ai_generation_job(
+        self,
+        job_id: str,
+        error_message: str,
+        result_json: Optional[dict] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._fallar_ai_generation_job_sync,
+                job_id,
+                error_message,
+                result_json,
+            )
+        except Exception as e:
+            logger.error(f"Error al fallar job IA {job_id}: {e}")
+            return None
 
     def _guardar_curricular_product_options_sync(
         self,

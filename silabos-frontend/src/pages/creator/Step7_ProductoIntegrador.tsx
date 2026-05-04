@@ -253,6 +253,8 @@ export default function Step7_ProductoIntegrador() {
   const [notebookProductContext, setNotebookProductContext] = useState('');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [detailOption, setDetailOption] = useState<ProgressiveProductOption | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatusText, setJobStatusText] = useState('');
 
   const unitsCount = Math.max(1, draftPerformances.length || 1);
   const selectedId = selected?.id || options.find((option) => option.selected)?.id;
@@ -287,17 +289,41 @@ export default function Step7_ProductoIntegrador() {
   const handleSuggest = async () => {
     if (!draftId) return;
     setLoading(true);
+    setActiveJobId(null);
+    setJobStatusText('Preparando sugerencia de producto integrador...');
     try {
-      const response = await api.suggestProgressiveProducts(draftId, category, {
+      const queued = await api.suggestProgressiveProducts(draftId, category, {
         notebookContextText: notebookProductContext,
       });
-      setOptions(response.data.options || []);
+      const jobId = queued.data.job_id || queued.data.id;
+      if (!jobId) throw new Error('El servidor no devolvio job_id para la sugerencia');
+      setActiveJobId(jobId);
+      setJobStatusText(
+        queued.data.already_running
+          ? 'La IA ya tiene una sugerencia en proceso.'
+          : 'La IA esta cruzando metodo, evaluacion y consolidado de NotebookLM.',
+      );
+      const completed = await api.pollAiGenerationJob<{ options: ProgressiveProductOption[] }>(jobId, {
+        intervalMs: 4000,
+        timeoutMs: 300000,
+        onUpdate: (job) => {
+          setJobStatusText(
+            job.status === 'running'
+              ? 'Construyendo opciones y linea de tiempo PA...'
+              : 'Solicitud en cola. Esperando proveedor disponible...',
+          );
+        },
+      });
+      const result = completed.data.result || completed.data.result_json;
+      setOptions(result?.options || []);
       setSelected(null);
       showToast('Opciones de producto generadas', 'success');
-    } catch {
-      showToast('No se pudieron generar productos integradores', 'error');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudieron generar productos integradores', 'error');
     } finally {
       setLoading(false);
+      setActiveJobId(null);
+      setJobStatusText('');
     }
   };
 
@@ -436,6 +462,19 @@ export default function Step7_ProductoIntegrador() {
           {selectedTitle ? <p className="mt-1 text-[12px] text-white/72">{selectedTitle}</p> : null}
         </div>
       </section>
+
+      {activeJobId ? (
+        <div className="mb-4 flex items-center justify-between gap-3 border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Loader2 size={16} className="shrink-0 animate-spin text-[#72E7F6]" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#72E7F6]">IA generando en segundo plano</p>
+              <p className="mt-1 text-[11px] leading-5 text-white/64">{jobStatusText || 'Procesando solicitud...'}</p>
+            </div>
+          </div>
+          <span className="hidden font-jetbrains text-[10px] text-white/34 sm:inline">job {activeJobId.slice(0, 8)}</span>
+        </div>
+      ) : null}
 
       <section className="overflow-hidden border border-white/10 bg-[#162A45]">
         {options.length ? (

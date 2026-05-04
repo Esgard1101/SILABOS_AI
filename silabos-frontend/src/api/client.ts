@@ -166,6 +166,10 @@ async function request<T>(
   return body as T;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export const api = {
   login: (data: LoginRequest) =>
     request<LoginResponse>('/api/auth/login', {
@@ -866,20 +870,62 @@ export const api = {
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/state`,
     ),
 
+  getAiGenerationJob: <T = unknown>(jobId: string) =>
+    request<APIResponse<import('./types').AiGenerationJob<T>>>(
+      `/api/jobs/${encodeURIComponent(jobId)}`,
+      { method: 'GET' },
+      15000,
+    ),
+
+  pollAiGenerationJob: async <T = unknown>(
+    jobId: string,
+    options?: {
+      intervalMs?: number;
+      timeoutMs?: number;
+      onUpdate?: (job: import('./types').AiGenerationJob<T>) => void;
+    },
+  ) => {
+    const intervalMs = options?.intervalMs ?? 4000;
+    const timeoutMs = options?.timeoutMs ?? 300000;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt <= timeoutMs) {
+      const response = await api.getAiGenerationJob<T>(jobId);
+      const job = response.data;
+      options?.onUpdate?.(job);
+
+      if (job.status === 'done') {
+        return response;
+      }
+
+      if (job.status === 'error') {
+        throw new ApiError(
+          job.error_message || 'La IA esta un poco ocupada, muchos usuarios. Espere un momento por favor.',
+          503,
+          response,
+        );
+      }
+
+      await sleep(intervalMs);
+    }
+
+    throw new ApiError('La generacion sigue en cola. Intenta revisar nuevamente en unos segundos.', 408);
+  },
+
   suggestProgressiveProducts: (
     syllabusId: string,
     category: string,
     options?: { forceProvider?: 'gemini' | 'openrouter'; notebookContextText?: string },
   ) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
-    return request<APIResponse<{ options: import('./types').ProgressiveProductOption[] }>>(
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/products/suggest${q}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category, notebook_context_text: options?.notebookContextText || '' }),
       },
-      90000,
+      15000,
     );
   },
 
@@ -900,14 +946,14 @@ export const api = {
     options?: { forceProvider?: 'gemini' | 'openrouter' },
   ) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
-    return request<APIResponse<import('./types').ProgressiveUnitContext>>(
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/unit-contexts/${unitNumber}/extract${q}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw_context_text: rawContextText }),
       },
-      60000,
+      15000,
     );
   },
 
@@ -918,14 +964,14 @@ export const api = {
     options?: { forceProvider?: 'gemini' | 'openrouter' },
   ) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
-    return request<APIResponse<import('./types').ProgressiveUnitGenerateResponse>>(
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/generate${q}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      120000,
+      15000,
     );
   },
 
@@ -936,14 +982,14 @@ export const api = {
     options?: { forceProvider?: 'gemini' | 'openrouter' },
   ) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
-    return request<APIResponse<import('./types').ProgressiveUnitGenerateResponse>>(
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/units/${unitNumber}/regenerate${q}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      120000,
+      15000,
     );
   },
 

@@ -8,9 +8,10 @@ generacion didactica y ensamblaje final.
 from __future__ import annotations
 
 import re
+import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from auth.permissions import get_current_user_record
@@ -23,6 +24,9 @@ from services.progressive_curriculum_engine import (
 
 
 router = APIRouter(tags=["Motor Curricular Progresivo v1"])
+logger = logging.getLogger(__name__)
+
+JOB_HIGH_DEMAND_MESSAGE = "La IA esta un poco ocupada, muchos usuarios. Espere un momento por favor."
 
 
 class ProductSuggestInput(BaseModel):
@@ -105,6 +109,35 @@ def _dump_model(model: BaseModel) -> dict:
     if hasattr(model, "model_dump"):
         return model.model_dump(exclude_unset=True)
     return model.dict(exclude_unset=True)
+
+
+def _job_public_payload(job: dict, *, message: str | None = None) -> dict:
+    return {
+        "job_id": str(job.get("id") or ""),
+        "id": str(job.get("id") or ""),
+        "job_type": job.get("job_type"),
+        "status": job.get("status"),
+        "unit_number": job.get("unit_number"),
+        "already_running": bool(job.get("reused")),
+        "message": message,
+        "created_at": job.get("created_at"),
+        "updated_at": job.get("updated_at"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "result": job.get("result_json"),
+        "result_json": job.get("result_json"),
+        "error_message": job.get("error_message"),
+        "attempts": job.get("attempts", 0),
+    }
+
+
+def _job_error_payload(exc: HTTPException) -> tuple[str, dict]:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        message = str(detail.get("message") or detail.get("detail") or JOB_HIGH_DEMAND_MESSAGE)
+        return message, {"status_code": exc.status_code, "detail": detail}
+    message = str(detail or JOB_HIGH_DEMAND_MESSAGE)
+    return message, {"status_code": exc.status_code, "detail": detail}
 
 
 def _as_list(value: Any) -> list:
@@ -557,12 +590,16 @@ async def _generate_or_regenerate_unit(
     syllabus_id: str,
     unit_number: int,
     body: UnitGenerateInput | UnitRegenerateInput,
-    request: Request,
+    request: Request | None = None,
+    servicios: dict | None = None,
     current_user: dict,
     force_provider: str | None,
     parent_generation_id: str | None = None,
 ) -> dict:
-    servicios = _sv(request)
+    if servicios is None:
+        if request is None:
+            raise HTTPException(500, "Servicios no disponibles para ejecutar el job")
+        servicios = _sv(request)
     supabase = _require_db(servicios)
     engine = get_progressive_curriculum_engine()
     ai_service = _optional_ai(servicios)
@@ -666,32 +703,14 @@ async def _generate_or_regenerate_unit(
     return result
 
 
-@router.get("/syllabi/{syllabus_id}/progressive/state", response_model=APIResponse)
-async def obtener_progressive_state(
-    syllabus_id: str,
-    request: Request,
-    current_user: dict = Depends(get_current_user_record),
-):
-    supabase = _require_db(_sv(request))
-    state = await supabase.obtener_progressive_curriculum_state(
-        syllabus_id,
-        _current_user_id(current_user),
-    )
-    if not state:
-        raise HTTPException(404, "Estado progresivo no encontrado")
-    return APIResponse(success=True, data=state, error=None)
-
-
-@router.post("/syllabi/{syllabus_id}/progressive/products/suggest", response_model=APIResponse)
-async def sugerir_productos_integradores(
+async def _suggest_product_options(
+    *,
     syllabus_id: str,
     body: ProductSuggestInput,
-    request: Request,
-    current_user: dict = Depends(get_current_user_record),
-    force_provider: str | None = Query(default=None),
-):
-    force_provider = _validate_force_provider(force_provider)
-    servicios = _sv(request)
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> dict:
     supabase = _require_db(servicios)
     engine = get_progressive_curriculum_engine()
     user_id = _current_user_id(current_user)
@@ -719,7 +738,240 @@ async def sugerir_productos_integradores(
         {"options": saved or options},
         user_id=user_id,
     )
-    return APIResponse(success=True, data={"options": saved or options}, error=None)
+    return {"options": saved or options}
+
+
+async def _extract_unit_context_payload(
+    *,
+    syllabus_id: str,
+    unit_number: int,
+    body: UnitContextInput,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> dict:
+    supabase = _require_db(servicios)
+    engine = get_progressive_curriculum_engine()
+    extracted = await engine.extract_unit_context(
+        raw_context_text=body.raw_context_text,
+        ai_service=_optional_ai(servicios),
+        force_provider=force_provider,
+    )
+    saved = await supabase.upsert_unit_context(
+        syllabus_id,
+        unit_number,
+        body.raw_context_text,
+        extracted,
+        notebook_prompt_version="progressive-v1",
+        user_id=_current_user_id(current_user),
+    )
+    if not saved:
+        raise HTTPException(404, "No se pudo guardar el contexto de unidad")
+    return saved
+
+
+async def _run_product_suggestion_job(
+    *,
+    job_id: str,
+    syllabus_id: str,
+    body_data: dict,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> None:
+    supabase = _require_db(servicios)
+    await supabase.marcar_ai_generation_job_running(job_id)
+    try:
+        result = await _suggest_product_options(
+            syllabus_id=syllabus_id,
+            body=ProductSuggestInput(**body_data),
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+        await supabase.completar_ai_generation_job(job_id, result)
+    except HTTPException as exc:
+        message, payload = _job_error_payload(exc)
+        await supabase.fallar_ai_generation_job(job_id, message, payload)
+    except Exception as exc:
+        logger.exception("Fallo inesperado en job %s de producto progresivo", job_id)
+        await supabase.fallar_ai_generation_job(
+            job_id,
+            JOB_HIGH_DEMAND_MESSAGE,
+            {"code": "UNEXPECTED_PRODUCT_JOB_ERROR", "detail": str(exc)},
+        )
+
+
+async def _run_unit_context_job(
+    *,
+    job_id: str,
+    syllabus_id: str,
+    unit_number: int,
+    body_data: dict,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> None:
+    supabase = _require_db(servicios)
+    await supabase.marcar_ai_generation_job_running(job_id)
+    try:
+        result = await _extract_unit_context_payload(
+            syllabus_id=syllabus_id,
+            unit_number=unit_number,
+            body=UnitContextInput(**body_data),
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+        await supabase.completar_ai_generation_job(job_id, result)
+    except HTTPException as exc:
+        message, payload = _job_error_payload(exc)
+        await supabase.fallar_ai_generation_job(job_id, message, payload)
+    except Exception as exc:
+        logger.exception("Fallo inesperado en job %s de contexto progresivo", job_id)
+        await supabase.fallar_ai_generation_job(
+            job_id,
+            JOB_HIGH_DEMAND_MESSAGE,
+            {"code": "UNEXPECTED_UNIT_CONTEXT_JOB_ERROR", "detail": str(exc)},
+        )
+
+
+async def _run_unit_generation_job(
+    *,
+    job_id: str,
+    syllabus_id: str,
+    unit_number: int,
+    body_data: dict,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+    parent_generation_id: str | None = None,
+) -> None:
+    supabase = _require_db(servicios)
+    await supabase.marcar_ai_generation_job_running(job_id)
+    try:
+        body_model: UnitGenerateInput | UnitRegenerateInput
+        if parent_generation_id:
+            body_model = UnitRegenerateInput(**body_data)
+        else:
+            body_model = UnitGenerateInput(**body_data)
+        result = await _generate_or_regenerate_unit(
+            syllabus_id=syllabus_id,
+            unit_number=unit_number,
+            body=body_model,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+            parent_generation_id=parent_generation_id,
+        )
+        await supabase.completar_ai_generation_job(job_id, result)
+    except HTTPException as exc:
+        message, payload = _job_error_payload(exc)
+        await supabase.fallar_ai_generation_job(job_id, message, payload)
+    except Exception as exc:
+        logger.exception("Fallo inesperado en job %s de unidad progresiva", job_id)
+        await supabase.fallar_ai_generation_job(
+            job_id,
+            JOB_HIGH_DEMAND_MESSAGE,
+            {"code": "UNEXPECTED_UNIT_JOB_ERROR", "detail": str(exc)},
+        )
+
+
+async def _queue_ai_generation_job(
+    *,
+    supabase,
+    syllabus_id: str,
+    job_type: str,
+    request_payload: dict,
+    user_id: str | None,
+    unit_number: int | None = None,
+) -> dict:
+    job = await supabase.crear_ai_generation_job(
+        syllabus_id=syllabus_id,
+        job_type=job_type,
+        request_json=request_payload,
+        user_id=user_id,
+        unit_number=unit_number,
+    )
+    if not job:
+        raise HTTPException(404, "No se pudo crear el job de generacion")
+    if job.get("reused"):
+        same_type = job.get("job_type") == job_type
+        same_syllabus = str(job.get("syllabus_id") or "") == str(syllabus_id)
+        same_unit = unit_number is None or int(job.get("unit_number") or 0) == int(unit_number)
+        if not (same_type and same_syllabus and same_unit):
+            raise HTTPException(
+                status_code=429,
+                detail="Ya tienes una generacion IA en curso. Espera a que termine antes de iniciar otra.",
+            )
+    return job
+
+
+@router.get("/syllabi/{syllabus_id}/progressive/state", response_model=APIResponse)
+async def obtener_progressive_state(
+    syllabus_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    supabase = _require_db(_sv(request))
+    state = await supabase.obtener_progressive_curriculum_state(
+        syllabus_id,
+        _current_user_id(current_user),
+    )
+    if not state:
+        raise HTTPException(404, "Estado progresivo no encontrado")
+    return APIResponse(success=True, data=state, error=None)
+
+
+@router.post("/syllabi/{syllabus_id}/progressive/products/suggest", response_model=APIResponse)
+async def sugerir_productos_integradores(
+    syllabus_id: str,
+    body: ProductSuggestInput,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    current_user: dict = Depends(get_current_user_record),
+    force_provider: str | None = Query(default=None),
+):
+    force_provider = _validate_force_provider(force_provider)
+    servicios = _sv(request)
+    supabase = _require_db(servicios)
+    user_id = _current_user_id(current_user)
+    body_data = _dump_model(body)
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        job_type="progressive_product_suggest",
+        request_payload={"body": body_data, "force_provider": force_provider},
+        user_id=user_id,
+        unit_number=None,
+    )
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_product_suggestion_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = "Ya hay una sugerencia de producto en proceso" if job.get("reused") else "Sugerencia de producto enviada a cola"
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
+
+
+@router.get("/jobs/{job_id}", response_model=APIResponse)
+async def obtener_ai_generation_job(
+    job_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    supabase = _require_db(_sv(request))
+    job = await supabase.obtener_ai_generation_job(job_id, _current_user_id(current_user))
+    if not job:
+        raise HTTPException(404, "Job de generacion no encontrado")
+    return APIResponse(success=True, data=_job_public_payload(job), error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/progressive/products/select", response_model=APIResponse)
@@ -746,29 +998,38 @@ async def extraer_contexto_unidad(
     unit_number: int,
     body: UnitContextInput,
     request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
     current_user: dict = Depends(get_current_user_record),
     force_provider: str | None = Query(default=None),
 ):
     force_provider = _validate_force_provider(force_provider)
     servicios = _sv(request)
     supabase = _require_db(servicios)
-    engine = get_progressive_curriculum_engine()
-    extracted = await engine.extract_unit_context(
-        raw_context_text=body.raw_context_text,
-        ai_service=_optional_ai(servicios),
-        force_provider=force_provider,
+    user_id = _current_user_id(current_user)
+    body_data = _dump_model(body)
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        job_type="progressive_unit_context_extract",
+        request_payload={"body": body_data, "force_provider": force_provider},
+        user_id=user_id,
+        unit_number=unit_number,
     )
-    saved = await supabase.upsert_unit_context(
-        syllabus_id,
-        unit_number,
-        body.raw_context_text,
-        extracted,
-        notebook_prompt_version="progressive-v1",
-        user_id=_current_user_id(current_user),
-    )
-    if not saved:
-        raise HTTPException(404, "No se pudo guardar el contexto de unidad")
-    return APIResponse(success=True, data=saved, error=None)
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_unit_context_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            unit_number=unit_number,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = "Ya hay una extraccion de contexto en proceso" if job.get("reused") else "Contexto de unidad enviado a cola"
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/progressive/units/{unit_number}/generate", response_model=APIResponse)
@@ -777,18 +1038,39 @@ async def generar_unidad_progresiva(
     unit_number: int,
     body: UnitGenerateInput,
     request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
     current_user: dict = Depends(get_current_user_record),
     force_provider: str | None = Query(default=None),
 ):
-    result = await _generate_or_regenerate_unit(
+    force_provider = _validate_force_provider(force_provider)
+    servicios = _sv(request)
+    supabase = _require_db(servicios)
+    user_id = _current_user_id(current_user)
+    body_data = _dump_model(body)
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
         syllabus_id=syllabus_id,
+        job_type="progressive_unit_generate",
+        request_payload={"body": body_data, "force_provider": force_provider},
+        user_id=user_id,
         unit_number=unit_number,
-        body=body,
-        request=request,
-        current_user=current_user,
-        force_provider=_validate_force_provider(force_provider),
     )
-    return APIResponse(success=True, data=result, error=None)
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_unit_generation_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            unit_number=unit_number,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+            parent_generation_id=None,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = "Ya hay una generacion de unidad en proceso" if job.get("reused") else "Generacion de unidad enviada a cola"
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/progressive/units/{unit_number}/regenerate", response_model=APIResponse)
@@ -797,27 +1079,51 @@ async def regenerar_unidad_progresiva(
     unit_number: int,
     body: UnitRegenerateInput,
     request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
     current_user: dict = Depends(get_current_user_record),
     force_provider: str | None = Query(default=None),
 ):
-    supabase = _require_db(_sv(request))
+    force_provider = _validate_force_provider(force_provider)
+    servicios = _sv(request)
+    supabase = _require_db(servicios)
+    user_id = _current_user_id(current_user)
     latest = await supabase.obtener_latest_unit_generation(
         syllabus_id,
         unit_number,
-        _current_user_id(current_user),
+        user_id,
     )
     if not latest:
         raise HTTPException(404, "No existe una unidad previa para regenerar")
-    result = await _generate_or_regenerate_unit(
+    body_data = _dump_model(body)
+    parent_generation_id = latest.get("id")
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
         syllabus_id=syllabus_id,
+        job_type="progressive_unit_regenerate",
+        request_payload={
+            "body": body_data,
+            "force_provider": force_provider,
+            "parent_generation_id": parent_generation_id,
+        },
+        user_id=user_id,
         unit_number=unit_number,
-        body=body,
-        request=request,
-        current_user=current_user,
-        force_provider=_validate_force_provider(force_provider),
-        parent_generation_id=latest.get("id"),
     )
-    return APIResponse(success=True, data=result, error=None)
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_unit_generation_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            unit_number=unit_number,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+            parent_generation_id=parent_generation_id,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = "Ya hay una regeneracion de unidad en proceso" if job.get("reused") else "Regeneracion de unidad enviada a cola"
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
 
 
 @router.patch("/syllabi/{syllabus_id}/progressive/units/{unit_number}/weeks/{week}/lock", response_model=APIResponse)
