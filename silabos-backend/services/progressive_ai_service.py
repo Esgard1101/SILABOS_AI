@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 
 _service: "ProgressiveAIService | None" = None
 
+TERRITORIAL_CONTEXT_BLOCK = (
+    "CONTEXTO TERRITORIAL Y ÁREA DE INFLUENCIA: La Universidad Nacional Pedro Ruiz Gallo (UNPRG) "
+    "tiene su sede en Lambayeque. Su zona de influencia directa abarca Chiclayo (capital y eje "
+    "comercial/urbano con distritos densos como José Leonardo Ortiz y La Victoria), balnearios y "
+    "zonas costeras (Pimentel, Puerto Eten), zonas agrícolas e históricas (Ferreñafe, Monsefú, "
+    "Chongoyape, Saña, Cayaltí, Tumán y Huaca Rajada). REGLA: Elige orgánicamente UN SOLO lugar "
+    "o distrito de esta lista que tenga total sentido semántico con el tema del curso para situar "
+    "el objeto de trabajo o proyecto."
+)
+
 
 def _join_context_items(items: list[Any], limit: int = 8) -> str:
     lines: list[str] = []
@@ -174,7 +184,7 @@ Deriva contenido formativo y un plan semanal de 16 semanas para el curso.
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:450]}
-CONTEXTO TERRITORIAL: Universidad Nacional Pedro Ruiz Gallo, ubicada en el departamento de Lambayeque, Peru.
+{TERRITORIAL_CONTEXT_BLOCK}
 TEMAS OFICIALES:
 {temas_ctx or "- Sin enriquecimiento de temas"}
 HABILIDADES OFICIALES:
@@ -217,7 +227,7 @@ REGLAS:
 - Cada semana debe tener un tema de knowledge unico, secuencial y de complejidad creciente. Redactalo como tema didactico breve, natural y entendible por un docente.
 - Evita formulas roboticas como "Fundamentos conceptuales de...", "Integracion diagnostica de..." o "Producto parcial sobre..."; usa nombres de clase/taller concretos.
 - Unidad 1 introductoria; unidades intermedias de practica y profundizacion; unidad final de aplicacion/integracion.
-- responsabilidad_social: 4 a 5 lineas. Debe plantear una actividad concreta del mundo real vinculada al proposito del curso o a la aplicacion social del aprendizaje en el departamento de Lambayeque. No debe ser decorativa ni aislada: debe incluir contexto local, accion estudiantil, aplicacion de conocimientos/habilidades y evidencia verificable.
+- responsabilidad_social: 4 a 5 lineas. Debe plantear una actividad concreta del mundo real vinculada al proposito del curso o a la aplicacion social del aprendizaje en UN SOLO lugar elegido del contexto territorial. No debe ser decorativa ni aislada: debe incluir contexto local, accion estudiantil, aplicacion de conocimientos/habilidades y evidencia verificable.
 - Responde SOLO JSON, sin texto adicional."""
 
         payload = await self._generate_json(
@@ -253,10 +263,7 @@ REGLAS:
         prompt = f"""Eres especialista en diseno curricular universitario y responsabilidad social universitaria en Peru.
 Redacta una actividad de Responsabilidad Social Universitaria para un silabo de la Universidad Nacional Pedro Ruiz Gallo.
 
-CONTEXTO TERRITORIAL OBLIGATORIO:
-- La universidad se ubica en el departamento de Lambayeque, Peru.
-- La actividad debe aterrizarse a una necesidad realista del entorno universitario, comunitario, educativo, cultural, ambiental, ciudadano o productivo de Lambayeque.
-- No menciones lugares especificos si no son necesarios; no inventes instituciones aliadas.
+{TERRITORIAL_CONTEXT_BLOCK}
 
 CURSO: {curso.get("name", "")}
 SUMILLA: {str(curso.get("sumilla", ""))[:550]}
@@ -275,7 +282,7 @@ HABILIDADES:
 REGLAS:
 - Escribe 4 a 5 lineas, en tono institucional y natural.
 - Propón una actividad concreta del mundo real, vinculada al proposito del curso o a la aplicacion social del aprendizaje.
-- Debe incluir: necesidad/contexto local en Lambayeque, accion de los estudiantes, aplicacion de conocimientos/habilidades y evidencia verificable.
+- Debe incluir: necesidad/contexto local en UN SOLO lugar elegido del contexto territorial, accion de los estudiantes, aplicacion de conocimientos/habilidades y evidencia verificable.
 - No debe sonar decorativa, ceremonial ni aislada.
 - No uses bullets ni numeracion.
 - Responde SOLO JSON valido: {{"responsabilidad_social": "texto"}}"""
@@ -339,8 +346,15 @@ Formato:
         ra_unidades: list[dict],
         desempenos: list[dict],
         contenidos: list[dict],
+        producto_acreditable: str = "",
+        work_object: str = "",
+        timeline_json: dict | None = None,
         force_provider: str | None = None,
     ) -> str:
+        timeline_text = _join_context_items(
+            [{"titulo": f"{key}: {value}"} for key, value in (timeline_json or {}).items()],
+            6,
+        )
         prompt = f"""Asume el rol de especialista en didáctica universitaria y diseño curricular por competencias.
 Vas a redactar exclusivamente el componente del sílabo denominado: "Metodología y actividades de investigación formativa".
 
@@ -349,6 +363,10 @@ Debes construir este componente de manera coherente con: la sumilla, la competen
 SUMILLA: {str(curso.get("sumilla", ""))[:900]}
 COMPETENCIA OFICIAL: {str(curso.get("competencia_egreso", ""))[:500]}
 RESULTADO DE APRENDIZAJE DEL CURSO: {ra_curso}
+PRODUCTO ACREDITABLE DEL CURSO: {producto_acreditable or "No especificado"}
+OBJETO DE TRABAJO CENTRAL: {work_object or "No especificado"}
+LINEA DE TIEMPO PA:
+{timeline_text}
 RESULTADOS DE UNIDAD:
 {_join_context_items(ra_unidades, 4)}
 DESEMPEÑOS:
@@ -379,6 +397,13 @@ Párrafo 4: Explica la investigación formativa y cierra mostrando coherencia ge
 SALIDA ESPERADA:
 Devuelve la respuesta estrictamente en formato JSON válido, utilizando una única clave llamada "metodologia_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 4 párrafos. NO uses viñetas."""
 
+        prompt += f"""
+
+CONTEXTO OBLIGATORIO DE TRAZABILIDAD:
+El texto debe mencionar explicitamente el objeto de trabajo central "{work_object or 'No especificado'}" y el producto acreditable "{producto_acreditable or 'No especificado'}". Debe explicar como los hitos PA convierten ese objeto en evidencia evaluable:
+{timeline_text}
+"""
+
         payload = await self._generate_json(
             task="progressive_methodology_text",
             prompt=prompt,
@@ -396,8 +421,15 @@ Devuelve la respuesta estrictamente en formato JSON válido, utilizando una úni
         ra_curso: str,
         desempenos: list[dict],
         contenidos: list[dict],
+        producto_acreditable: str = "",
+        work_object: str = "",
+        timeline_json: dict | None = None,
         force_provider: str | None = None,
     ) -> str:
+        timeline_text = _join_context_items(
+            [{"titulo": f"{key}: {value}"} for key, value in (timeline_json or {}).items()],
+            6,
+        )
         prompt = f"""Asume el rol de especialista en tutoría universitaria y diseño curricular.
 Vas a redactar exclusivamente el componente: "Actividades de tutoría: área académica".
 
@@ -432,6 +464,13 @@ Párrafo 3: Técnicas a emplear y declaración explícita de que la tutoría se 
 
 SALIDA ESPERADA:
 Devuelve la respuesta estrictamente en formato JSON válido, utilizando una única clave llamada "tutoria_texto". El valor debe ser toda la prosa continua requerida, usando \\n\\n para separar los 3 párrafos. NO uses viñetas."""
+
+        prompt += f"""
+
+CONTEXTO OBLIGATORIO DE TUTORIA:
+El texto debe mencionar como la tutoria acompanara el objeto de trabajo central "{work_object or 'No especificado'}", el producto acreditable "{producto_acreditable or 'No especificado'}" y sus hitos PA:
+{timeline_text}
+"""
 
         payload = await self._generate_json(
             task="progressive_tutoria_text",

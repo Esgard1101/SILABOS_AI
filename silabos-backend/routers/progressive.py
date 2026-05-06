@@ -2366,14 +2366,8 @@ async def ensamblar_final(
             f"Desarrollar una actividad de transferencia comunitaria donde los estudiantes apliquen {temas_rsu} "
             "para atender una necesidad concreta del entorno local."
         )
-    metodologia_text = _build_methodology_narrative(
-        method_raw,
-        course_name=curso.get("name", "") if curso else "",
-    )
-    tutoria_text = (
-        "Las tutorías académicas se desarrollarán de manera flexible durante el curso, "
-        "atendiendo dificultades de comprensión, elaboración de productos y sustentación de evidencias."
-    )
+    metodologia_text = ""
+    tutoria_text = ""
     try:
         progressive_ai = get_progressive_ai_service()
         contexto_contenidos = [
@@ -2398,12 +2392,27 @@ async def ensamblar_final(
             contenidos=contexto_contenidos,
             force_provider=force_provider,
         )
-        if metodologia_ai:
-            metodologia_text = metodologia_ai
-        if tutoria_ai:
-            tutoria_text = tutoria_ai
+        metodologia_text = metodologia_ai
+        tutoria_text = tutoria_ai
     except Exception as exc:
-        logger.warning("No se pudo redactar metodologia/tutoria con IA; usando fallback: %s", exc)
+        logger.exception("No se pudo redactar metodologia/tutoria con IA")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "FINAL_ASSEMBLY_AI_TEXT_FAILED",
+                "message": "No se pudo redactar metodologia y tutoria con IA. Reintenta el ensamblado final cuando el proveedor este disponible.",
+                "retryable": True,
+            },
+        ) from exc
+    if not _clean_text(metodologia_text) or not _clean_text(tutoria_text):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "FINAL_ASSEMBLY_AI_TEXT_EMPTY",
+                "message": "La IA no devolvio metodologia y tutoria validas. No se guardo el silabo final.",
+                "retryable": True,
+            },
+        )
 
     final = {
         "_assembled": True,

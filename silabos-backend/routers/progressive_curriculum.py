@@ -21,6 +21,7 @@ from services.progressive_curriculum_engine import (
     ProgressiveContentGenerationError,
     get_progressive_curriculum_engine,
 )
+from services.progressive_ai_service import get_progressive_ai_service
 
 
 router = APIRouter(tags=["Motor Curricular Progresivo v1"])
@@ -235,35 +236,95 @@ def _grading_criteria(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return criteria
 
 
-def _methodology_text(method: dict | str | None, course_name: str = "") -> str:
-    if isinstance(method, dict):
-        name = _clean_text(method.get("name") or method.get("selected_method_name"), "metodologias activas")
-        description = _clean_text(method.get("description") or method.get("descripcion"))
-        teacher_role = _clean_text(method.get("rol_docente"))
-        student_role = _clean_text(method.get("rol_estudiante"))
-    else:
-        name = _clean_text(method, "metodologias activas")
-        description = teacher_role = student_role = ""
-    prefix = f"La asignatura de {course_name}" if course_name else "La asignatura"
-    parts = [
-        f"{prefix} se desarrolla mediante {name}, articulando el trabajo semanal con evidencias verificables y retroalimentacion docente.",
-    ]
-    if description:
-        parts.append(description)
-    if teacher_role:
-        parts.append(f"El docente orienta el proceso mediante {teacher_role.lower()}.")
-    if student_role:
-        parts.append(f"El estudiante participa mediante {student_role.lower()}.")
-    return " ".join(parts)
+def _week_from_text(value: Any) -> int | None:
+    match = re.search(r"\b(?:Semana|Sem)\s*(\d{1,2})\b|\b(\d{1,2})\b", str(value or ""), re.IGNORECASE)
+    if not match:
+        return None
+    raw = match.group(1) or match.group(2)
+    try:
+        return int(raw)
+    except Exception:
+        return None
 
 
-def _tutorial_text(course_name: str = "") -> str:
-    course_fragment = f" del curso de {course_name}" if course_name else " del curso"
-    return (
-        f"Las actividades de tutoria academica{course_fragment} se desarrollan de manera presencial o virtual, "
-        "segun la necesidad del estudiante. Se prioriza el acompanamiento para resolver dificultades de comprension, "
-        "mejorar los avances del producto acreditable y fortalecer la sustentacion de evidencias."
-    )
+def _criteria_from_product_timeline(
+    grading_rows: list[dict[str, Any]],
+    selected_product: dict[str, Any],
+) -> list[dict[str, Any]]:
+    timeline = selected_product.get("timeline_json") if isinstance(selected_product, dict) else {}
+    if not isinstance(timeline, dict) or not timeline:
+        return _grading_criteria(grading_rows)
+    by_code = {
+        _clean_text(row.get("code") or row.get("sigla") or row.get("label")).lower(): row
+        for row in grading_rows or []
+        if isinstance(row, dict)
+    }
+    criteria: list[dict[str, Any]] = []
+    for index, (code, value) in enumerate(timeline.items(), start=1):
+        code_text = _clean_text(code, f"PA{index}")
+        timeline_text = _clean_text(value)
+        row = by_code.get(code_text.lower()) or {}
+        percentage = (
+            row.get("porcentaje")
+            if row.get("porcentaje") is not None
+            else row.get("percentage", 0)
+        )
+        criteria.append(
+            {
+                "nombre": timeline_text or f"{code_text}: {selected_product.get('title', 'Producto acreditable')}",
+                "porcentaje": percentage,
+                "sigla": code_text,
+                "cronograma": _clean_text(row.get("cronograma") or row.get("schedule"), f"Semana {_week_from_text(timeline_text) or '-'}"),
+                "descripcion": timeline_text,
+            }
+        )
+    return criteria or _grading_criteria(grading_rows)
+
+
+def _enrich_schedule_with_product(
+    rows: list[dict[str, Any]],
+    selected_product: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not rows or not isinstance(selected_product, dict):
+        return rows
+    timeline = selected_product.get("timeline_json") if isinstance(selected_product.get("timeline_json"), dict) else {}
+    if not timeline:
+        return rows
+    week_targets = {
+        _week_from_text(value): (_clean_text(code), _clean_text(value))
+        for code, value in timeline.items()
+        if _week_from_text(value)
+    }
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            week = int(item.get("week") or item.get("semana") or 0)
+        except Exception:
+            week = 0
+        target = week_targets.get(week)
+        if target:
+            code, text_value = target
+            item["evidencia"] = f"{code}: {text_value}"
+            item["producto"] = item["evidencia"]
+        enriched.append(item)
+    return enriched
+
+
+def _evaluation_matrix_from_units(units: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    matrix: list[dict[str, Any]] = []
+    for unit in units or []:
+        if not isinstance(unit, dict):
+            continue
+        matrix.append(
+            {
+                "desempenos": _clean_text(unit.get("desempeno") or unit.get("logro") or unit.get("ra_unidad"), "-"),
+                "habilidades": unit.get("habilidades_requeridas") or unit.get("required_skills") or [],
+                "evidencias": _clean_text(unit.get("evidence") or unit.get("evidencia"), "-"),
+                "instrumentos": "Rubrica analitica",
+            }
+        )
+    return matrix
 
 
 def _clean_unit_title(value: Any, unit_number: int) -> str:
@@ -363,6 +424,7 @@ async def _enrich_assembly_with_previous_steps(
     assembled: dict[str, Any],
     current_user: dict,
     user_id: str | None,
+    force_provider: str | None = None,
 ) -> dict[str, Any]:
     context = await _course_context(
         supabase=supabase,
@@ -421,6 +483,15 @@ async def _enrich_assembly_with_previous_steps(
     method_name = _clean_text(
         method.get("name") if isinstance(method, dict) else method
     ) or _clean_text((payload.get("method") or {}).get("selected_method_name"))
+    selected_product = context.get("product_option") or {}
+    if not _clean_text((selected_product or {}).get("work_object")):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "WORK_OBJECT_REQUIRED",
+                "message": "Selecciona o genera un producto acreditable con objeto de trabajo antes de ensamblar el silabo final.",
+            },
+        )
     rsu_text = _clean_text(content.get("responsabilidad_social"))
     if not rsu_text:
         rsu_text = (
@@ -429,6 +500,69 @@ async def _enrich_assembly_with_previous_steps(
         )
 
     enriched = dict(assembled or {})
+    enriched["cronograma_semanal"] = _enrich_schedule_with_product(
+        list(enriched.get("cronograma_semanal") or []),
+        selected_product,
+    )
+    progressive_block = dict(enriched.get("progressive_curriculum") or {})
+    progressive_block["selected_product"] = selected_product
+    if progressive_block.get("content_plan"):
+        progressive_block["content_plan"] = _enrich_schedule_with_product(
+            list(progressive_block.get("content_plan") or []),
+            selected_product,
+        )
+    enriched["progressive_curriculum"] = progressive_block
+
+    contexto_contenidos = [
+        {"titulo": row.get("tema") or row.get("conocimientos") or row.get("knowledge")}
+        for row in (enriched.get("cronograma_semanal") or [])[:16]
+        if isinstance(row, dict)
+    ]
+    progressive_ai = get_progressive_ai_service()
+    try:
+        metodologia_text = await progressive_ai.redactar_metodologia(
+            curso=curso or {},
+            metodo=method_name,
+            ra_curso=resultado,
+            ra_unidades=enriched.get("unidades_tematicas") or [],
+            desempenos=_performance_export_rows(context.get("performances") or purpose.get("performances") or []),
+            contenidos=contexto_contenidos,
+            producto_acreditable=_clean_text(selected_product.get("title")),
+            work_object=_clean_text(selected_product.get("work_object")),
+            timeline_json=selected_product.get("timeline_json") if isinstance(selected_product.get("timeline_json"), dict) else {},
+            force_provider=force_provider,
+        )
+        tutoria_text = await progressive_ai.redactar_tutoria(
+            curso=curso or {},
+            metodo=method_name,
+            ra_curso=resultado,
+            desempenos=_performance_export_rows(context.get("performances") or purpose.get("performances") or []),
+            contenidos=contexto_contenidos,
+            producto_acreditable=_clean_text(selected_product.get("title")),
+            work_object=_clean_text(selected_product.get("work_object")),
+            timeline_json=selected_product.get("timeline_json") if isinstance(selected_product.get("timeline_json"), dict) else {},
+            force_provider=force_provider,
+        )
+    except Exception as exc:
+        logger.exception("Fallo obligatorio al redactar metodologia/tutoria con IA")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "FINAL_ASSEMBLY_AI_TEXT_FAILED",
+                "message": "No se pudo redactar metodologia y tutoria con IA. Reintenta el ensamblado final cuando el proveedor este disponible.",
+                "retryable": True,
+            },
+        ) from exc
+    if not _clean_text(metodologia_text) or not _clean_text(tutoria_text):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "FINAL_ASSEMBLY_AI_TEXT_EMPTY",
+                "message": "La IA no devolvio metodologia y tutoria validas. No se guardo el silabo final.",
+                "retryable": True,
+            },
+        )
+
     enriched.update(
         {
             "_assembled": True,
@@ -465,8 +599,8 @@ async def _enrich_assembly_with_previous_steps(
             "resultado_aprendizaje": resultado,
             "capacidad_del_curso": capacidad,
             "desempenos": _performance_export_rows(context.get("performances") or purpose.get("performances") or []),
-            "metodologia": _clean_text(payload.get("metodologia")) or _methodology_text(method, course_name),
-            "tutoria": _clean_text(payload.get("tutoria")) or _tutorial_text(course_name),
+            "metodologia": metodologia_text,
+            "tutoria": tutoria_text,
             "responsabilidad_social": {
                 "actividadPropuesta": rsu_text,
                 "descripcion": rsu_text,
@@ -479,9 +613,10 @@ async def _enrich_assembly_with_previous_steps(
             "method_short_name": method_name,
             "methodology_json": method if isinstance(method, dict) else {"name": method_name},
             "sistema_evaluacion": {
-                "criterios": _grading_criteria(grading_rows),
+                "criterios": _criteria_from_product_timeline(grading_rows, selected_product),
                 "nota_aprobatoria": 14,
             },
+            "evaluacion_matriz": _evaluation_matrix_from_units(enriched.get("unidades_tematicas") or []),
             "bibliografia": refs_a_bibliografia_json(bibliography_refs),
             "bibliography": bibliography_refs,
             "bibliography_sources": _as_list(bibliography.get("sources_consulted")) if isinstance(bibliography, dict) else [],
@@ -639,7 +774,7 @@ async def _generate_or_regenerate_unit(
         generation for generation in approved_generations
         if int(generation.get("unit_number") or 0) < unit_number
     ]
-    traceability_context = engine.build_traceability_context(approved_previous)
+    traceability_context = engine.build_traceability_context(approved_previous, context.get("product_option"))
 
     latest = await supabase.obtener_latest_unit_generation(syllabus_id, unit_number, user_id)
     inherited_locks = latest.get("locked_weeks_json") if latest else []
@@ -1179,7 +1314,13 @@ async def editar_semana_unidad(
     target.update(patch)
     phase = target.get("phase") or ""
     skill = target.get("skill") or ((target.get("required_skills") or [""])[0] if target.get("required_skills") else "")
-    target["validation"] = engine.validate_week(row=target, phase=phase, skill=skill)
+    context = await _course_context(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        user_id=_current_user_id(current_user),
+    )
+    work_object = _clean_text((context.get("product_option") or {}).get("work_object"))
+    target["validation"] = engine.validate_week(row=target, phase=phase, skill=skill, work_object=work_object)
     patch["validation"] = target["validation"]
 
     updated = await supabase.actualizar_unit_week(
@@ -1232,8 +1373,10 @@ async def aprobar_unidad_progresiva(
 async def ensamblar_progressive_curriculum(
     syllabus_id: str,
     request: Request,
+    force_provider: str | None = Query(default=None),
     current_user: dict = Depends(get_current_user_record),
 ):
+    force_provider = _validate_force_provider(force_provider)
     supabase = _require_db(_sv(request))
     user_id = _current_user_id(current_user)
     approved_generations = await supabase.listar_unit_generations(
@@ -1251,6 +1394,7 @@ async def ensamblar_progressive_curriculum(
         assembled=assembled,
         current_user=current_user,
         user_id=user_id,
+        force_provider=force_provider,
     )
     saved = await supabase.guardar_progressive_assembly(
         syllabus_id,

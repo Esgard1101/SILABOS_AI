@@ -868,17 +868,8 @@ def _build_context(silabo: dict) -> dict:
         "eval_filas": eval_filas,
         "grading": grading,
         "formula_pf": "PF = " + " + ".join(f"{row['peso']}*{row['sigla']}" for row in grading),
-        "metodologia": _sanitize_sentence_spacing(_val(
-            silabo.get("metodologia"),
-            "El curso emplea metodologías activas: ABP, Aprendizaje Basado "
-            "en Proyectos e Investigación Formativa. Se complementa con el "
-            "Aula Virtual UNPRG.",
-        )),
-        "tutoria": _sanitize_sentence_spacing(_val(
-            silabo.get("tutoria"),
-            "Las tutorías académicas se realizan de manera presencial o "
-            "virtual, conforme a la normativa institucional vigente.",
-        )),
+        "metodologia": _sanitize_sentence_spacing(_val(silabo.get("metodologia"), "")),
+        "tutoria": _sanitize_sentence_spacing(_val(silabo.get("tutoria"), "")),
         "responsabilidad_social": _sanitize_sentence_spacing(responsabilidad_social),
         "referencias": referencias,
         "_filename": _safe_filename(_val(dg.get("nombre_curso"))),

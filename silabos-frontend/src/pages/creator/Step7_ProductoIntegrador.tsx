@@ -28,8 +28,32 @@ const PRODUCT_CATEGORIES = [
   'Recopilacion y Evolucion',
 ];
 
+const TERRITORIAL_CONTEXT_BLOCK =
+  'La Universidad Nacional Pedro Ruiz Gallo (UNPRG) tiene su sede en Lambayeque. Su zona de influencia directa abarca Chiclayo (capital y eje comercial/urbano con distritos densos como Jose Leonardo Ortiz y La Victoria), balnearios y zonas costeras (Pimentel, Puerto Eten), zonas agricolas e historicas (Ferrenafe, Monsefu, Chongoyape, Sana, Cayalti, Tuman y Huaca Rajada). Regla: elige organicamente un solo lugar o distrito de esta lista que tenga total sentido semantico con el tema del curso.';
+
 function timelineEntries(option: ProgressiveProductOption) {
   return Object.entries(option.timeline_json || {}).filter(([, value]) => String(value || '').trim());
+}
+
+function workObjectText(option: ProgressiveProductOption) {
+  return option.work_object?.trim() || 'Objeto de trabajo pendiente de contextualizacion.';
+}
+
+function BlockingLoader({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
+      <div className="w-full max-w-sm border border-[#00B4D8]/35 bg-[#0B192C] p-6 text-center shadow-2xl shadow-cyan-950/40">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#00B4D8]/35 bg-[#00B4D8]/10">
+          <Loader2 size={26} className="animate-spin text-[#6FE9F5]" />
+        </div>
+        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4AF37]">{title}</p>
+        <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
+        <div className="mt-5 h-1 overflow-hidden bg-white/10">
+          <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function buildProductNotebookPrompt(courseName: string, methodName: string, category: string, unitsCount: number) {
@@ -52,15 +76,24 @@ Estructura obligatoria:
 - Propon 2 o 3 objetos verificables: informe tecnico, protocolo, plan, instrumento, diagnostico, propuesta, dossier, prototipo, material, estrategia, intervencion, articulo o producto digital.
 - Cada objeto debe estar conectado con las fuentes, no ser generico.
 
-3. RECOMENDACION PRINCIPAL
-- Elige 1 producto integrador recomendado.
+3. OBJETO DE TRABAJO CENTRAL DEL CURSO
+- Define el objeto de trabajo central que guiara todas las unidades y el producto final.
+- Debe depender del metodo pedagogico: caso, problema, proyecto, desafio, pregunta de investigacion, experiencia o fenomeno.
+- Debe estar aterrizado al contexto territorial de la Universidad Nacional Pedro Ruiz Gallo.
+- Contexto territorial y area de influencia: ${TERRITORIAL_CONTEXT_BLOCK}
+- Evita repetir automaticamente el mismo distrito en todos los cursos. El lugar debe responder al tema, al metodo y al tipo de producto.
+
+4. RECOMENDACION PRINCIPAL
+- Entrega el Producto Acreditable final evaluable.
+- Entrega el Objeto de Trabajo segun metodo.
 - Justifica por que sirve para evaluar el curso y el metodo pedagogico.
 
-4. AVANCES PA SUGERIDOS
+5. AVANCES PA SUGERIDOS
 - Distribuye el mismo producto en ${unitsCount} avances progresivos.
 - Cada avance debe ser una parte del mismo producto, no un producto distinto.
+- Cada PA debe nombrar explicitamente el objeto de trabajo.
 
-5. CRITERIOS DE CALIDAD
+6. CRITERIOS DE CALIDAD
 - Lista 5 criterios que deberian evaluarse en el producto final.
 
 Reglas:
@@ -68,6 +101,7 @@ Reglas:
 - No inventes bibliografia.
 - No uses citas internas como [1] o [2].
 - Evita recomendaciones vagas como "hacer una exposicion" o "elaborar un portafolio" sin objeto profesional claro.
+- Devuelve claramente tres bloques: Producto Acreditable, Objeto de Trabajo y Linea de Tiempo PA.
 - Devuelve texto ordenado y facil de copiar.`;
 }
 
@@ -102,10 +136,16 @@ function ProductDetailModal({
           </button>
         </div>
 
-        <div className="grid gap-5 py-5 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="grid gap-5 py-5 lg:grid-cols-3">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">Explicacion docente</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">Producto acreditable</p>
             <p className="mt-2 text-[12px] leading-6 text-white/74">{option.justification}</p>
+          </div>
+          <div className="border border-white/10 bg-[#162A45] p-4">
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
+              Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
+            </p>
+            <p className="mt-2 text-[11px] leading-5 text-white/72">{workObjectText(option)}</p>
           </div>
           <div className="border border-white/10 bg-[#162A45] p-4">
             <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">
@@ -165,7 +205,7 @@ function ProductOptionRow({
   return (
     <div
       className={[
-        'grid gap-4 border-b border-white/10 px-4 py-4 transition lg:grid-cols-[1.1fr_1fr_auto]',
+        'grid gap-4 border-b border-white/10 px-4 py-4 transition lg:grid-cols-[1.05fr_1fr_1fr_auto]',
         selected ? 'bg-[#00B4CC]/10' : 'bg-[#0B192C]/35 hover:bg-white/[0.035]',
       ].join(' ')}
     >
@@ -195,6 +235,13 @@ function ProductOptionRow({
           <Info size={12} />
           Ver explicacion
         </button>
+      </div>
+
+      <div className="min-w-0 border-l border-white/10 pl-4">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
+          Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
+        </p>
+        <p className="text-[10px] leading-4 text-white/64">{workObjectText(option)}</p>
       </div>
 
       <div className="min-w-0 border-l border-white/10 pl-4">
@@ -255,6 +302,7 @@ export default function Step7_ProductoIntegrador() {
   const [detailOption, setDetailOption] = useState<ProgressiveProductOption | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
+  const [loadingState, setLoadingState] = useState(Boolean(draftId));
 
   const unitsCount = Math.max(1, draftPerformances.length || 1);
   const selectedId = selected?.id || options.find((option) => option.selected)?.id;
@@ -268,8 +316,12 @@ export default function Step7_ProductoIntegrador() {
   }, [options.length, selectedTitle]);
 
   useEffect(() => {
-    if (!draftId) return;
+    if (!draftId) {
+      setLoadingState(false);
+      return;
+    }
     let active = true;
+    setLoadingState(true);
     api.getProgressiveCurriculumState(draftId)
       .then((response) => {
         if (!active) return;
@@ -280,6 +332,9 @@ export default function Step7_ProductoIntegrador() {
       })
       .catch(() => {
         if (active) setOptions([]);
+      })
+      .finally(() => {
+        if (active) setLoadingState(false);
       });
     return () => {
       active = false;
@@ -362,6 +417,24 @@ export default function Step7_ProductoIntegrador() {
 
   return (
     <>
+    {loadingState ? (
+      <BlockingLoader
+        title="Cargando producto"
+        message="Estamos recuperando las opciones guardadas, el producto seleccionado y su linea de tiempo PA."
+      />
+    ) : null}
+    {loading ? (
+      <BlockingLoader
+        title="Generando horizonte"
+        message={jobStatusText || 'La IA esta cruzando metodo, evaluacion y consolidado de NotebookLM. Esto puede tomar unos segundos.'}
+      />
+    ) : null}
+    {selectingId ? (
+      <BlockingLoader
+        title="Fijando producto"
+        message="Estamos guardando el producto acreditable seleccionado para sincronizarlo con evaluacion y programa."
+      />
+    ) : null}
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>

@@ -11,6 +11,7 @@ Este modulo concentra la logica didactica del nuevo flujo:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from typing import Any
@@ -27,6 +28,18 @@ PRODUCT_CATEGORIES = [
     "Analisis y Resolucion de Casos",
     "Recopilacion y Evolucion",
 ]
+
+logger = logging.getLogger(__name__)
+
+TERRITORIAL_CONTEXT_BLOCK = (
+    "CONTEXTO TERRITORIAL Y ÁREA DE INFLUENCIA: La Universidad Nacional Pedro Ruiz Gallo (UNPRG) "
+    "tiene su sede en Lambayeque. Su zona de influencia directa abarca Chiclayo (capital y eje "
+    "comercial/urbano con distritos densos como José Leonardo Ortiz y La Victoria), balnearios y "
+    "zonas costeras (Pimentel, Puerto Eten), zonas agrícolas e históricas (Ferreñafe, Monsefú, "
+    "Chongoyape, Saña, Cayaltí, Tumán y Huaca Rajada). REGLA: Elige orgánicamente UN SOLO lugar "
+    "o distrito de esta lista que tenga total sentido semántico con el tema del curso para situar "
+    "el objeto de trabajo o proyecto."
+)
 
 
 class ProgressiveContentGenerationError(RuntimeError):
@@ -73,6 +86,145 @@ REPETITIVE_ACTIVITY_SYNTAX_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+VALIDATION_STOPWORDS = {
+    "para", "como", "sobre", "entre", "desde", "hasta", "ante", "bajo",
+    "con", "sin", "por", "del", "las", "los", "una", "uno", "unas", "unos",
+    "que", "sus", "mas", "esta", "este", "estos", "estas", "curso",
+}
+
+LOCAL_CONTEXT_TOKENS = {
+    "lambayeque", "chiclayo", "unprg", "ferreñafe", "pimentel",
+    "jose leonardo ortiz", "la victoria", "Monsefú", "chongoyape",
+    "puerto eten", "saña", "zaña", "cayalti", "tuman",
+    "huaca rajada", "morrope",
+}
+
+PRODUCT_OPTIONS_ALIASES = (
+    "options",
+    "opciones",
+    "productos",
+    "products",
+    "product_options",
+    "opciones_producto",
+    "opciones de producto",
+    "productos_acreditables",
+    "productos acreditables",
+    "producto_acreditable",
+    "producto acreditable",
+    "propuestas",
+    "alternativas",
+    "suggestions",
+    "cards",
+    "tarjetas",
+)
+
+PRODUCT_TITLE_ALIASES = (
+    "title",
+    "titulo",
+    "nombre",
+    "name",
+    "producto",
+    "producto_acreditable",
+    "producto acreditable",
+    "entregable",
+    "entregable_final",
+    "deliverable",
+)
+
+PRODUCT_JUSTIFICATION_ALIASES = (
+    "justification",
+    "justificacion",
+    "fundamento",
+    "fundamentacion",
+    "razon",
+    "rationale",
+    "pertinencia",
+    "por_que",
+    "por que",
+    "descripcion",
+    "description",
+)
+
+PRODUCT_WORK_OBJECT_ALIASES = (
+    "work_object",
+    "work object",
+    "objeto_trabajo",
+    "objeto de trabajo",
+    "objeto_de_trabajo",
+    "central_object_text",
+    "objeto",
+    "caso",
+    "problema",
+    "proyecto",
+    "desafio",
+    "desafío",
+    "pregunta_investigacion",
+    "pregunta de investigacion",
+)
+
+PRODUCT_WORK_OBJECT_TYPE_ALIASES = (
+    "work_object_type",
+    "work object type",
+    "central_object_type",
+    "tipo_objeto",
+    "tipo de objeto",
+    "tipo",
+)
+
+PRODUCT_TIMELINE_ALIASES = (
+    "timeline_json",
+    "timeline",
+    "linea_tiempo",
+    "linea de tiempo",
+    "línea de tiempo",
+    "cronograma",
+    "cronograma_pa",
+    "avances",
+    "avances_pa",
+    "hitos",
+    "progresion",
+    "progresión",
+)
+
+PRODUCT_TEXT_VALUE_ALIASES = (
+    "text",
+    "texto",
+    "value",
+    "valor",
+    "description",
+    "descripcion",
+    "descripción",
+    "detalle",
+    "summary",
+    "resumen",
+    "title",
+    "titulo",
+    "nombre",
+    "name",
+)
+
+TIMELINE_CODE_ALIASES = (
+    "code",
+    "codigo",
+    "sigla",
+    "pa",
+    "label",
+    "etiqueta",
+)
+
+TIMELINE_VALUE_ALIASES = (
+    "description",
+    "descripcion",
+    "descripción",
+    "text",
+    "texto",
+    "value",
+    "valor",
+    "avance",
+    "hito",
+    "detalle",
+)
+
 
 def _has_robotic_activity_labels(value: Any) -> bool:
     return bool(ROBOTIC_ACTIVITY_LABEL_RE.search(str(value or "")))
@@ -80,6 +232,66 @@ def _has_robotic_activity_labels(value: Any) -> bool:
 
 def _has_repetitive_activity_syntax(value: Any) -> bool:
     return bool(REPETITIVE_ACTIVITY_SYNTAX_RE.search(str(value or "")))
+
+
+def _work_object_type_for_profile(profile: dict[str, Any]) -> str:
+    text = _normalize(
+        f"{profile.get('code', '')} {profile.get('name', '')} {profile.get('work_object', '')}"
+    )
+    if "caso" in text:
+        return "caso"
+    if "desafio" in text or "reto" in text:
+        return "desafio"
+    if "proyecto" in text:
+        return "proyecto"
+    if "investig" in text or "pregunta" in text:
+        return "pregunta de investigacion"
+    if "problema" in text:
+        return "problema"
+    if "cer" in text or "afirmacion" in text:
+        return "pregunta o afirmacion explicativa"
+    if "experiencia" in text:
+        return "experiencia concreta"
+    if "fenomeno" in text or "contexto" in text:
+        return "fenomeno o contexto significativo"
+    return _clean_text(profile.get("work_object"), "objeto de trabajo")
+
+
+def _work_object_score(activity: str, evidence: str, work_object: str) -> tuple[int, str]:
+    work_object = _clean_text(work_object)
+    if not work_object:
+        return 0, ""
+    combined_key = _normalize(f"{activity} {evidence}")
+    object_key = _normalize(work_object)
+    if not combined_key or not object_key:
+        return 0, "Objeto de trabajo ausente"
+    if object_key and object_key in combined_key:
+        return 2, "Objeto de trabajo trazado"
+
+    generic_terms = {
+        "caso", "casos", "problema", "problemas", "proyecto", "proyectos",
+        "desafio", "desafios", "reto", "retos", "pregunta", "preguntas",
+        "fenomeno", "fenomenos", "experiencia", "experiencias",
+        "argumento", "argumentos", "afirmacion", "afirmaciones",
+    }
+    object_tokens = [
+        token for token in object_key.split()
+        if len(token) >= 5 and token not in generic_terms and token not in VALIDATION_STOPWORDS
+    ]
+    matched = [token for token in object_tokens if token in combined_key]
+    local_tokens = {
+        _normalize(token)
+        for token in LOCAL_CONTEXT_TOKENS
+        if _normalize(token) and _normalize(token) in object_key
+    }
+    has_local_trace = not local_tokens or any(token in combined_key for token in local_tokens)
+    if object_tokens and len(matched) >= max(2, min(4, len(object_tokens) // 3)):
+        if has_local_trace:
+            return 2, "Objeto de trabajo trazado"
+        return 1, "Objeto mencionado sin trazabilidad contextual local"
+    if any(term in combined_key for term in generic_terms):
+        return 1, "Objeto mencionado de forma generica"
+    return 0, "Objeto de trabajo ausente"
 
 
 def _as_text_list(value: Any) -> list[str]:
@@ -371,6 +583,7 @@ def _evidence_for(
                 return name
 
     timeline = _coerce_json_object((product_option or {}).get("timeline_json"))
+    work_object = _clean_text((product_option or {}).get("work_object"))
     if timeline:
         for key, value in timeline.items():
             text_value = _clean_text(value)
@@ -382,8 +595,12 @@ def _evidence_for(
         ladder = ["Ficha de trabajo", "Matriz de criterios", "Avance revisado", "Producto sustentado"]
     if week_index == week_count - 1:
         if is_final_unit:
-            return ladder[-1]
-        return "Avance acreditable de unidad con retroalimentacion"
+            return f"{ladder[-1]} sobre {work_object}" if work_object else ladder[-1]
+        return (
+            f"Avance acreditable de unidad sobre {work_object} con retroalimentacion"
+            if work_object
+            else "Avance acreditable de unidad con retroalimentacion"
+        )
     ladder_index = min(len(ladder) - 1, int((week_index / max(1, week_count - 1)) * (len(ladder) - 1)))
     base = ladder[ladder_index]
     if knowledge and _normalize(knowledge) not in _normalize(base):
@@ -442,18 +659,22 @@ class ProgressiveCurriculumEngine:
                     prompt,
                     force_provider=force_provider,
                 )
-                options = payload.get("options") if isinstance(payload, dict) else payload
+                options = self._extract_product_option_items(payload)
                 normalized = self._normalize_product_options(options, category, grading_rows or [], total_units)
                 if normalized:
                     return normalized[:3]
-            except Exception:
-                pass
-        return self._fallback_product_options(
-            curso=curso,
-            method=method,
-            grading_rows=grading_rows or [],
-            category=category,
-            total_units=total_units,
+                logger.warning(
+                    "Respuesta IA de productos sin opciones normalizables | shape=%s",
+                    self._payload_shape(payload),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "No se pudo normalizar la sugerencia progresiva de producto | error=%s",
+                    exc,
+                    exc_info=True,
+                )
+        raise ProgressiveContentGenerationError(
+            "No se pudo generar un Producto Acreditable con Objeto de Trabajo contextualizado mediante IA."
         )
 
     async def extract_unit_context(
@@ -492,7 +713,13 @@ class ProgressiveCurriculumEngine:
                 pass
         return self._fallback_context_extract(raw_context_text)
 
-    def build_traceability_context(self, approved_generations: list[dict[str, Any]]) -> dict[str, Any]:
+    def build_traceability_context(
+        self,
+        approved_generations: list[dict[str, Any]],
+        product_option: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        work_object = _clean_text((product_option or {}).get("work_object"))
+        timeline = _coerce_json_object((product_option or {}).get("timeline_json"))
         weeks: list[dict[str, Any]] = []
         for generation in sorted(approved_generations, key=lambda item: int(item.get("unit_number") or 0)):
             weeks.extend(_coerce_weeks(generation.get("output_json")))
@@ -501,6 +728,8 @@ class ProgressiveCurriculumEngine:
                 "completed_weeks": "",
                 "covered_knowledge": [],
                 "last_delivered_evidence": "",
+                "central_work_object": work_object,
+                "next_pa_target": next(iter(timeline.values()), "") if timeline else "",
             }
 
         week_numbers = sorted(
@@ -520,6 +749,10 @@ class ProgressiveCurriculumEngine:
                 or last_week.get("evidencia")
                 or last_week.get("producto")
             ),
+            "central_work_object": work_object,
+            "last_work_object_reference": work_object if work_object else "",
+            "last_product_stage": _clean_text(last_week.get("evidence") or last_week.get("evidencia") or last_week.get("producto")),
+            "next_pa_target": next(iter(timeline.values()), "") if timeline else "",
         }
 
     async def generate_unit(
@@ -597,6 +830,7 @@ class ProgressiveCurriculumEngine:
             total_units=total_units,
             profile=profile,
             performance=performance,
+            product_option=product_option,
             locked_weeks=locked_weeks,
             locked_rows=locked_rows or [],
         )
@@ -634,6 +868,7 @@ class ProgressiveCurriculumEngine:
                         total_units=total_units,
                         profile=profile,
                         performance=performance,
+                        product_option=product_option,
                         locked_weeks=locked_weeks,
                         locked_rows=locked_rows or [],
                     )
@@ -659,6 +894,7 @@ class ProgressiveCurriculumEngine:
         row: dict[str, Any],
         phase: str,
         skill: str = "",
+        work_object: str = "",
     ) -> dict[str, Any]:
         activity = _clean_text(row.get("activity") or row.get("actividad"))
         knowledge = _clean_text(row.get("knowledge") or row.get("conocimientos"))
@@ -672,7 +908,19 @@ class ProgressiveCurriculumEngine:
 
         methodological_score = 2 if phase_key and phase_key in activity_key else 1 if phase_key else 0
         cognitive_score = 2 if knowledge_key and knowledge_key in activity_key else 1 if knowledge_key else 0
-        formative_score = 2 if skill_key and any(part in activity_key for part in skill_key.split()[:4]) else 1 if skill_key else 1
+        skill_terms = [
+            part for part in skill_key.split()
+            if len(part) >= 4 and part not in VALIDATION_STOPWORDS
+        ]
+        matched_skill_terms = [
+            part for part in skill_terms[:6]
+            if part in activity_key or (len(part) >= 5 and part[:5] in activity_key)
+        ]
+        formative_score = (
+            2
+            if skill_terms and len(matched_skill_terms) >= min(2, len(skill_terms))
+            else 1 if skill_key else 1
+        )
         technique_terms = (
             "mediante",
             "taller",
@@ -680,23 +928,53 @@ class ProgressiveCurriculumEngine:
             "revision",
             "modelado",
             "microtaller",
-            "caso",
+            "estudio de caso",
             "simulacion",
             "laboratorio",
             "ficha",
             "matriz",
             "discusion",
+            "preguntas esenciales",
+            "arbol del problema",
+            "mapa de actores",
+            "entrevista",
+            "design thinking",
+            "prototipado",
+            "pitch",
+            "lluvia de ideas",
+            "plan de proyecto",
+            "storyboard",
+            "revision entre pares",
+            "seminario",
+            "tutoria academica",
         )
         technique_score = 2 if any(term in activity_key for term in technique_terms) else 0
         evidence_score = 2 if evidence_key else 0
-        total = methodological_score + cognitive_score + formative_score + technique_score + evidence_score
+        work_object_score, object_diagnosis = _work_object_score(activity, evidence, work_object)
+        raw_total = methodological_score + cognitive_score + formative_score + technique_score + evidence_score
+        if work_object:
+            total = round(((raw_total + work_object_score) / 12) * 10)
+        else:
+            total = raw_total
+        if work_object and work_object_score == 1:
+            total = min(total, 7)
+        if work_object and work_object_score == 0:
+            total = min(total, 5)
+        if technique_score == 0:
+            total = min(total, 7)
         if robotic_labels:
             total = min(total, 6)
 
         if robotic_labels:
             diagnosis = "Usa etiquetas rigidas; debe redactarse en prosa docente"
+        elif technique_score == 0:
+            diagnosis = "Tecnica didactica ausente"
+        elif work_object and work_object_score == 0:
+            diagnosis = "Objeto de trabajo ausente"
+        elif work_object and work_object_score == 1:
+            diagnosis = object_diagnosis or "Objeto mencionado de forma generica"
         elif total >= 8:
-            diagnosis = "Coherencia alta"
+            diagnosis = "Triple coherencia alta con trazabilidad del producto" if work_object else "Coherencia alta"
         elif total >= 6:
             diagnosis = "Revisar precision didactica"
         else:
@@ -707,6 +985,7 @@ class ProgressiveCurriculumEngine:
             "formative_score": formative_score,
             "technique_score": technique_score,
             "evidence_score": evidence_score,
+            "work_object_score": work_object_score if work_object else None,
             "total_score": total,
             "diagnosis": diagnosis,
         }
@@ -724,7 +1003,20 @@ class ProgressiveCurriculumEngine:
             if int(row.get("week") or 0) not in locked
             and _has_repetitive_activity_syntax(row.get("activity"))
         )
-        return has_labels or repetitive_count >= 3
+        incomplete_validation = any(
+            int(row.get("week") or 0) not in locked
+            and isinstance(row.get("validation"), dict)
+            and (
+                int((row.get("validation") or {}).get("technique_score") or 0) == 0
+                or int((row.get("validation") or {}).get("methodological_score") or 0) == 0
+                or (
+                    (row.get("validation") or {}).get("work_object_score") is not None
+                    and int((row.get("validation") or {}).get("work_object_score") or 0) < 2
+                )
+            )
+            for row in weeks
+        )
+        return has_labels or repetitive_count >= 3 or incomplete_validation
 
     def _generated_weeks_are_usable(
         self,
@@ -779,7 +1071,8 @@ class ProgressiveCurriculumEngine:
             {
                 "role": "Editor academico universitario",
                 "task": (
-                    "Reescribe solo el campo activity de las semanas con redaccion robotica. "
+                    "Reescribe solo el campo activity de las semanas con redaccion robotica "
+                    "o validacion incompleta por falta de fase, tecnica u objeto de trabajo. "
                     "Mantén week, unit_number, performance, required_skills, knowledge, evidence y phase."
                 ),
                 "unit_number": unit_number,
@@ -795,6 +1088,7 @@ class ProgressiveCurriculumEngine:
                     "Prohibido usar prefijos o etiquetas como Fase:, Momento:, Proposito:, Tecnica:, Tecnicas:, Evidencia: o Actividad:.",
                     "La fase metodologica debe integrarse en prosa natural.",
                     "La tecnica debe integrarse en prosa natural mediante expresiones como mediante, a partir de, con apoyo de o usando.",
+                    "Cada activity debe mencionar una tecnica concreta del metodo o de aula: preguntas esenciales, arbol del problema, mapa de actores, entrevista breve, design thinking, prototipado rapido, revision entre pares, matriz, ficha, debate o pitch.",
                     "Cada activity debe tener maximo dos oraciones.",
                     "No repitas la misma apertura gramatical en semanas consecutivas.",
                     "Alterna sujetos y estructuras: El docente..., Los estudiantes..., Durante..., En equipos..., Con apoyo de..., La sesion se centra en...",
@@ -927,6 +1221,8 @@ class ProgressiveCurriculumEngine:
         course_name = _clean_text((curso or {}).get("name"), "el curso")
         profile = self._profile_for_method(method)
         category_key = _normalize(category)
+        work_object_type = "caso" if "casos" in category_key or "caso" in category_key else _work_object_type_for_profile(profile)
+        work_object = f"{work_object_type} concreto pendiente de contextualizacion IA para {course_name}"
         if "multimedia" in category_key:
             titles = ["Podcast de analisis critico", "Video documental breve", "Infografia interactiva"]
         elif "tecnologico" in category_key:
@@ -940,7 +1236,6 @@ class ProgressiveCurriculumEngine:
         elif "investigacion" in category_key:
             titles = ["Informe academico aplicado", "Monografia breve sustentada", "Estado del arte guiado"]
         else:
-            work_object = _clean_text(profile.get("work_object"), "producto integrador")
             titles = [
                 f"Portafolio de {work_object}",
                 f"Propuesta aplicada de {course_name}",
@@ -953,43 +1248,59 @@ class ProgressiveCurriculumEngine:
                 "title": title,
                 "justification": (
                     f"Este producto permite articular los desempenos del curso mediante "
-                    f"avances verificables, retroalimentacion docente y sustentacion final."
+                    f"avances verificables sobre {work_object}, retroalimentacion docente y sustentacion final."
                 ),
-                "timeline_json": self._timeline_from_grading(grading_rows, title, total_units),
+                "work_object": work_object,
+                "work_object_type": work_object_type,
+                "timeline_json": self._timeline_from_grading(grading_rows, title, total_units, work_object=work_object),
                 "selected": False,
             }
             for title in titles[:3]
         ]
 
-    def _timeline_from_grading(self, grading_rows: list[dict[str, Any]], title: str, total_units: int = 1) -> dict[str, str]:
+    def _timeline_from_grading(
+        self,
+        grading_rows: list[dict[str, Any]],
+        title: str,
+        total_units: int = 1,
+        *,
+        work_object: str = "",
+    ) -> dict[str, str]:
         timeline: dict[str, str] = {}
         rows = grading_rows or []
+        pa_limit = max(1, int(total_units or 1))
         pa_rows = [
             row for row in rows
             if _normalize(row.get("code") or row.get("sigla") or row.get("label")).startswith("pa")
         ]
         if not pa_rows and rows:
-            pa_rows = rows[: max(1, min(4, total_units or len(rows)))]
+            pa_rows = rows[: max(1, min(pa_limit, len(rows)))]
+        else:
+            pa_rows = pa_rows[:pa_limit]
         if not pa_rows:
-            ranges = _unit_week_ranges(max(1, int(total_units or 1)))
+            ranges = _unit_week_ranges(pa_limit)
             pa_rows = [
                 {"code": f"PA{index}", "week": ranges[index][1]}
-                for index in range(1, max(1, int(total_units or 1)) + 1)
+                for index in range(1, pa_limit + 1)
             ]
-        for index, row in enumerate(pa_rows[:4], start=1):
+        selected_pa_rows = pa_rows[:pa_limit]
+        for index, row in enumerate(selected_pa_rows, start=1):
             code = _clean_text(row.get("code") or row.get("sigla") or row.get("label"), f"PA{index}")
             week = self._week_from_grading_row(row)
-            stage = "avance" if index < len(pa_rows[:4]) else "producto final"
-            timeline[code] = f"Semana {week}: {stage} de {title}"
+            stage = "avance" if index < len(selected_pa_rows) else "producto final"
+            object_tail = f" aplicado al objeto de trabajo: {work_object}" if work_object else ""
+            timeline[code] = f"Semana {week}: {stage} de {title}{object_tail}"
         if not timeline:
+            object_tail = f" sobre {work_object}" if work_object else ""
             timeline = {
-                "PA1": f"Semana 8: avance revisado de {title}",
-                "PAFinal": f"Semana 16: producto final y sustentacion de {title}",
+                "PA1": f"Semana 8: avance revisado de {title}{object_tail}",
+                "PAFinal": f"Semana 16: producto final y sustentacion de {title}{object_tail}",
             }
         return timeline
 
     def _timeline_specs(self, grading_rows: list[dict[str, Any]], total_units: int = 1) -> list[tuple[str, str]]:
         rows = grading_rows or []
+        units = max(1, int(total_units or 1))
         pa_rows = [
             row for row in rows
             if _normalize(row.get("code") or row.get("sigla") or row.get("label")).startswith("pa")
@@ -1000,10 +1311,9 @@ class ProgressiveCurriculumEngine:
                     _clean_text(row.get("code") or row.get("sigla") or row.get("label"), f"PA{index}"),
                     self._week_from_grading_row(row),
                 )
-                for index, row in enumerate(pa_rows[:4], start=1)
+                for index, row in enumerate(pa_rows[:units], start=1)
             ]
 
-        units = max(1, int(total_units or 1))
         ranges = _unit_week_ranges(units)
         return [(f"PA{index}", str(ranges[index][1])) for index in range(1, units + 1)]
 
@@ -1059,15 +1369,11 @@ class ProgressiveCurriculumEngine:
             for index, item in enumerate(timeline):
                 if isinstance(item, dict):
                     code = _clean_text(
-                        item.get("code") or item.get("sigla") or item.get("pa") or item.get("label"),
+                        self._alias_value(item, TIMELINE_CODE_ALIASES),
                         expected_codes[index] if index < len(expected_codes) else f"PA{index + 1}",
                     )
                     raw_map[code] = _clean_text(
-                        item.get("description")
-                        or item.get("descripcion")
-                        or item.get("text")
-                        or item.get("value")
-                        or item.get("avance")
+                        self._alias_value(item, TIMELINE_VALUE_ALIASES)
                     )
                 else:
                     raw_map[expected_codes[index] if index < len(expected_codes) else f"PA{index + 1}"] = _clean_text(item)
@@ -1115,6 +1421,102 @@ class ProgressiveCurriculumEngine:
 
         return {code: value for code, value in result.items() if value}
 
+    def _alias_value(self, item: dict[str, Any], aliases: tuple[str, ...]) -> Any:
+        if not isinstance(item, dict):
+            return None
+        normalized_aliases = {_normalize(alias) for alias in aliases}
+        compact_aliases = {alias.replace(" ", "") for alias in normalized_aliases}
+        for key, value in item.items():
+            normalized_key = _normalize(key)
+            if normalized_key in normalized_aliases or normalized_key.replace(" ", "") in compact_aliases:
+                return value
+        return None
+
+    def _coerce_product_text(self, value: Any, aliases: tuple[str, ...] = PRODUCT_TEXT_VALUE_ALIASES) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (str, int, float)):
+            return _clean_text(value)
+        if isinstance(value, list):
+            for item in value:
+                text = self._coerce_product_text(item, aliases)
+                if text:
+                    return text
+            return ""
+        if isinstance(value, dict):
+            for alias_group in (aliases, PRODUCT_TEXT_VALUE_ALIASES):
+                nested = self._alias_value(value, alias_group)
+                text = self._coerce_product_text(nested, aliases=())
+                if text:
+                    return text
+            text_values = [
+                _clean_text(item)
+                for item in value.values()
+                if isinstance(item, str) and _clean_text(item)
+            ]
+            if text_values:
+                return max(text_values, key=len)
+        return ""
+
+    def _looks_like_product_option(self, item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        return bool(
+            self._alias_value(item, PRODUCT_TITLE_ALIASES)
+            or self._alias_value(item, PRODUCT_WORK_OBJECT_ALIASES)
+            or self._alias_value(item, PRODUCT_TIMELINE_ALIASES)
+        )
+
+    def _extract_product_option_items(self, payload: Any, *, depth: int = 0) -> list[dict[str, Any]]:
+        if depth > 3:
+            return []
+        if isinstance(payload, list):
+            result: list[dict[str, Any]] = []
+            for item in payload:
+                result.extend(self._extract_product_option_items(item, depth=depth + 1))
+            return result
+        if not isinstance(payload, dict):
+            return []
+
+        for alias in PRODUCT_OPTIONS_ALIASES:
+            value = self._alias_value(payload, (alias,))
+            if isinstance(value, list):
+                extracted = self._extract_product_option_items(value, depth=depth + 1)
+                if extracted:
+                    return extracted
+
+        if self._looks_like_product_option(payload):
+            return [payload]
+
+        for alias in PRODUCT_OPTIONS_ALIASES:
+            value = self._alias_value(payload, (alias,))
+            if value is not None:
+                extracted = self._extract_product_option_items(value, depth=depth + 1)
+                if extracted:
+                    return extracted
+
+        extracted: list[dict[str, Any]] = []
+        for value in payload.values():
+            if isinstance(value, list):
+                extracted.extend(self._extract_product_option_items(value, depth=depth + 1))
+        if extracted:
+            return extracted
+
+        for value in payload.values():
+            if isinstance(value, dict):
+                extracted.extend(self._extract_product_option_items(value, depth=depth + 1))
+        return extracted
+
+    def _payload_shape(self, payload: Any) -> str:
+        if isinstance(payload, dict):
+            return f"dict_keys={list(payload.keys())[:12]}"
+        if isinstance(payload, list):
+            first = payload[0] if payload else None
+            if isinstance(first, dict):
+                return f"list_len={len(payload)} first_keys={list(first.keys())[:12]}"
+            return f"list_len={len(payload)} first_type={type(first).__name__}"
+        return type(payload).__name__
+
     def _normalize_product_options(
         self,
         options: Any,
@@ -1128,22 +1530,51 @@ class ProgressiveCurriculumEngine:
         for item in options:
             if not isinstance(item, dict):
                 continue
-            title = _clean_text(item.get("title") or item.get("titulo"))
-            justification = _clean_text(item.get("justification") or item.get("justificacion"))
-            timeline = item.get("timeline_json") or item.get("timeline") or {}
-            if title and justification:
+            title = self._coerce_product_text(
+                self._alias_value(item, PRODUCT_TITLE_ALIASES),
+                PRODUCT_TITLE_ALIASES,
+            )
+            justification = self._coerce_product_text(
+                self._alias_value(item, PRODUCT_JUSTIFICATION_ALIASES),
+                PRODUCT_JUSTIFICATION_ALIASES,
+            )
+            work_object = self._coerce_product_text(
+                self._alias_value(item, PRODUCT_WORK_OBJECT_ALIASES),
+                PRODUCT_WORK_OBJECT_ALIASES,
+            )
+            work_object_type = self._coerce_product_text(
+                self._alias_value(item, PRODUCT_WORK_OBJECT_TYPE_ALIASES),
+                PRODUCT_WORK_OBJECT_TYPE_ALIASES,
+            )
+            timeline = self._alias_value(item, PRODUCT_TIMELINE_ALIASES) or {}
+            if title and work_object:
+                if not justification:
+                    justification = (
+                        f"Producto acreditable pertinente porque articula {title} con el objeto "
+                        f"de trabajo situado: {work_object}."
+                    )
                 timeline_json = self._normalize_timeline_json(timeline, grading_rows, total_units)
-                fallback_timeline = self._timeline_from_grading(grading_rows, title, total_units)
+                fallback_timeline = self._timeline_from_grading(grading_rows, title, total_units, work_object=work_object)
                 if not timeline_json:
                     timeline_json = fallback_timeline
                 else:
                     for code, value in fallback_timeline.items():
                         timeline_json.setdefault(code, value)
+                timeline_json = {
+                    code: (
+                        value
+                        if _normalize(work_object) in _normalize(value)
+                        else f"{value} sobre {work_object}"
+                    )
+                    for code, value in timeline_json.items()
+                }
                 normalized.append(
                     {
                         "category": _clean_text(item.get("category"), category),
                         "title": title,
                         "justification": justification,
+                        "work_object": work_object,
+                        "work_object_type": work_object_type,
                         "timeline_json": timeline_json,
                         "selected": bool(item.get("selected", False)),
                     }
@@ -1179,6 +1610,7 @@ class ProgressiveCurriculumEngine:
         total_units: int,
         profile: dict[str, Any],
         performance: dict[str, Any] | str | None,
+        product_option: dict[str, Any] | None,
         locked_weeks: list[int],
         locked_rows: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
@@ -1192,6 +1624,7 @@ class ProgressiveCurriculumEngine:
             if str(row.get("week") or row.get("semana") or "").isdigit()
         }
         normalized: list[dict[str, Any]] = []
+        work_object = _clean_text((product_option or {}).get("work_object"))
         for index, week_number in enumerate(expected_weeks):
             if week_number in locked_weeks and week_number in locked_by_week:
                 row = dict(locked_by_week[week_number])
@@ -1199,7 +1632,7 @@ class ProgressiveCurriculumEngine:
                 locked_phase = _clean_text(row.get("phase") or row.get("fase"))
                 locked_skill = _clean_text(row.get("skill") or row.get("habilidad"))
                 if "validation" not in row:
-                    row["validation"] = self.validate_week(row=row, phase=locked_phase, skill=locked_skill)
+                    row["validation"] = self.validate_week(row=row, phase=locked_phase, skill=locked_skill, work_object=work_object)
                 normalized.append(row)
                 continue
 
@@ -1226,7 +1659,7 @@ class ProgressiveCurriculumEngine:
                 "locked": False,
                 "phase": phase,
             }
-            clean_row["validation"] = self.validate_week(row=clean_row, phase=phase, skill=skill)
+            clean_row["validation"] = self.validate_week(row=clean_row, phase=phase, skill=skill, work_object=work_object)
             normalized.append(clean_row)
         return normalized
 
@@ -1252,6 +1685,7 @@ class ProgressiveCurriculumEngine:
         total_units: int = 1,
     ) -> str:
         profile = self._profile_for_method(method)
+        work_object_type = _work_object_type_for_profile(profile)
         timeline_specs = self._timeline_specs(grading_rows, total_units)
         timeline_schema = {
             code: f"Semana {week}: avance especifico del mismo producto"
@@ -1263,11 +1697,16 @@ class ProgressiveCurriculumEngine:
                 "task": "Proponer 3 productos acreditables integradores concretos para un curso universitario.",
                 "rules": [
                     "El PA es un solo producto del curso con avances parciales.",
-                    "Cada opcion debe tener justificacion y timeline_json separado por PA.",
                     "El producto debe ser verificable y coherente con el metodo.",
-                    "Evita productos genericos como portafolio, informe o exposicion si no estan contextualizados al curso.",
-                    "El titulo debe nombrar el objeto profesional concreto que el estudiante construira.",
-                    "Si notebook_research_context existe, usalo como fuente principal para definir el producto.",
+                    "CRITICO: Debes formular un work_object (Objeto de Trabajo). Dependiendo del metodo, este debe ser un Caso, Problema, Proyecto, Desafio o Pregunta de Investigacion ESPECIFICO y CONCRETO.",
+                    TERRITORIAL_CONTEXT_BLOCK,
+                    "No uses objetos genericos. En lugar de 'Caso de un nino', usa un caso situado con distrito, poblacion, problema y condicion verificable.",
+                    f"Para este metodo, el tipo esperado de objeto de trabajo es: {work_object_type}.",
+                    "El titulo (title) debe nombrar el producto profesional concreto que el estudiante construira para resolver o desarrollar ese work_object.",
+                    "timeline_json debe mostrar como el work_object se desarrolla a lo largo de las semanas. Cada avance PA debe nombrar explicitamente el objeto.",
+                    "Si notebook_research_context existe, usalo como grounding disciplinar principal, pero NO copies su estructura Markdown ni lo devuelvas como resumen.",
+                    "Aunque notebook_research_context venga en texto libre, tu salida debe seguir exactamente response_schema: options -> title, work_object, work_object_type, justification, timeline_json.",
+                    "Si el consolidado de Notebook no trae distrito concreto, elige organicamente UN SOLO lugar del contexto territorial. Si trae un lugar repetitivo o poco pertinente, puedes re-situarlo en otro lugar de la lista que sea semanticamente mejor.",
                     "No propongas actividades semanales; solo horizonte acreditable y avances PA.",
                     "timeline_json debe ser un objeto JSON con una clave por PA. No juntes varias semanas dentro de PA1.",
                     f"Usa exactamente estas claves para timeline_json: {', '.join(timeline_schema.keys())}.",
@@ -1275,6 +1714,7 @@ class ProgressiveCurriculumEngine:
                 ],
                 "course": curso or {},
                 "method_profile": profile,
+                "territorial_context": TERRITORIAL_CONTEXT_BLOCK,
                 "category": category,
                 "grading_rows": grading_rows,
                 "total_units": max(1, int(total_units or 1)),
@@ -1283,8 +1723,10 @@ class ProgressiveCurriculumEngine:
                 "response_schema": {
                     "options": [
                         {
-                            "category": category,
-                            "title": "Nombre concreto del producto profesional, maximo 120 caracteres",
+                            "category": "categoria del producto",
+                            "title": "Nombre del Producto Acreditable, por ejemplo Plan de intervencion nutricional",
+                            "work_object": "Objeto de trabajo concreto segun el metodo, situado en un solo lugar elegido semanticamente del contexto territorial",
+                            "work_object_type": work_object_type,
                             "justification": "Por que moviliza desempenos, metodo, evidencia y recomendaciones del contexto Notebook si existe",
                             "timeline_json": timeline_schema,
                         }
@@ -1331,6 +1773,7 @@ class ProgressiveCurriculumEngine:
     ) -> str:
         ranges = _unit_week_ranges(total_units)
         start, end = ranges.get(unit_number, (1, 16))
+        work_object = _clean_text((product_option or {}).get("work_object"))
         return json.dumps(
             {
                 "role": "Experto en diseno instruccional universitario",
@@ -1342,6 +1785,7 @@ class ProgressiveCurriculumEngine:
                     "content_block": content_block or {},
                     "grading_rows": grading_rows,
                     "selected_product": product_option or {},
+                    "central_work_object": work_object,
                 },
                 "traceability_context": traceability_context,
                 "disciplinary_context": extracted_context,
@@ -1357,6 +1801,10 @@ class ProgressiveCurriculumEngine:
                     "No repitas temas de traceability_context.covered_knowledge.",
                     "Respeta exactamente las semanas bloqueadas.",
                     "Aplica la triple coherencia sin volverla literal: fase del metodo + operacion sobre conocimiento + habilidad + tecnica + evidencia.",
+                    "El objeto de trabajo central del curso debe guiar la unidad. Si existe central_work_object, usalo como hilo conductor de actividades y evidencias.",
+                    "El objeto de trabajo debe aparecer explicitamente en semanas clave: introduccion del objeto, analisis o desarrollo, ajuste con retroalimentacion y cada evidencia PA.",
+                    "Las evidencias PA deben nombrar el objeto concreto; no escribas solo 'avance del producto' o 'desarrollo del proyecto'.",
+                    "No uses frases genericas como analisis del caso, desarrollo del proyecto o resolucion del problema sin nombrar que caso, que proyecto o que problema.",
                     "Varia la sintaxis semana a semana; no uses la misma apertura gramatical en semanas consecutivas.",
                     "Alterna sujetos y estructuras: El docente..., Los estudiantes..., Durante..., En equipos..., Con apoyo de..., La sesion se centra en...",
                     "Evita usar mas de dos veces en toda la unidad la formula exacta A partir de la fase de..., el estudiante... Lo desarrolla mediante...",
@@ -1371,8 +1819,8 @@ class ProgressiveCurriculumEngine:
                             "performance": "desempeno oficial intacto",
                             "required_skills": ["habilidad requerida"],
                             "knowledge": "conocimiento semanal",
-                            "activity": "El docente plantea una situacion propia de la fase metodologica y los estudiantes analizan el conocimiento semanal mediante una tecnica pertinente. El cierre deja una evidencia verificable vinculada a la habilidad oficial.",
-                            "evidence": "evidencia verificable",
+                            "activity": "Durante la fase metodologica correspondiente, los estudiantes operan sobre el conocimiento semanal y movilizan la habilidad requerida mediante una tecnica pertinente vinculada al objeto de trabajo central.",
+                            "evidence": "evidencia verificable que nombra el avance del producto y el objeto de trabajo",
                             "phase": "fase metodologica",
                         }
                     ]

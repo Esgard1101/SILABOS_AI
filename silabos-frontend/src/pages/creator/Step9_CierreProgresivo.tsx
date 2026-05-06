@@ -17,6 +17,10 @@ function weeksCount(generation: ProgressiveUnitGeneration) {
   return Array.isArray(generation.output_json) ? generation.output_json.length : 0;
 }
 
+function timelineEntries(product?: { timeline_json?: Record<string, string> } | null) {
+  return Object.entries(product?.timeline_json || {}).filter(([, value]) => String(value || '').trim());
+}
+
 export default function Step9_CierreProgresivo() {
   const navigate = useNavigate();
   const {
@@ -38,7 +42,9 @@ export default function Step9_CierreProgresivo() {
   );
   const selectedProduct = state?.progressive_curriculum?.selected_product
     || state?.product_options?.find((item) => item.selected);
+  const productTimeline = timelineEntries(selectedProduct);
   const allUnitsApproved = approved.length >= unitCount;
+  const productReady = Boolean(selectedProduct?.work_object?.trim());
 
   const loadState = useCallback(async () => {
     if (!draftId) return;
@@ -63,6 +69,10 @@ export default function Step9_CierreProgresivo() {
       showToast('Aprueba todas las unidades antes de ensamblar', 'warning');
       return;
     }
+    if (!productReady) {
+      showToast('El producto acreditable debe tener objeto de trabajo antes de ensamblar', 'warning');
+      return;
+    }
     setAssembling(true);
     try {
       await api.assembleProgressiveCurriculum(draftId);
@@ -71,8 +81,8 @@ export default function Step9_CierreProgresivo() {
       setRequiresValidation(false);
       showToast('Silabo ensamblado con el motor progresivo', 'success');
       navigate(`/final-delivery?id=${draftId}`);
-    } catch {
-      showToast('No se pudo ensamblar el silabo progresivo', 'error');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo ensamblar el silabo progresivo', 'error');
     } finally {
       setAssembling(false);
     }
@@ -96,7 +106,7 @@ export default function Step9_CierreProgresivo() {
             <p className="text-[9px] uppercase tracking-[0.14em] text-white/38">Unidades</p>
           </div>
           <div className="border border-white/10 bg-[#162A45] px-3 py-2">
-            <p className="font-jetbrains text-[15px] font-bold text-[#E9B44C]">{selectedProduct ? 'OK' : '--'}</p>
+            <p className="font-jetbrains text-[15px] font-bold text-[#E9B44C]">{productReady ? 'OK' : '--'}</p>
             <p className="text-[9px] uppercase tracking-[0.14em] text-white/38">Producto</p>
           </div>
           <div className="border border-white/10 bg-[#162A45] px-3 py-2">
@@ -106,7 +116,7 @@ export default function Step9_CierreProgresivo() {
         </div>
       </div>
 
-      <section className="mb-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="mb-4 grid gap-4 lg:grid-cols-3">
         <div className="border border-white/10 bg-[#162A45] p-4">
           <div className="flex items-center gap-2">
             <BookOpenCheck size={17} className="text-[#00B4D8]" />
@@ -122,12 +132,40 @@ export default function Step9_CierreProgresivo() {
         <div className="border border-white/10 bg-[#162A45] p-4">
           <div className="flex items-center gap-2">
             <ShieldCheck size={17} className="text-[#E9B44C]" />
+            <p className="text-[13px] font-bold text-white">Objeto de trabajo</p>
+          </div>
+          <p className="mt-3 text-[12px] leading-6 text-white/72">
+            {selectedProduct?.work_object || 'Objeto de trabajo pendiente de contextualizacion.'}
+          </p>
+        </div>
+        <div className="border border-white/10 bg-[#162A45] p-4">
+          <div className="flex items-center gap-2">
+            <Rows3 size={17} className="text-[#00B4D8]" />
+            <p className="text-[13px] font-bold text-white">Linea PA</p>
+          </div>
+          <div className="mt-3 space-y-2">
+            {productTimeline.length ? productTimeline.map(([code, value]) => (
+              <div key={code} className="grid grid-cols-[52px_1fr] gap-2 text-[10px] leading-5">
+                <span className="font-jetbrains font-bold text-[#6FE9F5]">{code}</span>
+                <span className="text-white/66">{value}</span>
+              </div>
+            )) : (
+              <p className="text-[11px] text-white/42">Sin linea de tiempo definida.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-4">
+        <div className="border border-white/10 bg-[#162A45] p-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={17} className="text-[#E9B44C]" />
             <p className="text-[13px] font-bold text-white">Criterios de ensamblaje</p>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
             {[
               { icon: CheckCircle2, label: 'Unidades aprobadas', ok: allUnitsApproved },
-              { icon: FileCheck2, label: 'Producto fijado', ok: Boolean(selectedProduct) },
+              { icon: FileCheck2, label: 'Producto con objeto', ok: productReady },
               { icon: Rows3, label: 'Semanas generadas', ok: approved.reduce((sum, item) => sum + weeksCount(item), 0) >= 16 },
             ].map((item) => {
               const Icon = item.icon;
@@ -187,7 +225,7 @@ export default function Step9_CierreProgresivo() {
         <button
           type="button"
           onClick={handleAssemble}
-          disabled={assembling || !allUnitsApproved}
+          disabled={assembling || !allUnitsApproved || !productReady}
           className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:opacity-45"
         >
           {assembling ? <Loader2 size={13} className="animate-spin" /> : <BookOpenCheck size={13} />}

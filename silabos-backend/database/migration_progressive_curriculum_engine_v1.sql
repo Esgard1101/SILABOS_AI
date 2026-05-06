@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS curricular_product_options (
     category VARCHAR(100) NOT NULL,
     title VARCHAR(255) NOT NULL,
     justification TEXT NOT NULL,
+    work_object TEXT,
+    work_object_type VARCHAR(80),
     timeline_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     selected BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

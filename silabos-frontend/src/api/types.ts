@@ -830,6 +830,8 @@ export interface ProgressiveProductOption {
   category: string;
   title: string;
   justification: string;
+  work_object?: string;
+  work_object_type?: string;
   timeline_json: Record<string, string>;
   selected?: boolean;
   created_at?: string;
@@ -841,6 +843,7 @@ export interface ProgressiveWeekValidation {
   formative_score?: number;
   technique_score?: number;
   evidence_score?: number;
+  work_object_score?: number | null;
   total_score: number;
   diagnosis: string;
 }

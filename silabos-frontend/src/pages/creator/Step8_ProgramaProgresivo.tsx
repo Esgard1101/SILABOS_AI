@@ -174,6 +174,12 @@ function normalizeGenerationWeeks(generation?: ProgressiveUnitGeneration | null)
   return Array.isArray(generation.output_json) ? generation.output_json : [];
 }
 
+function timelineEntriesFromState(state: ProgressiveCurriculumState | null) {
+  const product = state?.progressive_curriculum?.selected_product
+    || state?.product_options?.find((item) => item.selected);
+  return Object.entries(product?.timeline_json || {}).filter(([, value]) => String(value || '').trim());
+}
+
 function UnitRail({
   count,
   selectedUnit,
@@ -314,6 +320,11 @@ function WeekTable({
                   {week.skill ? <p className="mt-1 text-[10px] leading-4 text-[#00B4D8]/78">{week.skill}</p> : null}
                 </td>
                 <td className="px-3 py-3">
+                  {week.phase ? (
+                    <span className="mb-2 inline-flex border border-[#E9B44C]/25 bg-[#E9B44C]/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-[#F2C260]">
+                      {week.phase}
+                    </span>
+                  ) : null}
                   <p className="whitespace-pre-wrap text-[11px] leading-5 text-white/78">{week.activity}</p>
                 </td>
                 <td className="px-3 py-3">
@@ -508,6 +519,9 @@ export default function Step8_ProgramaProgresivo() {
   const lockedWeeks = weeks.filter((week) => week.locked).map((week) => week.week);
   const notebookPrompt = buildUnitNotebookPrompt(selectedUnit, unitCount, courseDetail?.name || '', currentPerformance);
   const approvedCount = state?.unit_generations?.filter((item) => item.status === 'approved').length || 0;
+  const selectedProduct = state?.progressive_curriculum?.selected_product
+    || state?.product_options?.find((item) => item.selected);
+  const productTimeline = timelineEntriesFromState(state);
 
   const loadState = useCallback(async () => {
     if (!draftId) return;
@@ -824,6 +838,25 @@ export default function Step8_ProgramaProgresivo() {
                 <span className="hidden font-jetbrains text-[10px] text-white/34 sm:inline">job {activeJobId.slice(0, 8)}</span>
               </div>
             ) : null}
+
+            <div className="mb-4 grid gap-3 border border-[#00B4D8]/20 bg-[#0B192C] px-4 py-3 lg:grid-cols-3">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Producto acreditable</p>
+                <p className="mt-1 text-[11px] font-bold leading-5 text-white/78">{selectedProduct?.title || 'Producto pendiente'}</p>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Objeto de trabajo</p>
+                <p className="mt-1 text-[11px] leading-5 text-white/68">{selectedProduct?.work_object || 'Objeto pendiente de contextualizacion'}</p>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Linea PA</p>
+                <p className="mt-1 text-[10px] leading-5 text-white/62">
+                  {productTimeline.length
+                    ? productTimeline.map(([code, value]) => `${code}: ${value}`).join(' | ')
+                    : 'Sin hitos PA definidos'}
+                </p>
+              </div>
+            </div>
 
             {currentScreen === 'context' ? (
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_340px]">

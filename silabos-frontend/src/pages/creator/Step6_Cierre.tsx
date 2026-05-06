@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { GradingRow } from '../../api/types';
+import { api } from '../../api/client';
+import type { GradingRow, ProgressiveProductOption } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 
 const SEGMENT_COLORS = ['#D4A351', '#00B4CC', '#6C85C2', '#A8D8A8', '#E8A0A0', '#C4A0D8'];
@@ -40,6 +41,117 @@ function buildAccreditableRows(productCount = 2): GradingRow[] {
         : [row];
     }).flat(),
   ];
+}
+
+function normalizeKey(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function paIndex(sigla: string) {
+  const match = /^PA\s*(\d+)$/i.exec(String(sigla || '').trim());
+  return match ? Number(match[1]) : null;
+}
+
+function productTimelineEntries(product?: ProgressiveProductOption | null) {
+  return Object.entries(product?.timeline_json || {})
+    .filter(([, value]) => String(value || '').trim())
+    .sort(([left], [right]) => {
+      const leftIndex = paIndex(left) ?? 999;
+      const rightIndex = paIndex(right) ?? 999;
+      return leftIndex - rightIndex || left.localeCompare(right);
+    });
+}
+
+function productTimelineCount(product?: ProgressiveProductOption | null) {
+  const entries = productTimelineEntries(product);
+  const paEntries = entries.filter(([code]) => paIndex(code) !== null);
+  return paEntries.length || entries.length;
+}
+
+function productKey(product?: ProgressiveProductOption | null) {
+  if (!product) return '';
+  return [
+    product.id || '',
+    product.title || '',
+    product.work_object || '',
+    JSON.stringify(product.timeline_json || {}),
+  ].join('|');
+}
+
+function weekFromTimeline(value: string) {
+  const match = /\bSemana\s+(\d{1,2})\b/i.exec(value);
+  return match ? `Semana ${match[1]}` : '';
+}
+
+function stripTimelinePrefix(value: string) {
+  return String(value || '')
+    .trim()
+    .replace(/^\s*(PA\s*\d+|PAFINAL|PF)\s*[:.)-]\s*/i, '')
+    .replace(/^\s*Semana\s+\d{1,2}\s*[:.)-]\s*/i, '')
+    .trim();
+}
+
+function evidenceFromTimeline(code: string, value: string) {
+  const detail = stripTimelinePrefix(value);
+  return `${code}: ${detail || value}`;
+}
+
+function rowsWithSelectedProductTimeline(
+  rows: GradingRow[],
+  product: ProgressiveProductOption,
+  productCount: number,
+) {
+  const entries = productTimelineEntries(product);
+  if (!entries.length) return rows;
+
+  const paRows = rows.filter((row) => paIndex(row.sigla) !== null);
+  const sourceRows = paRows.length === productCount
+    ? rows
+    : productCount === 2
+      ? DEFAULT_GRADING_ROWS
+      : buildAccreditableRows(productCount);
+
+  const byCode = new Map(entries.map(([code, value]) => [normalizeKey(code).replace(/\s+/g, ''), value]));
+  return sourceRows.map((row) => {
+    const index = paIndex(row.sigla);
+    if (!index) return row;
+
+    const code = `PA${index}`;
+    const timelineValue = byCode.get(normalizeKey(code).replace(/\s+/g, '')) || entries[index - 1]?.[1];
+    if (!timelineValue) return row;
+
+    return {
+      ...row,
+      evidencia: evidenceFromTimeline(code, timelineValue),
+      cronograma: weekFromTimeline(timelineValue) || row.cronograma,
+    };
+  });
+}
+
+function sameRows(left: GradingRow[], right: GradingRow[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function BlockingLoader({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
+      <div className="w-full max-w-sm border border-[#00B4D8]/35 bg-[#0B192C] p-6 text-center shadow-2xl shadow-cyan-950/40">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#00B4D8]/35 bg-[#00B4D8]/10">
+          <Loader2 size={26} className="animate-spin text-[#6FE9F5]" />
+        </div>
+        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4AF37]">{title}</p>
+        <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
+        <div className="mt-5 h-1 overflow-hidden bg-white/10">
+          <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function isLegacyDefault(rows: GradingRow[], productCount = 2) {
@@ -216,7 +328,11 @@ export default function Step6_Cierre() {
   } = useSyllabus();
 
   const [savingEvaluation, setSavingEvaluation] = useState(false);
-  const productCount = Math.max(draftPerformances.length || 0, 2);
+  const [selectedProduct, setSelectedProduct] = useState<ProgressiveProductOption | null>(null);
+  const [appliedProductKey, setAppliedProductKey] = useState('');
+  const [loadingProductState, setLoadingProductState] = useState(Boolean(draftId));
+  const selectedProductKey = productKey(selectedProduct);
+  const productCount = Math.max(1, draftPerformances.length || productTimelineCount(selectedProduct) || 2);
 
   useEffect(() => {
     if (isLegacyDefault(gradingRows, productCount)) {
@@ -224,6 +340,62 @@ export default function Step6_Cierre() {
       setGradingOrigin('none');
     }
   }, [gradingRows, productCount, setGradingOrigin, setGradingRows]);
+
+  useEffect(() => {
+    if (!draftId) {
+      setLoadingProductState(false);
+      return;
+    }
+    let active = true;
+    setLoadingProductState(true);
+    api.getProgressiveCurriculumState(draftId)
+      .then((response) => {
+        if (!active) return;
+        const stateProduct = response.data.progressive_curriculum?.selected_product
+          || response.data.product_options?.find((option) => option.selected)
+          || null;
+        setSelectedProduct(stateProduct);
+        if (!stateProduct) setLoadingProductState(false);
+      })
+      .catch(() => {
+        if (active) setSelectedProduct(null);
+        if (active) setLoadingProductState(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [draftId]);
+
+  useEffect(() => {
+    if (!selectedProduct || !selectedProductKey || appliedProductKey === selectedProductKey || gradingOrigin === 'manual') {
+      if (selectedProductKey && (appliedProductKey === selectedProductKey || gradingOrigin === 'manual')) {
+        setLoadingProductState(false);
+      }
+      return;
+    }
+
+    const nextRows = rowsWithSelectedProductTimeline(gradingRows, selectedProduct, productCount);
+    if (!sameRows(gradingRows, nextRows)) {
+      setGradingRows(nextRows);
+      setGradingOrigin('ai_suggested');
+    }
+    setAppliedProductKey(selectedProductKey);
+    setLoadingProductState(false);
+  }, [
+    appliedProductKey,
+    gradingOrigin,
+    gradingRows,
+    productCount,
+    selectedProduct,
+    selectedProductKey,
+    setGradingOrigin,
+    setGradingRows,
+  ]);
+
+  const handleRowsChange = (nextRows: GradingRow[]) => {
+    setGradingOrigin('manual');
+    setGradingRows(nextRows);
+  };
 
   const totalPct = gradingRows.reduce((s, r) => s + r.porcentaje, 0);
   const checks = [
@@ -256,6 +428,18 @@ export default function Step6_Cierre() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
+      {loadingProductState ? (
+        <BlockingLoader
+          title="Sincronizando evaluacion"
+          message="Estamos recuperando el producto seleccionado y aplicando sus avances PA antes de mostrar la tabla."
+        />
+      ) : null}
+      {savingEvaluation ? (
+        <BlockingLoader
+          title="Guardando evaluacion"
+          message="Estamos consolidando pesos, evidencias y cronograma para continuar al programa semanal."
+        />
+      ) : null}
       <div className="mb-4">
         <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
           Paso 9 de 11 - Sistema de evaluacion
@@ -264,6 +448,17 @@ export default function Step6_Cierre() {
         <p className="mt-1 text-[11px] text-white/60">
           Define pesos y semanas de entrega para que el motor progresivo oriente los avances PA.
         </p>
+        {selectedProduct ? (
+          <div className="mt-3 border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-3 py-2">
+            <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#6FE9F5]">
+              Producto seleccionado aplicado a PA
+            </p>
+            <p className="mt-1 text-[12px] font-semibold text-white">{selectedProduct.title}</p>
+            {selectedProduct.work_object ? (
+              <p className="mt-1 text-[10px] leading-4 text-white/58">{selectedProduct.work_object}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -271,7 +466,7 @@ export default function Step6_Cierre() {
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
             Evidencias y pesos
           </p>
-          <GradingTable rows={gradingRows} onChange={setGradingRows} />
+          <GradingTable rows={gradingRows} onChange={handleRowsChange} />
           {gradingRows.length > 0 && totalPct !== 100 && (
             <p className="text-[10px] font-semibold text-red-400">
               Total actual: {totalPct}% - debe sumar exactamente 100%.

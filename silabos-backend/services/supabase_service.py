@@ -204,6 +204,22 @@ class SupabaseService:
             sesion.execute(
                 text(
                     """
+                    ALTER TABLE IF EXISTS curricular_product_options
+                    ADD COLUMN IF NOT EXISTS work_object TEXT
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
+                    ALTER TABLE IF EXISTS curricular_product_options
+                    ADD COLUMN IF NOT EXISTS work_object_type VARCHAR(80)
+                    """
+                )
+            )
+            sesion.execute(
+                text(
+                    """
                     CREATE TABLE IF NOT EXISTS ai_generation_jobs (
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         syllabus_id UUID NOT NULL REFERENCES syllabi(id) ON DELETE CASCADE,
@@ -4515,11 +4531,11 @@ class SupabaseService:
                         """
                         INSERT INTO curricular_product_options (
                             id, syllabus_id, category, title, justification,
-                            timeline_json, selected, created_at
+                            work_object, work_object_type, timeline_json, selected, created_at
                         )
                         VALUES (
                             gen_random_uuid(), :sid, :category, :title, :justification,
-                            CAST(:timeline AS JSONB), :selected, now()
+                            :work_object, :work_object_type, CAST(:timeline AS JSONB), :selected, now()
                         )
                         RETURNING *
                         """
@@ -4529,6 +4545,8 @@ class SupabaseService:
                         "category": option.get("category") or "Libre de proponer por IA",
                         "title": option.get("title") or "Producto integrador",
                         "justification": option.get("justification") or "",
+                        "work_object": option.get("work_object") or "",
+                        "work_object_type": option.get("work_object_type") or "",
                         "timeline": json.dumps(option.get("timeline_json") or {}, ensure_ascii=False),
                         "selected": bool(option.get("selected", False)),
                     },
