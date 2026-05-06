@@ -4524,8 +4524,18 @@ class SupabaseService:
             if not exists:
                 return []
 
+            sesion.execute(
+                text(
+                    """
+                    DELETE FROM curricular_product_options
+                    WHERE syllabus_id = :sid AND selected = false
+                    """
+                ),
+                {"sid": syllabus_id},
+            )
+
             rows: list[dict] = []
-            for option in options[:6]:
+            for option in options[:3]:
                 fila = sesion.execute(
                     text(
                         """
@@ -4555,7 +4565,18 @@ class SupabaseService:
                 if mapped:
                     rows.append(mapped)
             sesion.commit()
-            return rows
+            current_rows = sesion.execute(
+                text(
+                    """
+                    SELECT * FROM curricular_product_options
+                    WHERE syllabus_id = :sid
+                    ORDER BY selected DESC, created_at DESC
+                    LIMIT 4
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().all()
+            return [self._mapear_progressive_row(row) for row in current_rows]
 
     async def guardar_curricular_product_options(
         self,

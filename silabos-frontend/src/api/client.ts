@@ -925,7 +925,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category, notebook_context_text: options?.notebookContextText || '' }),
       },
-      15000,
+      300000,
     );
   },
 

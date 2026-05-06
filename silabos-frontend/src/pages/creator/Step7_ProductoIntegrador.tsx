@@ -360,12 +360,12 @@ export default function Step7_ProductoIntegrador() {
       );
       const completed = await api.pollAiGenerationJob<{ options: ProgressiveProductOption[] }>(jobId, {
         intervalMs: 4000,
-        timeoutMs: 300000,
+        timeoutMs: 600000,
         onUpdate: (job) => {
           setJobStatusText(
             job.status === 'running'
               ? 'Construyendo opciones y linea de tiempo PA...'
-              : 'Solicitud en cola. Esperando proveedor disponible...',
+              : 'Solicitud en cola. Seguimos esperando al proveedor para priorizar calidad.',
           );
         },
       });
