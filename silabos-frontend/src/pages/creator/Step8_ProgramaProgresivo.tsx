@@ -108,6 +108,74 @@ function textOfPerformance(item?: SuggestedPerformance | string | null) {
   return item.statement || item.label || item.code || '';
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function stateUnits(state: ProgressiveCurriculumState | null): Record<string, unknown>[] {
+  const topLevel = Array.isArray(state?.units) ? state?.units : [];
+  const progressiveUnits = Array.isArray(state?.progressive_curriculum?.units)
+    ? state?.progressive_curriculum?.units
+    : [];
+  return [...(topLevel || []), ...(progressiveUnits || [])].map(asRecord);
+}
+
+function statePerformances(state: ProgressiveCurriculumState | null): SuggestedPerformance[] {
+  return Array.isArray(state?.performances) ? state.performances : [];
+}
+
+function maxUnitNumber(items: unknown[]) {
+  return items.reduce((max, item) => {
+    const value = Number(asRecord(item).unit_number);
+    return Number.isFinite(value) ? Math.max(max, value) : max;
+  }, 0);
+}
+
+function timelinePaCount(state: ProgressiveCurriculumState | null) {
+  return timelineEntriesFromState(state).filter(([code]) => /^PA\s*\d+$/i.test(String(code || '').trim())).length;
+}
+
+function resolveUnitCount(
+  state: ProgressiveCurriculumState | null,
+  draftPerformances: SuggestedPerformance[],
+) {
+  const units = stateUnits(state);
+  const performances = statePerformances(state);
+  return Math.max(
+    1,
+    draftPerformances.length,
+    units.length,
+    performances.length,
+    maxUnitNumber(units),
+    maxUnitNumber(state?.unit_contexts || []),
+    maxUnitNumber(state?.unit_generations || []),
+    timelinePaCount(state),
+  );
+}
+
+function performanceForUnit(
+  state: ProgressiveCurriculumState | null,
+  draftPerformances: SuggestedPerformance[],
+  unitNumber: number,
+) {
+  const index = Math.max(0, unitNumber - 1);
+  const fromLocal = textOfPerformance(draftPerformances[index]);
+  if (fromLocal) return fromLocal;
+
+  const fromState = textOfPerformance(statePerformances(state)[index]);
+  if (fromState) return fromState;
+
+  const unit = stateUnits(state).find((item) => Number(item.unit_number) === unitNumber) || stateUnits(state)[index];
+  const unitText = String(
+    unit?.performance_statement
+    || unit?.performance
+    || unit?.statement
+    || unit?.title
+    || '',
+  ).trim();
+  return unitText.replace(/^Unidad\s+\d+\s*:\s*/i, '');
+}
+
 function buildUnitNotebookPrompt(unitNumber: number, totalUnits: number, courseName: string, performance: string) {
   const range = getUnitWeekRange(totalUnits, unitNumber);
   const unitWeekMapText = buildUnitWeekMapText(totalUnits);
@@ -501,8 +569,11 @@ export default function Step8_ProgramaProgresivo() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
 
-  const unitCount = Math.max(1, draftPerformances.length || state?.unit_generations?.length || 1);
-  const currentPerformance = textOfPerformance(draftPerformances[selectedUnit - 1]);
+  const unitCount = useMemo(
+    () => resolveUnitCount(state, draftPerformances),
+    [draftPerformances, state],
+  );
+  const currentPerformance = performanceForUnit(state, draftPerformances, selectedUnit);
   const currentGeneration = useMemo(
     () => state?.unit_generations?.find((item) => Number(item.unit_number) === selectedUnit) || null,
     [selectedUnit, state],
@@ -542,6 +613,12 @@ export default function Step8_ProgramaProgresivo() {
   useEffect(() => {
     loadState();
   }, [loadState]);
+
+  useEffect(() => {
+    if (selectedUnit > unitCount) {
+      setSelectedUnit(unitCount);
+    }
+  }, [selectedUnit, unitCount]);
 
   const selectUnit = (unit: number) => {
     if (loading) {

@@ -5259,6 +5259,16 @@ class SupabaseService:
                 ),
                 {"sid": syllabus_id},
             ).mappings().all()
+            units = sesion.execute(
+                text(
+                    """
+                    SELECT * FROM syllabus_units
+                    WHERE syllabus_id = CAST(:sid AS UUID)
+                    ORDER BY unit_number ASC
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().all()
             contexts = sesion.execute(
                 text(
                     """
@@ -5283,9 +5293,18 @@ class SupabaseService:
         payload = syllabus["payload_json"]
         if isinstance(payload, str):
             payload = json.loads(payload)
+        course_id = (
+            (payload or {}).get("course_snapshot", {}).get("course_id")
+            or (payload or {}).get("datos_generales", {}).get("course_id")
+        )
+        performances = self._listar_performances_curso_sync(str(course_id), include_archived=False) if course_id else []
+        if not performances:
+            performances = (payload or {}).get("purpose", {}).get("performances") or []
         return {
             "syllabus_id": syllabus_id,
             "progressive_curriculum": (payload or {}).get("progressive_curriculum", {}),
+            "units": [self._mapear_progressive_row(row) for row in units],
+            "performances": performances,
             "product_options": [self._mapear_progressive_row(row) for row in products],
             "unit_contexts": [self._mapear_progressive_row(row) for row in contexts],
             "unit_generations": [self._mapear_progressive_row(row) for row in generations],

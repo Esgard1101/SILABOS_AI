@@ -900,6 +900,8 @@ export interface ProgressiveCurriculumState {
     content_plan?: ProgressiveUnitWeek[];
     units?: unknown[];
   };
+  units?: unknown[];
+  performances?: SuggestedPerformance[];
   product_options: ProgressiveProductOption[];
   unit_contexts: ProgressiveUnitContext[];
   unit_generations: ProgressiveUnitGeneration[];
