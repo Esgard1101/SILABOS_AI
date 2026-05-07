@@ -737,6 +737,7 @@ export default function Step8b_MapaConocimientos() {
   const [knowledgeMap, setKnowledgeMap] = useState<KnowledgeMap | null>(null);
   const [editingWeek, setEditingWeek] = useState<number | null>(null);
   const [notebookContext, setNotebookContext] = useState('');
+  const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [busyWeek, setBusyWeek] = useState<number | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -799,7 +800,10 @@ export default function Step8b_MapaConocimientos() {
   );
 
   const loadState = useCallback(async () => {
-    if (!draftId) return;
+    if (!draftId) {
+      setInitialLoading(false);
+      return;
+    }
     try {
       const stateResponse = await api.getProgressiveCurriculumState(draftId);
       setState(stateResponse.data);
@@ -816,6 +820,8 @@ export default function Step8b_MapaConocimientos() {
       }
     } catch {
       showToast('No se pudo cargar el Mapa de Conocimientos', 'error');
+    } finally {
+      setInitialLoading(false);
     }
   }, [draftId, showToast]);
 
@@ -1006,6 +1012,13 @@ export default function Step8b_MapaConocimientos() {
         <BlockingLoader
           title={activeJobId ? 'IA en proceso' : 'Procesando mapa'}
           message={jobStatusText || 'Trabajando en el Mapa Semanal de Conocimientos.'}
+        />
+      ) : null}
+
+      {initialLoading ? (
+        <BlockingLoader
+          title="Trayendo mapa"
+          message="Estamos recuperando el Mapa de Conocimientos guardado en este draft."
         />
       ) : null}
 

@@ -96,8 +96,30 @@ function stripTimelinePrefix(value: string) {
     .trim();
 }
 
+function shortEvidenceTitle(value: string) {
+  let text = stripTimelinePrefix(value).replace(/\s+/g, ' ').trim();
+  const cutPatterns = [
+    /\s+que\s+(?:sustenta|sustente|valida|valide|documenta|demuestra|integra|articula)\b/i,
+    /,\s*(?:validando|sustentando|orientado|aplicado|vinculado)\b/i,
+    /\s+sobre\s+[A-ZÁÉÍÓÚÑa-záéíóúñ0-9]/i,
+    /\s+para\s+(?:la|el|los|las)\s+(?:enseñanza|resolución|validación|aplicación|integración|mediación)\b/i,
+  ];
+  for (const pattern of cutPatterns) {
+    const match = pattern.exec(text);
+    if (match && match.index >= 35) {
+      text = text.slice(0, match.index).trim();
+      break;
+    }
+  }
+  if (text.length > 120) {
+    const compact = text.slice(0, 120);
+    text = compact.slice(0, Math.max(compact.lastIndexOf(' '), 80)).trim();
+  }
+  return text.replace(/[.,;:]+$/, '').trim();
+}
+
 function evidenceFromTimeline(code: string, value: string) {
-  const detail = stripTimelinePrefix(value);
+  const detail = shortEvidenceTitle(value);
   return `${code}: ${detail || value}`;
 }
 
@@ -129,6 +151,21 @@ function rowsWithSelectedProductTimeline(
       ...row,
       evidencia: evidenceFromTimeline(code, timelineValue),
       cronograma: weekFromTimeline(timelineValue) || row.cronograma,
+    };
+  });
+}
+
+function compactPaEvidenceRows(rows: GradingRow[]) {
+  return rows.map((row) => {
+    if (paIndex(row.sigla) === null) return row;
+    const evidence = String(row.evidencia || '').trim();
+    const code = String(row.sigla || '').trim();
+    const shortTitle = shortEvidenceTitle(evidence);
+    return {
+      ...row,
+      evidencia: shortTitle
+        ? `${code}: ${shortTitle.replace(new RegExp(`^${code}\\s*:\\s*`, 'i'), '')}`
+        : evidence,
     };
   });
 }
@@ -411,8 +448,12 @@ export default function Step6_Cierre() {
     if (!draftId) return;
     setSavingEvaluation(true);
     try {
+      const rowsToSave = compactPaEvidenceRows(gradingRows);
+      if (!sameRows(rowsToSave, gradingRows)) {
+        setGradingRows(rowsToSave);
+      }
       await saveStep('grading', {
-        rows: gradingRows,
+        rows: rowsToSave,
         template_origin: gradingOrigin,
         total_percent: totalPct,
         teacher_notes: gradingNotes,

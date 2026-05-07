@@ -1106,8 +1106,6 @@ def _generar_docx_programatico(context: dict) -> bytes:
             end += 1
         if end > current:
             _merge_repeated_vertical_cells(eval_table, 0, current, end, value)
-            _merge_repeated_vertical_cells(eval_table, 2, current, end, eval_table.cell(current, 2).text)
-            _merge_repeated_vertical_cells(eval_table, 3, current, end, eval_table.cell(current, 3).text)
         current = end + 1
 
     _add_section_title(document, "VIII. Sistema de Calificación")
@@ -1393,18 +1391,13 @@ def _build_html(ctx: dict) -> str:
                 merged_prefix = (
                     f"<td rowspan=\"{rowspan}\">{escape(current['desempenos'])}</td>"
                 )
-                merged_suffix = (
-                    f"<td rowspan=\"{rowspan}\">{escape(current['evidencias'])}</td>"
-                    f"<td rowspan=\"{rowspan}\">{escape(current['instrumentos'])}</td>"
-                )
-            else:
-                merged_suffix = ""
             eval_rows_parts.append(
                 f"""
                 <tr>
                   {merged_prefix}
                   <td>{escape(fila.get('habilidades', '—'))}</td>
-                  {merged_suffix}
+                  <td>{escape(fila.get('evidencias', '-'))}</td>
+                  <td>{escape(fila.get('instrumentos', '-'))}</td>
                 </tr>
                 """
             )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import logging
+import unicodedata
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
@@ -28,6 +29,57 @@ router = APIRouter(tags=["Motor Curricular Progresivo v1"])
 logger = logging.getLogger(__name__)
 
 JOB_HIGH_DEMAND_MESSAGE = "La IA esta un poco ocupada, muchos usuarios. Espere un momento por favor."
+
+METHOD_INSTRUMENT_MAPPING: list[tuple[tuple[str, ...], dict[str, Any]]] = [
+    (("abpro", "proyecto"), {
+        "instrumento_principal": "Rúbrica de evaluación de proyecto",
+        "instrumentos_alternativos": ["Lista de cotejo de producto", "Rúbrica de sustentación oral"],
+    }),
+    (("abde", "desafio", "reto"), {
+        "instrumento_principal": "Rúbrica de resolución de desafío",
+        "instrumentos_alternativos": ["Matriz de valoración de propuestas", "Lista de cotejo de viabilidad"],
+    }),
+    (("cooperativo", "colaborativo"), {
+        "instrumento_principal": "Rúbrica de trabajo colaborativo",
+        "instrumentos_alternativos": ["Ficha de coevaluación y autoevaluación", "Escala de valoración de desempeño grupal"],
+    }),
+    (("caso",), {
+        "instrumento_principal": "Rúbrica de análisis de caso",
+        "instrumentos_alternativos": ["Ficha de resolución argumentada", "Guía de observación de debate"],
+    }),
+    (("abi", "investigacion"), {
+        "instrumento_principal": "Rúbrica de informe de investigación",
+        "instrumentos_alternativos": ["Ficha de evaluación de avance de investigación", "Rúbrica de artículo académico o paper"],
+    }),
+    (("experiencial",), {
+        "instrumento_principal": "Rúbrica de desempeño práctico",
+        "instrumentos_alternativos": ["Ficha de evaluación de bitácora o diario de campo", "Lista de cotejo de ejecución"],
+    }),
+    (("taller",), {
+        "instrumento_principal": "Lista de cotejo de desempeño técnico",
+        "instrumentos_alternativos": ["Rúbrica de producto de taller", "Ficha de evaluación de habilidades prácticas"],
+    }),
+    (("cer", "afirmacion evidencia razonamiento"), {
+        "instrumento_principal": "Rúbrica de argumentación científica",
+        "instrumentos_alternativos": ["Lista de cotejo de análisis crítico", "Ficha de evaluación de justificación"],
+    }),
+    (("adi", "indagacion argumentada"), {
+        "instrumento_principal": "Rúbrica de debate argumentativo",
+        "instrumentos_alternativos": ["Matriz de evaluación de indagación", "Rúbrica de ensayo argumentativo"],
+    }),
+    (("resolucion de problemas", "abp"), {
+        "instrumento_principal": "Rúbrica de resolución de problemas",
+        "instrumentos_alternativos": ["Ficha de evaluación de alternativas de solución", "Lista de cotejo de modelado de problemas"],
+    }),
+    (("emr", "matematica realista"), {
+        "instrumento_principal": "Prueba de ejecución con rúbrica",
+        "instrumentos_alternativos": ["Rúbrica de modelación matemática", "Lista de cotejo de resolución de situaciones contextualizadas"],
+    }),
+    (("eclectico", "ecléctico"), {
+        "instrumento_principal": "Rúbrica de evaluación integral (Portafolio)",
+        "instrumentos_alternativos": ["Matriz de evaluación por competencias", "Rúbrica holística de evidencias mixtas"],
+    }),
+]
 
 
 class ProductSuggestInput(BaseModel):
@@ -188,6 +240,12 @@ def _clean_text(value: Any, fallback: str = "") -> str:
     return text or fallback
 
 
+def _normalize_key(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", _clean_text(value))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return " ".join(text.lower().split())
+
+
 def _merge_unique_texts(*groups: Any, limit: int = 80) -> list[str]:
     merged: list[str] = []
     seen: set[str] = set()
@@ -270,6 +328,36 @@ def _week_from_text(value: Any) -> int | None:
         return None
 
 
+def _short_evidence_title(value: Any) -> str:
+    text = re.sub(r"\s+", " ", _clean_text(value)).strip()
+    text = re.sub(r"^\s*(?:PA\s*\d+|PAFINAL|PF)\s*[:.)-]\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*Semana\s+\d{1,2}\s*[:.)-]\s*", "", text, flags=re.IGNORECASE)
+    cut_patterns = (
+        r"\s+que\s+(?:sustenta|sustente|valida|valide|documenta|demuestra|integra|articula)\b",
+        r",\s*(?:validando|sustentando|orientado|aplicado|vinculado)\b",
+        r"\s+sobre\s+[A-Za-zÁÉÍÓÚÑáéíóúñ0-9]",
+        r"\s+para\s+(?:la|el|los|las)\s+(?:enseñanza|resolución|resolucion|validación|validacion|aplicación|aplicacion|integración|integracion|mediación|mediacion)\b",
+    )
+    for pattern in cut_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match and match.start() >= 35:
+            text = text[: match.start()].strip()
+            break
+    if len(text) > 120:
+        compact = text[:120]
+        cut = compact.rfind(" ")
+        text = compact[: cut if cut >= 80 else 120].strip()
+    return text.rstrip(" .,;:")
+
+
+def _timeline_value_for_code(timeline: dict[str, Any], code: str) -> str:
+    code_key = _normalize_key(code).replace(" ", "")
+    for key, value in timeline.items():
+        if _normalize_key(key).replace(" ", "") == code_key:
+            return _clean_text(value)
+    return ""
+
+
 def _criteria_from_product_timeline(
     grading_rows: list[dict[str, Any]],
     selected_product: dict[str, Any],
@@ -277,31 +365,135 @@ def _criteria_from_product_timeline(
     timeline = selected_product.get("timeline_json") if isinstance(selected_product, dict) else {}
     if not isinstance(timeline, dict) or not timeline:
         return _grading_criteria(grading_rows)
-    by_code = {
-        _clean_text(row.get("code") or row.get("sigla") or row.get("label")).lower(): row
-        for row in grading_rows or []
-        if isinstance(row, dict)
-    }
-    criteria: list[dict[str, Any]] = []
+    criteria = _grading_criteria(grading_rows)
+    if criteria:
+        for row in criteria:
+            code_text = _clean_text(row.get("sigla"))
+            if not re.match(r"^PA\s*\d+$", code_text, flags=re.IGNORECASE):
+                continue
+            timeline_text = _timeline_value_for_code(timeline, code_text)
+            source_name = _clean_text(row.get("nombre")) or timeline_text
+            short_name = _short_evidence_title(source_name or timeline_text)
+            if short_name:
+                row["nombre"] = f"{code_text}: {short_name}" if not _normalize_key(short_name).startswith(_normalize_key(code_text)) else short_name
+                row["descripcion"] = row["nombre"]
+            if not _clean_text(row.get("cronograma")) or row.get("cronograma") == "-":
+                row["cronograma"] = f"Semana {_week_from_text(timeline_text) or '-'}"
+        return criteria
+
+    criteria = []
     for index, (code, value) in enumerate(timeline.items(), start=1):
         code_text = _clean_text(code, f"PA{index}")
         timeline_text = _clean_text(value)
-        row = by_code.get(code_text.lower()) or {}
-        percentage = (
-            row.get("porcentaje")
-            if row.get("porcentaje") is not None
-            else row.get("percentage", 0)
-        )
+        short_name = _short_evidence_title(timeline_text)
         criteria.append(
             {
-                "nombre": timeline_text or f"{code_text}: {selected_product.get('title', 'Producto acreditable')}",
-                "porcentaje": percentage,
+                "nombre": f"{code_text}: {short_name or selected_product.get('title', 'Producto acreditable')}",
+                "porcentaje": 0,
                 "sigla": code_text,
-                "cronograma": _clean_text(row.get("cronograma") or row.get("schedule"), f"Semana {_week_from_text(timeline_text) or '-'}"),
-                "descripcion": timeline_text,
+                "cronograma": f"Semana {_week_from_text(timeline_text) or '-'}",
+                "descripcion": f"{code_text}: {short_name or timeline_text}",
             }
         )
-    return criteria or _grading_criteria(grading_rows)
+    return criteria
+
+
+def _method_instrument_profile(method: dict | str | None, method_name: str = "") -> dict[str, Any]:
+    if isinstance(method, dict):
+        raw = " ".join(
+            _clean_text(method.get(key))
+            for key in ("name", "nombre", "code", "codigo", "short_name")
+        )
+        catalog_instruments = _as_list(method.get("instrumentos_evaluacion"))
+    else:
+        raw = _clean_text(method)
+        catalog_instruments = []
+    key = _normalize_key(f"{raw} {method_name}")
+    for tokens, profile in METHOD_INSTRUMENT_MAPPING:
+        if any(_normalize_key(token) in key for token in tokens):
+            return profile
+    if catalog_instruments:
+        return {
+            "instrumento_principal": _clean_text(catalog_instruments[0], "Rúbrica analítica"),
+            "instrumentos_alternativos": [_clean_text(item) for item in catalog_instruments[1:3] if _clean_text(item)],
+        }
+    return {
+        "instrumento_principal": "Rúbrica analítica de desempeño",
+        "instrumentos_alternativos": ["Lista de cotejo", "Ficha de observación"],
+    }
+
+
+def _instrument_for_evidence(profile: dict[str, Any], evidence: str) -> str:
+    primary = _clean_text(profile.get("instrumento_principal"), "Rúbrica analítica")
+    alternatives = [_clean_text(item) for item in _as_list(profile.get("instrumentos_alternativos")) if _clean_text(item)]
+    evidence_key = _normalize_key(evidence)
+    if "sustent" in evidence_key:
+        match = next((item for item in alternatives if "sustent" in _normalize_key(item)), None)
+        if match:
+            return match
+    if "avance" in evidence_key or "proceso" in evidence_key:
+        match = next((item for item in alternatives if "avance" in _normalize_key(item) or "cotejo" in _normalize_key(item)), None)
+        if match:
+            return match
+    return primary
+
+
+def _skills_for_performance(
+    habilidades_por_desempeno: list[dict[str, Any]],
+    code: str,
+    fallback_unit: dict[str, Any] | None = None,
+) -> list[str]:
+    code_key = _normalize_key(code)
+    for item in habilidades_por_desempeno or []:
+        if not isinstance(item, dict):
+            continue
+        item_code = _clean_text(item.get("desempeno_code") or item.get("codigo") or item.get("code"))
+        if _normalize_key(item_code) == code_key:
+            return [_clean_text(skill) for skill in _as_list(item.get("habilidades")) if _clean_text(skill)]
+    if fallback_unit:
+        fallback = fallback_unit.get("habilidades_requeridas") or fallback_unit.get("required_skills") or fallback_unit.get("habilidades")
+        return [_clean_text(skill) for skill in _as_list(fallback) if _clean_text(skill)]
+    return []
+
+
+def _evaluation_matrix_from_performance_skills(
+    *,
+    performances: list[dict[str, Any]],
+    habilidades_por_desempeno: list[dict[str, Any]],
+    grading_rows: list[dict[str, Any]],
+    selected_product: dict[str, Any],
+    method: dict | str | None,
+    method_name: str,
+    units: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    criteria = _criteria_from_product_timeline(grading_rows, selected_product)
+    instrument_profile = _method_instrument_profile(method, method_name)
+    matrix: list[dict[str, Any]] = []
+    for index, performance in enumerate(performances or []):
+        code = _clean_text(performance.get("codigo") or performance.get("code"), f"D{index + 1}")
+        statement = _clean_text(
+            performance.get("descripcion") or performance.get("statement") or performance.get("desempeno"),
+            f"Desempeño {index + 1}",
+        )
+        unit = units[index] if index < len(units or []) and isinstance(units[index], dict) else {}
+        skills = _skills_for_performance(habilidades_por_desempeno, code, unit) or ["-"]
+        criterion = criteria[index] if index < len(criteria) else (criteria[-1] if criteria else {})
+        evidence = _clean_text(
+            criterion.get("nombre") if isinstance(criterion, dict) else "",
+            _clean_text(unit.get("evidence") or unit.get("evidencia"), "-"),
+        )
+        instrument = _instrument_for_evidence(instrument_profile, evidence)
+        for skill in skills:
+            matrix.append(
+                {
+                    "desempenos": f"{code}. {statement}",
+                    "habilidades": skill,
+                    "evidencias": evidence,
+                    "evidenciasDeAprendizaje": evidence,
+                    "instrumentos": instrument,
+                }
+            )
+    return matrix
 
 
 def _enrich_schedule_with_product(
@@ -586,6 +778,18 @@ async def _enrich_assembly_with_previous_steps(
             },
         )
 
+    performance_rows = _performance_export_rows(context.get("performances") or purpose.get("performances") or [])
+    grading_criteria = _criteria_from_product_timeline(grading_rows, selected_product)
+    evaluation_matrix = _evaluation_matrix_from_performance_skills(
+        performances=performance_rows,
+        habilidades_por_desempeno=_as_list(content.get("habilidades_por_desempeno")),
+        grading_rows=grading_rows,
+        selected_product=selected_product,
+        method=method,
+        method_name=method_name,
+        units=_as_list(enriched.get("unidades_tematicas")),
+    ) or _evaluation_matrix_from_units(enriched.get("unidades_tematicas") or [])
+
     enriched.update(
         {
             "_assembled": True,
@@ -621,7 +825,7 @@ async def _enrich_assembly_with_previous_steps(
             "resultados_aprendizaje": [resultado] if resultado else [],
             "resultado_aprendizaje": resultado,
             "capacidad_del_curso": capacidad,
-            "desempenos": _performance_export_rows(context.get("performances") or purpose.get("performances") or []),
+            "desempenos": performance_rows,
             "metodologia": metodologia_text,
             "tutoria": tutoria_text,
             "responsabilidad_social": {
@@ -636,10 +840,10 @@ async def _enrich_assembly_with_previous_steps(
             "method_short_name": method_name,
             "methodology_json": method if isinstance(method, dict) else {"name": method_name},
             "sistema_evaluacion": {
-                "criterios": _criteria_from_product_timeline(grading_rows, selected_product),
+                "criterios": grading_criteria,
                 "nota_aprobatoria": 14,
             },
-            "evaluacion_matriz": _evaluation_matrix_from_units(enriched.get("unidades_tematicas") or []),
+            "evaluacion_matriz": evaluation_matrix,
             "bibliografia": refs_a_bibliografia_json(bibliography_refs),
             "bibliography": bibliography_refs,
             "bibliography_sources": _as_list(bibliography.get("sources_consulted")) if isinstance(bibliography, dict) else [],
