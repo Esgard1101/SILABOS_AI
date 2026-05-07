@@ -7,6 +7,7 @@ import {
   Copy,
   FileCheck2,
   FileText,
+  Info,
   Loader2,
   Lock,
   Pencil,
@@ -28,6 +29,11 @@ import { useSyllabus } from '../../context/SyllabusContext';
 
 type UnitScreen = 'context' | 'workshop';
 type DialogMode = 'edit' | 'regenerate' | null;
+type ProductSummary = {
+  title?: string;
+  work_object?: string;
+  timeline_json?: Record<string, string>;
+} | null | undefined;
 
 const NOTEBOOK_IMAGE = '/images/notebooklm_steps/step2d5.png';
 const MIN_CONTEXT_CHARS = 80;
@@ -553,6 +559,55 @@ function RegenerateDialog({
   );
 }
 
+function ProductReferenceDialog({
+  product,
+  timeline,
+  onClose,
+}: {
+  product: ProductSummary;
+  timeline: [string, unknown][];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">Referencia PA</p>
+            <h2 className="mt-1 text-base font-bold text-white">Producto y linea de tiempo</h2>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 gap-4 overflow-y-auto p-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)]">
+          <div className="border border-white/10 bg-[#162A45] p-4">
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Producto acreditable</p>
+            <p className="mt-2 text-[13px] font-bold leading-6 text-white">{product?.title || 'Producto pendiente'}</p>
+            <p className="mt-4 text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Objeto de trabajo</p>
+            <p className="mt-2 text-[12px] leading-6 text-white/70">{product?.work_object || 'Objeto pendiente de contextualizacion'}</p>
+          </div>
+
+          <div className="border border-[#E9B44C]/25 bg-[#162A45] p-4">
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#F2C260]">Linea PA</p>
+            <div className="mt-3 grid gap-2">
+              {timeline.length ? timeline.map(([code, value]) => (
+                <div key={String(code)} className="border border-white/10 bg-[#0B192C] px-3 py-2">
+                  <p className="font-jetbrains text-[10px] font-bold text-[#00B4D8]">{code}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-white/68">{String(value)}</p>
+                </div>
+              )) : (
+                <p className="text-[11px] leading-5 text-white/48">Sin hitos PA definidos.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BlockingLoader({ title, message }: { title: string; message: string }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
@@ -585,6 +640,7 @@ export default function Step8_ProgramaProgresivo() {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
+  const [productReferenceOpen, setProductReferenceOpen] = useState(false);
 
   const unitCount = useMemo(
     () => resolveUnitCount(state, draftPerformances),
@@ -946,23 +1002,21 @@ export default function Step8_ProgramaProgresivo() {
               </div>
             ) : null}
 
-            <div className="mb-4 grid gap-3 border border-[#00B4D8]/20 bg-[#0B192C] px-4 py-3 lg:grid-cols-3">
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Producto acreditable</p>
-                <p className="mt-1 text-[11px] font-bold leading-5 text-white/78">{selectedProduct?.title || 'Producto pendiente'}</p>
+            <div className="mb-3 flex flex-col gap-3 border border-[#00B4D8]/20 bg-[#0B192C] px-4 py-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#72E7F6]">Producto base de verificacion</p>
+                <p className="mt-1 truncate text-[12px] font-bold leading-5 text-white/86">{selectedProduct?.title || 'Producto pendiente'}</p>
+                <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-white/58">{selectedProduct?.work_object || 'Objeto pendiente de contextualizacion'}</p>
               </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Objeto de trabajo</p>
-                <p className="mt-1 text-[11px] leading-5 text-white/68">{selectedProduct?.work_object || 'Objeto pendiente de contextualizacion'}</p>
-              </div>
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Linea PA</p>
-                <p className="mt-1 text-[10px] leading-5 text-white/62">
-                  {productTimeline.length
-                    ? productTimeline.map(([code, value]) => `${code}: ${value}`).join(' | ')
-                    : 'Sin hitos PA definidos'}
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setProductReferenceOpen(true)}
+                title="Ver producto, objeto de trabajo y linea PA"
+                className="flex h-9 shrink-0 items-center justify-center gap-2 border border-white/10 bg-[#162A45] px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-white/62 hover:border-[#00B4D8]/45 hover:text-[#72E7F6] md:w-9 md:px-0"
+              >
+                <Info size={14} />
+                <span className="md:hidden">Ver linea PA</span>
+              </button>
             </div>
 
             {currentScreen === 'context' ? (
@@ -1088,6 +1142,14 @@ export default function Step8_ProgramaProgresivo() {
           onChange={setTeacherInstruction}
           onClose={() => setDialogMode(null)}
           onRegenerate={() => handleGenerate(true)}
+        />
+      ) : null}
+
+      {productReferenceOpen ? (
+        <ProductReferenceDialog
+          product={selectedProduct}
+          timeline={productTimeline}
+          onClose={() => setProductReferenceOpen(false)}
         />
       ) : null}
     </div>
