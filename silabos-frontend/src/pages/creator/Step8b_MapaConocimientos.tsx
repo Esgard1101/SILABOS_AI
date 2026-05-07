@@ -222,10 +222,7 @@ function VideoModal({ onClose }: { onClose: () => void }) {
 type WeekCardProps = {
   entry: KnowledgeMapWeek;
   totalUnits: number;
-  isEditing: boolean;
   onStartEdit: () => void;
-  onCancelEdit: () => void;
-  onSaveEdit: (patch: Partial<KnowledgeMapWeek>) => void | Promise<void>;
   onToggleLock: () => void | Promise<void>;
   busy: boolean;
   confirmed: boolean;
@@ -235,26 +232,11 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
   const {
     entry,
     totalUnits,
-    isEditing,
     onStartEdit,
-    onCancelEdit,
-    onSaveEdit,
     onToggleLock,
     busy,
     confirmed,
   } = props;
-  const [knowledgeDraft, setKnowledgeDraft] = useState(entry.knowledge || '');
-  const [subtopicsDraft, setSubtopicsDraft] = useState((entry.subtopics || []).join('\n'));
-  const [emphasisDraft, setEmphasisDraft] = useState(entry.emphasis || '');
-
-  useEffect(() => {
-    if (isEditing) {
-      setKnowledgeDraft(entry.knowledge || '');
-      setSubtopicsDraft((entry.subtopics || []).join('\n'));
-      setEmphasisDraft(entry.emphasis || '');
-    }
-  }, [isEditing, entry]);
-
   const warning = entry.warnings && entry.warnings[0];
   const empty = !entry.knowledge?.trim();
   const unitNumber = entry.unit_number || unitForWeek(entry.week, totalUnits);
@@ -269,7 +251,19 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
 
   return (
     <div
-      className={`relative flex w-[230px] shrink-0 flex-col border bg-[#0B192C] px-3 py-3 transition ${borderClass}`}
+      role="button"
+      tabIndex={confirmed ? -1 : 0}
+      onClick={() => {
+        if (!busy && !confirmed) onStartEdit();
+      }}
+      onKeyDown={(event) => {
+        if (!busy && !confirmed && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onStartEdit();
+        }
+      }}
+      title={confirmed ? 'Mapa confirmado' : 'Click para editar semana'}
+      className={`relative flex min-h-[190px] w-[230px] shrink-0 cursor-pointer flex-col border bg-[#0B192C] px-3 py-3 transition hover:-translate-y-0.5 hover:border-[#00B4D8]/55 hover:bg-[#10213A] ${borderClass} ${confirmed ? 'cursor-default hover:translate-y-0' : ''}`}
     >
       <div className="mb-2 flex items-center justify-between">
         <div>
@@ -282,7 +276,10 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
           <button
             type="button"
             title={entry.locked ? 'Desbloquear' : 'Bloquear (no se reescribira)'}
-            onClick={onToggleLock}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleLock();
+            }}
             disabled={busy || confirmed}
             className="flex h-7 w-7 items-center justify-center border border-white/10 bg-[#162A45] text-white/55 transition hover:border-[#00B4D8]/55 hover:text-[#72E7F6] disabled:opacity-40"
           >
@@ -291,7 +288,10 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
           <button
             type="button"
             title="Editar tema"
-            onClick={onStartEdit}
+            onClick={(event) => {
+              event.stopPropagation();
+              onStartEdit();
+            }}
             disabled={busy || confirmed}
             className="flex h-7 w-7 items-center justify-center border border-white/10 bg-[#162A45] text-white/55 transition hover:border-[#E9B44C]/55 hover:text-[#F2C260] disabled:opacity-40"
           >
@@ -300,91 +300,184 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
         </div>
       </div>
 
-      {isEditing ? (
-        <div className="flex flex-col gap-2">
-          <textarea
-            value={knowledgeDraft}
-            onChange={(event) => setKnowledgeDraft(event.target.value)}
-            rows={3}
-            className="w-full resize-none border border-[#00B4D8]/40 bg-[#162A45] px-2 py-1.5 text-[11px] leading-4 text-white outline-none focus:border-[#00B4D8]"
-            placeholder="Conocimiento principal"
-          />
-          <textarea
-            value={subtopicsDraft}
-            onChange={(event) => setSubtopicsDraft(event.target.value)}
-            rows={3}
-            className="w-full resize-none border border-white/10 bg-[#162A45] px-2 py-1.5 text-[10px] leading-4 text-white/86 outline-none focus:border-[#00B4D8]/50"
-            placeholder="Un subtema por linea"
-          />
-          <input
-            value={emphasisDraft}
-            onChange={(event) => setEmphasisDraft(event.target.value)}
-            className="w-full border border-white/10 bg-[#162A45] px-2 py-1.5 text-[10px] text-white/82 outline-none focus:border-[#00B4D8]/50"
-            placeholder="Enfasis docente"
-          />
-          <div className="flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              disabled={busy}
-              className="border border-white/10 px-2 py-1 text-[10px] font-bold text-white/55 hover:text-white"
+      <p className={`line-clamp-3 text-[12px] font-semibold leading-4 ${empty ? 'text-rose-300' : 'text-white'}`}>
+        {entry.knowledge?.trim() || 'Sin conocimiento. Edita o regenera.'}
+      </p>
+      {entry.subtopics && entry.subtopics.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {entry.subtopics.slice(0, 3).map((sub, index) => (
+            <span
+              key={`${entry.week}-sub-${index}`}
+              className="inline-flex items-center border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-1.5 py-0.5 text-[9px] leading-3 text-[#A6EAF5]"
             >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              disabled={busy || !knowledgeDraft.trim()}
-              onClick={() => {
-                onSaveEdit({
-                  knowledge: knowledgeDraft.trim(),
-                  subtopics: subtopicsDraft
-                    .split('\n')
-                    .map((line) => line.trim())
-                    .filter(Boolean),
-                  emphasis: emphasisDraft.trim(),
-                });
-              }}
-              className="flex items-center gap-1 bg-[#00A896] px-2 py-1 text-[10px] font-bold text-white disabled:opacity-50"
-            >
-              {busy ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />}
-              Guardar
-            </button>
-          </div>
+              {sub}
+            </span>
+          ))}
+          {entry.subtopics.length > 3 ? (
+            <span className="inline-flex items-center border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] leading-3 text-white/45">
+              +{entry.subtopics.length - 3}
+            </span>
+          ) : null}
         </div>
-      ) : (
-        <>
-          <p className={`text-[12px] font-semibold leading-4 ${empty ? 'text-rose-300' : 'text-white'}`}>
-            {entry.knowledge?.trim() || 'Sin conocimiento. Edita o regenera.'}
-          </p>
-          {entry.subtopics && entry.subtopics.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {entry.subtopics.slice(0, 5).map((sub, index) => (
-                <span
-                  key={`${entry.week}-sub-${index}`}
-                  className="inline-flex items-center border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-1.5 py-0.5 text-[9px] leading-3 text-[#A6EAF5]"
-                >
-                  {sub}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {entry.emphasis ? (
-            <p className="mt-2 text-[10px] leading-4 text-white/55">{entry.emphasis}</p>
-          ) : null}
-          {warning ? (
-            <div
-              title={warning.message}
-              className="mt-2 flex items-center gap-1 border border-amber-400/35 bg-amber-400/10 px-1.5 py-1 text-[9px] leading-3 text-amber-200"
-            >
-              <AlertTriangle size={10} className="shrink-0" />
-              <span className="line-clamp-2">{warning.message}</span>
-            </div>
-          ) : null}
-        </>
-      )}
+      ) : null}
+      <div className="mt-auto pt-3">
+        {warning ? (
+          <div
+            title={warning.message}
+            className="flex items-center gap-1 border border-amber-400/35 bg-amber-400/10 px-1.5 py-1 text-[9px] leading-3 text-amber-200"
+          >
+            <AlertTriangle size={10} className="shrink-0" />
+            <span className="line-clamp-1">{warning.message}</span>
+          </div>
+        ) : (
+          <p className="text-[9px] uppercase tracking-[0.12em] text-white/30">Click para editar detalles</p>
+        )}
+      </div>
     </div>
   );
 };
+
+function KnowledgeWeekEditDialog({
+  entry,
+  totalUnits,
+  busy,
+  onClose,
+  onSave,
+}: {
+  entry: KnowledgeMapWeek;
+  totalUnits: number;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (patch: Partial<KnowledgeMapWeek>) => void | Promise<void>;
+}) {
+  const [knowledgeDraft, setKnowledgeDraft] = useState(entry.knowledge || '');
+  const [subtopicsDraft, setSubtopicsDraft] = useState((entry.subtopics || []).join('\n'));
+  const [emphasisDraft, setEmphasisDraft] = useState(entry.emphasis || '');
+  const [sourceNotesDraft, setSourceNotesDraft] = useState(entry.source_notes || '');
+  const unitNumber = entry.unit_number || unitForWeek(entry.week, totalUnits);
+
+  useEffect(() => {
+    setKnowledgeDraft(entry.knowledge || '');
+    setSubtopicsDraft((entry.subtopics || []).join('\n'));
+    setEmphasisDraft(entry.emphasis || '');
+    setSourceNotesDraft(entry.source_notes || '');
+  }, [entry]);
+
+  const handleSubmit = () => {
+    const subtopics = subtopicsDraft
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    onSave({
+      knowledge: knowledgeDraft.trim(),
+      subtopics,
+      emphasis: emphasisDraft.trim(),
+      source_notes: sourceNotesDraft.trim(),
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
+              Semana {entry.week} · Unidad {unitNumber}
+            </p>
+            <h2 className="mt-1 text-base font-bold text-white">Editar conocimiento semanal</h2>
+            <p className="mt-1 text-[11px] leading-4 text-white/55">
+              Este texto sera la verdad curricular que el motor de unidades debe respetar exactamente.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white disabled:opacity-40"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+                Conocimiento principal
+              </span>
+              <textarea
+                value={knowledgeDraft}
+                onChange={(event) => setKnowledgeDraft(event.target.value)}
+                rows={6}
+                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+                placeholder="Tema disciplinar concreto para esta semana"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+                Subtemas
+              </span>
+              <textarea
+                value={subtopicsDraft}
+                onChange={(event) => setSubtopicsDraft(event.target.value)}
+                rows={6}
+                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+                placeholder="Un subtema por linea"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+                Enfasis docente
+              </span>
+              <textarea
+                value={emphasisDraft}
+                onChange={(event) => setEmphasisDraft(event.target.value)}
+                rows={4}
+                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+                placeholder="Como debe aterrizarse el conocimiento en clase"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+                Fuente o notas
+              </span>
+              <textarea
+                value={sourceNotesDraft}
+                onChange={(event) => setSourceNotesDraft(event.target.value)}
+                rows={4}
+                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+                placeholder="Referencia corta del consolidado NotebookLM"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 justify-end gap-2 border-t border-white/10 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="border border-white/10 px-4 py-2 text-[11px] font-bold text-white/58 hover:text-white disabled:opacity-40"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={busy || !knowledgeDraft.trim()}
+            className="flex items-center gap-2 bg-[#00A896] px-4 py-2 text-[11px] font-bold text-white disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+            Guardar semana
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ScreenTabs({
   screen,
@@ -616,6 +709,10 @@ export default function Step8b_MapaConocimientos() {
   const hasMap = (knowledgeMap?.map_json?.length || 0) > 0;
   const canConfirm = hasMap && allWeeksHaveKnowledge && !confirmed;
   const contextReady = notebookContext.trim().length >= MIN_NOTEBOOK_CHARS;
+  const editingEntry = useMemo(
+    () => mapWeeks.find((entry) => entry.week === editingWeek) || null,
+    [editingWeek, mapWeeks],
+  );
 
   const notebookPrompt = useMemo(
     () => buildKnowledgeMapPrompt(
@@ -1032,10 +1129,7 @@ export default function Step8b_MapaConocimientos() {
                       key={entry.week}
                       entry={entry}
                       totalUnits={totalUnits}
-                      isEditing={editingWeek === entry.week}
                       onStartEdit={() => setEditingWeek(entry.week)}
-                      onCancelEdit={() => setEditingWeek(null)}
-                      onSaveEdit={(patch) => handleSaveEdit(entry.week, patch)}
                       onToggleLock={() => handleToggleLock(entry)}
                       busy={busyWeek === entry.week}
                       confirmed={confirmed}
@@ -1088,6 +1182,16 @@ export default function Step8b_MapaConocimientos() {
             loading={loading}
             onClose={() => setRepromptOpen(false)}
             onSubmit={handleReprompt}
+          />
+        ) : null}
+
+        {editingEntry ? (
+          <KnowledgeWeekEditDialog
+            entry={editingEntry}
+            totalUnits={totalUnits}
+            busy={busyWeek === editingEntry.week}
+            onClose={() => setEditingWeek(null)}
+            onSave={(patch) => handleSaveEdit(editingEntry.week, patch)}
           />
         ) : null}
       </div>
