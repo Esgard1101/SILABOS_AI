@@ -520,11 +520,11 @@ export default function Step6_Cierre() {
       <div className="mt-5 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => navigate('/creator/producto')}
+          onClick={() => navigate('/creator/mapa-conocimientos')}
           className="flex items-center gap-1.5 text-[11px] text-white/40 transition hover:text-white"
         >
           <ArrowLeft size={12} />
-          Volver a producto
+          Volver al mapa
         </button>
         <button
           type="button"

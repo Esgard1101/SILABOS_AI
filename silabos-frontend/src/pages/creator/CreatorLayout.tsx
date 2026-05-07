@@ -5,7 +5,7 @@ import Toast from '../../components/Toast';
 import { SyllabusProvider, useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
 
-const TOTAL_STEPS = 11;
+const TOTAL_STEPS = 12;
 
 const ROUTE_STEP: Record<string, number> = {
   '/creator/repositorio': 3,
@@ -17,9 +17,10 @@ const ROUTE_STEP: Record<string, number> = {
   '/creator/contenido': 6,
   '/creator/metodo': 7,
   '/creator/producto': 8,
-  '/creator/evaluacion': 9,
-  '/creator/programa': 10,
-  '/creator/cierre': 11,
+  '/creator/mapa-conocimientos': 9,
+  '/creator/evaluacion': 10,
+  '/creator/programa': 11,
+  '/creator/cierre': 12,
 };
 
 const STEP_LABELS: Record<number, string> = {
@@ -29,9 +30,10 @@ const STEP_LABELS: Record<number, string> = {
   6: 'Contenido',
   7: 'Metodo',
   8: 'Producto',
-  9: 'Evaluacion',
-  10: 'Programa',
-  11: 'Cierre',
+  9: 'Mapa',
+  10: 'Evaluacion',
+  11: 'Programa',
+  12: 'Cierre',
 };
 
 function CreatorShell() {

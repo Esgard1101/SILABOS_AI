@@ -481,8 +481,16 @@ function EditWeekDialog({
         </div>
         <div className="grid gap-3">
           <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Conocimiento</span>
-            <input value={week.knowledge} onChange={(event) => onChange({ ...week, knowledge: event.target.value })} className="w-full border border-white/10 bg-[#162A45] px-3 py-2 text-sm text-white outline-none focus:border-[#00B4D8]/60" />
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+              Conocimiento (fijado por Mapa - solo lectura)
+            </span>
+            <input
+              value={week.knowledge}
+              readOnly
+              disabled
+              className="w-full cursor-not-allowed border border-white/10 bg-[#0B192C] px-3 py-2 text-sm text-white/70 outline-none"
+              title="Este conocimiento viene del Mapa Semanal confirmado y no puede modificarse aqui."
+            />
           </label>
           <label className="block">
             <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Habilidad</span>
@@ -705,10 +713,17 @@ export default function Step8_ProgramaProgresivo() {
         if (item.unit_number) contexts[item.unit_number] = item.raw_context_text || '';
       });
       setContextTextByUnit((prev) => ({ ...contexts, ...prev }));
+      if (data.knowledge_map?.status !== 'confirmed') {
+        showToast(
+          'Debes confirmar el Mapa Semanal de Conocimientos antes de generar unidades.',
+          'warning',
+        );
+        navigate('/creator/mapa-conocimientos');
+      }
     } catch {
       showToast('No se pudo cargar el motor progresivo', 'error');
     }
-  }, [draftId, showToast]);
+  }, [draftId, showToast, navigate]);
 
   useEffect(() => {
     loadState();
@@ -866,7 +881,6 @@ export default function Step8_ProgramaProgresivo() {
     setLoading(true);
     try {
       await api.updateProgressiveWeek(draftId, selectedUnit, editingWeek.week, {
-        knowledge: editingWeek.knowledge,
         skill: editingWeek.skill,
         activity: editingWeek.activity,
         evidence: editingWeek.evidence,
@@ -922,7 +936,7 @@ export default function Step8_ProgramaProgresivo() {
       <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-            Paso 10 de 11 - Programa progresivo
+            Paso 11 de 12 - Programa progresivo
           </p>
           <h1 className="font-playfair text-2xl font-bold text-white">
             {currentScreen === 'context' ? 'Contexto docente de unidad' : 'Sugerencia IA de unidad'}

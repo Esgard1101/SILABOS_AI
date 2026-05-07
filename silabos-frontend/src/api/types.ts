@@ -891,6 +891,44 @@ export interface ProgressiveUnitContext {
   updated_at?: string;
 }
 
+export interface KnowledgeMapWarning {
+  week: number;
+  code: 'REPETITION' | 'VAGUE' | 'EMPTY_KNOWLEDGE' | 'OUT_OF_SCOPE' | string;
+  message: string;
+}
+
+export interface KnowledgeMapWeek {
+  week: number;
+  unit_number: number;
+  knowledge: string;
+  subtopics?: string[];
+  emphasis?: string;
+  source_notes?: string;
+  locked?: boolean;
+  warnings?: KnowledgeMapWarning[];
+}
+
+export interface KnowledgeMapAudit {
+  overall_signal: 'ok' | 'soft_warnings' | 'hard_block' | string;
+  warnings: KnowledgeMapWarning[];
+  repeated_pairs?: number[][];
+}
+
+export interface KnowledgeMap {
+  id: string;
+  syllabus_id: string;
+  version: number;
+  status: 'draft' | 'confirmed' | 'superseded' | string;
+  notebook_context_text?: string;
+  map_json: KnowledgeMapWeek[];
+  audit_json: KnowledgeMapAudit;
+  teacher_notes?: string;
+  teacher_instruction?: string;
+  created_at?: string;
+  updated_at?: string;
+  confirmed_at?: string | null;
+}
+
 export interface ProgressiveCurriculumState {
   syllabus_id: string;
   progressive_curriculum?: {
@@ -905,6 +943,7 @@ export interface ProgressiveCurriculumState {
   product_options: ProgressiveProductOption[];
   unit_contexts: ProgressiveUnitContext[];
   unit_generations: ProgressiveUnitGeneration[];
+  knowledge_map?: KnowledgeMap | null;
 }
 
 export interface ProgressiveUnitGenerateResponse {

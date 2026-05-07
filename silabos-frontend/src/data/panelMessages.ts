@@ -10,7 +10,7 @@ export interface PanelMessage {
 export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   '/login': {
     pantalla: 1,
-    paso: 'Paso 1 de 11',
+    paso: 'Paso 1 de 12',
     titulo: 'Bienvenida e ingreso',
     mensajePrincipal:
       'Plataforma academica impulsada por la Direccion de la Escuela Profesional de Educacion para transformar la elaboracion de silabos, fortalecer la coherencia curricular y elevar la calidad formativa con apoyo de inteligencia artificial.',
@@ -20,7 +20,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/select-context': {
     pantalla: 2,
-    paso: 'Paso 2 de 11',
+    paso: 'Paso 2 de 12',
     titulo: 'Contexto institucional y curso',
     mensajePrincipal:
       'En este paso, el sistema presenta la estructura institucional disponible para seleccionar el contexto academico desde el cual se elaborara el silabo.',
@@ -31,7 +31,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/creator/repositorio': {
     pantalla: 3,
-    paso: 'Paso 3 de 11',
+    paso: 'Paso 3 de 12',
     titulo: 'Repositorio curricular oficial',
     mensajePrincipal:
       'El sistema propone como base de trabajo los componentes curriculares oficiales del curso: sumilla, competencia, capacidad, plantilla oficial y anexos institucionales.',
@@ -42,7 +42,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/creator/fuentes': {
     pantalla: 4,
-    paso: 'Paso 4 de 11',
+    paso: 'Paso 4 de 12',
     titulo: 'Fuentes del curso',
     mensajePrincipal:
       'Construya la base documental del curso mediante carga docente y curaduria asistida por IA.',
@@ -64,7 +64,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/creator/desempenos': {
     pantalla: 5,
-    paso: 'Paso 5 de 11',
+    paso: 'Paso 5 de 12',
     titulo: 'Desempenos oficiales',
     mensajePrincipal:
       'El sistema presenta los desempenos oficiales y, cuando no existan, propone desempenos sugeridos desde la sumilla, competencia y capacidad del curso.',
@@ -75,7 +75,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/creator/contenido': {
     pantalla: 6,
-    paso: 'Paso 6 de 11',
+    paso: 'Paso 6 de 12',
     titulo: 'Contenido formativo',
     mensajePrincipal:
       'El sistema propone habilidades y conocimientos derivados del proposito validado, los desempenos y las fuentes activas del curso.',
@@ -86,7 +86,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/creator/metodo': {
     pantalla: 7,
-    paso: 'Paso 7 de 11',
+    paso: 'Paso 7 de 12',
     titulo: 'Metodo y secuencia didactica',
     mensajePrincipal:
       'El sistema propone el metodo mas pertinente para operativizar el proposito, el contenido y el tipo de producto del curso.',
@@ -97,7 +97,7 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
   },
   '/creator/producto': {
     pantalla: 8,
-    paso: 'Paso 8 de 11',
+    paso: 'Paso 8 de 12',
     titulo: 'Producto integrador',
     mensajePrincipal:
       'Antes de redactar las semanas, el sistema fija el horizonte del curso mediante propuestas de producto acreditable y linea de tiempo PA.',
@@ -106,9 +106,20 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
     instruccion:
       'Seleccione una categoria, genere opciones y elija el producto que mejor represente el aprendizaje esperado del curso.',
   },
-  '/creator/evaluacion': {
+  '/creator/mapa-conocimientos': {
     pantalla: 9,
-    paso: 'Paso 9 de 11',
+    paso: 'Paso 9 de 12',
+    titulo: 'Mapa Semanal de Conocimientos',
+    mensajePrincipal:
+      'Antes de generar las unidades, el sistema fija las 16 semanas curriculares con un conocimiento principal por semana. Esta es la verdad inamovible para el motor progresivo.',
+    mensajeAcompanamiento:
+      'Pantalla 1: traiga el consolidado disciplinar desde NotebookLM. Pantalla 2: revise, edite y confirme las 16 semanas como linea de tiempo del curso.',
+    instruccion:
+      'Uso recomendado:\n1. Copie el prompt de NotebookLM y traiga el consolidado.\n2. Pegue el consolidado en el textarea y continue.\n3. Genere el mapa con IA, edite o bloquee semanas.\n4. Reprompt parcial solo reescribe semanas desbloqueadas.\n5. Confirme cuando todas las semanas tengan conocimiento.',
+  },
+  '/creator/evaluacion': {
+    pantalla: 10,
+    paso: 'Paso 10 de 12',
     titulo: 'Sistema de evaluacion',
     mensajePrincipal:
       'El sistema define pesos, siglas y semanas de entrega antes de redactar el programa para que la cronologia quede anclada a evidencias reales.',
@@ -118,19 +129,19 @@ export const PANEL_MESSAGES: Record<string, PanelMessage> = {
       'Revise la tabla de evaluacion, valide porcentajes y confirme que cada unidad tenga un avance acreditable claro.',
   },
   '/creator/programa': {
-    pantalla: 10,
-    paso: 'Paso 10 de 11',
+    pantalla: 11,
+    paso: 'Paso 11 de 12',
     titulo: 'Programa progresivo',
     mensajePrincipal:
-      'Trabaje cada unidad en dos pantallas:\n1. Contexto docente obligatorio: pegue el resumen de NotebookLM o sus apuntes de unidad.\n2. Sugerencia IA: genere, revise, edite, bloquee semanas y apruebe la unidad.',
+      'Trabaje cada unidad en dos pantallas:\n1. Contexto docente obligatorio: pegue el resumen de NotebookLM o sus apuntes de unidad.\n2. Sugerencia IA: genere, revise, edite, bloquee semanas y apruebe la unidad. Los conocimientos de cada semana ya estan fijados por el Mapa confirmado.',
     mensajeAcompanamiento:
       'Triple coherencia: cada actividad debe cruzar fase del metodo, operacion sobre conocimiento, habilidad, tecnica y evidencia verificable.',
     instruccion:
       'Uso recomendado:\n1. Copie el prompt de NotebookLM.\n2. Pegue el resumen o apuntes de la unidad.\n3. Guarde el contexto y pase a sugerencia IA.\n4. Genere y revise la tabla.\n5. Fije semanas aprobadas y regenere solo si necesita otro enfoque.',
   },
   '/creator/cierre': {
-    pantalla: 11,
-    paso: 'Paso 11 de 11',
+    pantalla: 12,
+    paso: 'Paso 12 de 12',
     titulo: 'Ensamblaje final',
     mensajePrincipal:
       'El sistema consolida las unidades aprobadas en el silabo final y prepara la vista completa para entrega o edicion.',

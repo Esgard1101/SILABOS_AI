@@ -31,6 +31,8 @@ OPENAI_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 OPENAI_UNIT_TASKS = {
     "progressive_unit_generate",
     "progressive_unit_repair",
+    "progressive_knowledge_map_suggest",
+    "progressive_knowledge_map_reprompt",
 }
 OPENAI_FALLBACK_TASKS = OPENAI_UNIT_TASKS
 
@@ -175,6 +177,18 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=False,
+    ),
+    "progressive_knowledge_map_suggest": TaskConfig(
+        provider="gemini_unit",
+        temperature=0.2,
+        max_output_tokens=8192,
+        json_mode=True,
+    ),
+    "progressive_knowledge_map_reprompt": TaskConfig(
+        provider="gemini_unit",
+        temperature=0.2,
+        max_output_tokens=4096,
+        json_mode=True,
     ),
     "progressive_unit_context_extract": TaskConfig(
         provider="gemini_unit",

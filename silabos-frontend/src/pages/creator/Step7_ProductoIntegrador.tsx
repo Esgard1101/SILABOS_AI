@@ -412,7 +412,7 @@ export default function Step7_ProductoIntegrador() {
       showToast('Selecciona un producto integrador antes de continuar', 'warning');
       return;
     }
-    navigate('/creator/evaluacion');
+    navigate('/creator/mapa-conocimientos');
   };
 
   return (
@@ -587,7 +587,7 @@ export default function Step7_ProductoIntegrador() {
           onClick={handleNext}
           className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110"
         >
-          Continuar a evaluacion
+          Continuar al mapa de conocimientos
           <ArrowRight size={12} />
         </button>
       </div>

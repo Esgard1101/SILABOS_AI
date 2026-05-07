@@ -1025,7 +1025,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      60000,
+      120000,
     );
   },
 
@@ -1043,7 +1043,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      60000,
+      120000,
     );
   },
 
@@ -1079,6 +1079,69 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ generation_id: generationId ?? null }),
+      },
+    ),
+
+  getKnowledgeMap: (syllabusId: string) =>
+    request<APIResponse<import('./types').KnowledgeMap | null>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/knowledge-map`,
+    ),
+
+  suggestKnowledgeMap: (
+    syllabusId: string,
+    data: { notebook_context_text?: string; teacher_instruction?: string },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/knowledge-map/suggest${q}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      60000,
+    );
+  },
+
+  repromptKnowledgeMap: (
+    syllabusId: string,
+    data: { weeks_to_change: number[]; teacher_instruction?: string; notebook_context_text?: string },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/knowledge-map/reprompt${q}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      60000,
+    );
+  },
+
+  updateKnowledgeMapWeek: (
+    syllabusId: string,
+    week: number,
+    data: Partial<Pick<import('./types').KnowledgeMapWeek, 'knowledge' | 'subtopics' | 'emphasis' | 'source_notes' | 'locked'>>,
+  ) =>
+    request<APIResponse<{ map: import('./types').KnowledgeMap; audit: import('./types').KnowledgeMapAudit }>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/knowledge-map/weeks/${week}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+    ),
+
+  confirmKnowledgeMap: (syllabusId: string, teacherNotes?: string) =>
+    request<APIResponse<import('./types').KnowledgeMap>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/knowledge-map/confirm`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacher_notes: teacherNotes || '' }),
       },
     ),
 

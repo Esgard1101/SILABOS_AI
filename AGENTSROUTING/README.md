@@ -36,6 +36,7 @@ If you need to touch...
 - triple coherence, traceability, product evolution, non-generic activity rules: read [04_TRACEABILITY_COHERENCE_EVOLUTION.md](04_TRACEABILITY_COHERENCE_EVOLUTION.md)
 - final assembly, Word/PDF export, `final_syllabus`, `cronograma_semanal`, DOCX: read [05_FINAL_ASSEMBLY_EXPORT.md](05_FINAL_ASSEMBLY_EXPORT.md)
 - AI provider routing, costs, fallbacks, Supabase/Postgres persistence, auth/security: read [06_AI_PROVIDERS_DB_OPERATIONS.md](06_AI_PROVIDERS_DB_OPERATIONS.md)
+- weekly knowledge map (Step 9), immutable curricular truth, audit with soft warnings, partial reprompt: read [07_KNOWLEDGE_MAP.md](07_KNOWLEDGE_MAP.md)
 
 ## Global Non-Negotiable Decisions
 
@@ -68,7 +69,7 @@ If you create a new module file later, keep this structure unless there is a str
 
 ## Current Module Count
 
-This folder intentionally has 7 markdown files total:
+This folder intentionally has 8 markdown files total:
 
 1. `README.md`
 2. `01_WIZARD_OFFICIAL_DATA.md`
@@ -77,3 +78,4 @@ This folder intentionally has 7 markdown files total:
 5. `04_TRACEABILITY_COHERENCE_EVOLUTION.md`
 6. `05_FINAL_ASSEMBLY_EXPORT.md`
 7. `06_AI_PROVIDERS_DB_OPERATIONS.md`
+8. `07_KNOWLEDGE_MAP.md`

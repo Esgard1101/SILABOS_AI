@@ -741,6 +741,7 @@ class ProgressiveCurriculumEngine:
                 "last_delivered_evidence": "",
                 "central_work_object": work_object,
                 "next_pa_target": next(iter(timeline.values()), "") if timeline else "",
+                "approved_unit_memory": [],
             }
 
         week_numbers = sorted(
@@ -752,6 +753,29 @@ class ProgressiveCurriculumEngine:
         last_week = max(weeks, key=lambda week: int(week.get("week") or 0))
         first_week = week_numbers[0] if week_numbers else ""
         final_week = week_numbers[-1] if week_numbers else ""
+        approved_unit_memory = []
+        for week in weeks:
+            try:
+                week_int = int(week.get("week") or 0)
+            except Exception:
+                continue
+            if not week_int:
+                continue
+            validation = week.get("validation") or {}
+            approved_unit_memory.append(
+                {
+                    "week": week_int,
+                    "unit_number": int(week.get("unit_number") or 0) or None,
+                    "knowledge": _clean_text(week.get("knowledge") or week.get("conocimientos")),
+                    "skill": _clean_text(week.get("skill") or week.get("habilidad")),
+                    "activity": _clean_text(week.get("activity") or week.get("actividad")),
+                    "evidence": _clean_text(week.get("evidence") or week.get("evidencia") or week.get("producto")),
+                    "phase": _clean_text(week.get("phase") or week.get("fase")),
+                    "technique": _clean_text(week.get("technique") or week.get("tecnica")),
+                    "product_stage": _clean_text(week.get("evidence") or week.get("producto")),
+                    "validation_score": validation.get("total_score") if isinstance(validation, dict) else None,
+                }
+            )
         return {
             "completed_weeks": f"{first_week}-{final_week}" if first_week and final_week else "",
             "covered_knowledge": covered,
@@ -764,6 +788,7 @@ class ProgressiveCurriculumEngine:
             "last_work_object_reference": work_object if work_object else "",
             "last_product_stage": _clean_text(last_week.get("evidence") or last_week.get("evidencia") or last_week.get("producto")),
             "next_pa_target": next(iter(timeline.values()), "") if timeline else "",
+            "approved_unit_memory": approved_unit_memory,
         }
 
     async def generate_unit(
@@ -784,6 +809,7 @@ class ProgressiveCurriculumEngine:
         teacher_instruction: str = "",
         ai_service: Any | None = None,
         force_provider: str | None = None,
+        mandatory_knowledge_map: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         locked_weeks = [int(week) for week in (locked_weeks or []) if str(week).isdigit()]
         traceability_context = traceability_context or {}
@@ -803,6 +829,7 @@ class ProgressiveCurriculumEngine:
             locked_weeks=locked_weeks,
             locked_rows=locked_rows or [],
             teacher_instruction=teacher_instruction,
+            mandatory_knowledge_map=mandatory_knowledge_map or [],
         )
         if not ai_service:
             raise ProgressiveContentGenerationError("Servicio de IA no disponible para generar la unidad")
@@ -844,6 +871,7 @@ class ProgressiveCurriculumEngine:
             product_option=product_option,
             locked_weeks=locked_weeks,
             locked_rows=locked_rows or [],
+            mandatory_knowledge_map=mandatory_knowledge_map or [],
         )
         if self._needs_activity_repair(weeks, locked_weeks):
             repaired = False
@@ -882,6 +910,7 @@ class ProgressiveCurriculumEngine:
                         product_option=product_option,
                         locked_weeks=locked_weeks,
                         locked_rows=locked_rows or [],
+                        mandatory_knowledge_map=mandatory_knowledge_map or [],
                     )
                     if not self._needs_activity_repair(candidate, locked_weeks):
                         weeks = candidate
@@ -1119,6 +1148,471 @@ class ProgressiveCurriculumEngine:
                             "activity": "Durante la fase metodologica, los estudiantes analizan el conocimiento semanal con una tecnica pertinente y elaboran una evidencia verificable sin usar etiquetas rigidas.",
                             "evidence": "texto intacto",
                             "phase": "texto intacto",
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        )
+
+    # ------------------------------------------------------------------
+    # Mapa Semanal de Conocimientos (Step 9)
+    # ------------------------------------------------------------------
+    async def suggest_knowledge_map(
+        self,
+        *,
+        curso: dict[str, Any] | None,
+        method: dict[str, Any] | str | None,
+        performances: list[Any],
+        product_option: dict[str, Any] | None,
+        notebook_context_text: str = "",
+        teacher_instruction: str = "",
+        ai_service: Any | None = None,
+        force_provider: str | None = None,
+    ) -> dict[str, Any]:
+        if not ai_service:
+            raise ProgressiveContentGenerationError(
+                "Servicio de IA no disponible para generar el Mapa de Conocimientos."
+            )
+        total_units = max(1, len(performances or [])) or 1
+        prompt = self._knowledge_map_prompt(
+            curso=curso,
+            method=method,
+            performances=performances or [],
+            product_option=product_option,
+            notebook_context_text=notebook_context_text,
+            teacher_instruction=teacher_instruction,
+            total_units=total_units,
+        )
+        last_error = ""
+        weeks: list[dict[str, Any]] = []
+        for attempt in range(2):
+            for provider in _provider_sequence(force_provider):
+                try:
+                    payload = await ai_service.generate_json(
+                        "progressive_knowledge_map_suggest",
+                        prompt,
+                        force_provider=provider,
+                    )
+                    candidate = self._coerce_knowledge_map_weeks(payload, total_units=total_units)
+                    if self._knowledge_map_complete(candidate):
+                        weeks = candidate
+                        break
+                    last_error = f"{provider or 'default'}: mapa incompleto o sin 16 semanas"
+                except Exception as exc:
+                    last_error = f"{provider or 'default'}: {exc}"
+            if weeks:
+                break
+        if not weeks:
+            raise ProgressiveContentGenerationError(
+                "No se pudo generar el Mapa de Conocimientos con IA. " + last_error
+            )
+        audit = self.audit_knowledge_map(weeks)
+        for entry in weeks:
+            entry["warnings"] = []
+            entry["locked"] = bool(entry.get("locked", False))
+        for warn in audit.get("warnings", []):
+            target = next(
+                (entry for entry in weeks if int(entry.get("week") or 0) == int(warn.get("week") or 0)),
+                None,
+            )
+            if target is not None:
+                target.setdefault("warnings", []).append(warn)
+        return {"weeks": weeks, "audit": audit}
+
+    async def reprompt_knowledge_map_weeks(
+        self,
+        *,
+        curso: dict[str, Any] | None,
+        method: dict[str, Any] | str | None,
+        performances: list[Any],
+        product_option: dict[str, Any] | None,
+        existing_map: list[dict[str, Any]],
+        weeks_to_change: list[int],
+        teacher_instruction: str = "",
+        notebook_context_text: str = "",
+        ai_service: Any | None = None,
+        force_provider: str | None = None,
+    ) -> dict[str, Any]:
+        if not ai_service:
+            raise ProgressiveContentGenerationError(
+                "Servicio de IA no disponible para reprompt del Mapa de Conocimientos."
+            )
+        total_units = max(1, len(performances or [])) or 1
+        weeks_to_change_clean = sorted(
+            {int(week) for week in (weeks_to_change or []) if str(week).isdigit() and 1 <= int(week) <= 16}
+        )
+        if not weeks_to_change_clean:
+            raise ProgressiveContentGenerationError(
+                "No hay semanas seleccionadas para reescribir."
+            )
+        prompt = self._knowledge_map_reprompt_prompt(
+            curso=curso,
+            method=method,
+            performances=performances or [],
+            product_option=product_option,
+            existing_map=existing_map or [],
+            weeks_to_change=weeks_to_change_clean,
+            teacher_instruction=teacher_instruction,
+            notebook_context_text=notebook_context_text,
+            total_units=total_units,
+        )
+        last_error = ""
+        replacements: list[dict[str, Any]] = []
+        for provider in _provider_sequence(force_provider):
+            try:
+                payload = await ai_service.generate_json(
+                    "progressive_knowledge_map_reprompt",
+                    prompt,
+                    force_provider=provider,
+                )
+                candidate = self._coerce_knowledge_map_weeks(payload, total_units=total_units)
+                target_weeks = {int(entry.get("week") or 0) for entry in candidate}
+                if target_weeks >= set(weeks_to_change_clean):
+                    replacements = [entry for entry in candidate if int(entry.get("week") or 0) in weeks_to_change_clean]
+                    break
+                last_error = f"{provider or 'default'}: faltan semanas {sorted(set(weeks_to_change_clean) - target_weeks)}"
+            except Exception as exc:
+                last_error = f"{provider or 'default'}: {exc}"
+        if not replacements:
+            raise ProgressiveContentGenerationError(
+                "Reprompt parcial no produjo semanas usables. " + last_error
+            )
+        merged: list[dict[str, Any]] = []
+        replacement_by_week = {int(entry.get("week") or 0): entry for entry in replacements}
+        for entry in existing_map or []:
+            try:
+                week_int = int(entry.get("week") or 0)
+            except Exception:
+                week_int = 0
+            if week_int in replacement_by_week:
+                new_entry = dict(entry)
+                replacement = replacement_by_week[week_int]
+                for key in ("knowledge", "subtopics", "emphasis", "source_notes", "unit_number"):
+                    if replacement.get(key) is not None:
+                        new_entry[key] = replacement[key]
+                new_entry["warnings"] = []
+                merged.append(new_entry)
+            else:
+                merged.append(dict(entry))
+        audit = self.audit_knowledge_map(merged)
+        for entry in merged:
+            entry.setdefault("warnings", [])
+            entry["warnings"] = [
+                warn for warn in audit.get("warnings", [])
+                if int(warn.get("week") or 0) == int(entry.get("week") or 0)
+            ]
+        return {"weeks": merged, "audit": audit}
+
+    def audit_knowledge_map(self, weeks: list[dict[str, Any]]) -> dict[str, Any]:
+        warnings: list[dict[str, Any]] = []
+        repeated_pairs: list[list[int]] = []
+        normalized: list[tuple[int, str]] = []
+        for entry in weeks or []:
+            try:
+                week_int = int(entry.get("week") or 0)
+            except Exception:
+                week_int = 0
+            knowledge = _normalize(entry.get("knowledge") or "")
+            if week_int and knowledge:
+                normalized.append((week_int, knowledge))
+            elif week_int and not knowledge:
+                warnings.append(
+                    {
+                        "week": week_int,
+                        "code": "EMPTY_KNOWLEDGE",
+                        "message": "Conocimiento vacio. Edita esta semana antes de confirmar.",
+                    }
+                )
+        for index, (week_a, text_a) in enumerate(normalized):
+            for week_b, text_b in normalized[index + 1 :]:
+                if not text_a or not text_b:
+                    continue
+                if text_a == text_b:
+                    similarity = 1.0
+                else:
+                    tokens_a = set(text_a.split())
+                    tokens_b = set(text_b.split())
+                    if not tokens_a or not tokens_b:
+                        continue
+                    intersection = len(tokens_a & tokens_b)
+                    union = len(tokens_a | tokens_b)
+                    similarity = intersection / union if union else 0.0
+                if similarity >= 0.75:
+                    pair = sorted([week_a, week_b])
+                    if pair not in repeated_pairs:
+                        repeated_pairs.append(pair)
+                    warnings.append(
+                        {
+                            "week": week_b,
+                            "code": "REPETITION",
+                            "message": f"Tema parece muy similar al de la semana {week_a}. Revisa redaccion.",
+                        }
+                    )
+        for entry in weeks or []:
+            try:
+                week_int = int(entry.get("week") or 0)
+            except Exception:
+                continue
+            knowledge = str(entry.get("knowledge") or "").strip()
+            if knowledge and len(knowledge.split()) <= 2:
+                warnings.append(
+                    {
+                        "week": week_int,
+                        "code": "VAGUE",
+                        "message": "Tema demasiado breve o vago. Considera una formulacion mas concreta.",
+                    }
+                )
+        if any(warn["code"] == "EMPTY_KNOWLEDGE" for warn in warnings):
+            overall_signal = "hard_block"
+        elif warnings:
+            overall_signal = "soft_warnings"
+        else:
+            overall_signal = "ok"
+        return {
+            "overall_signal": overall_signal,
+            "warnings": warnings,
+            "repeated_pairs": repeated_pairs,
+        }
+
+    def _coerce_knowledge_map_weeks(
+        self,
+        payload: Any,
+        *,
+        total_units: int,
+    ) -> list[dict[str, Any]]:
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return []
+        if isinstance(payload, dict):
+            payload = payload.get("weeks") or payload.get("semanas") or payload.get("map") or []
+        if not isinstance(payload, list):
+            return []
+        ranges = _unit_week_ranges(total_units)
+        unit_for_week: dict[int, int] = {}
+        for unit_number, (start, end) in ranges.items():
+            for week in range(start, end + 1):
+                unit_for_week[week] = unit_number
+        cleaned: list[dict[str, Any]] = []
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                week_int = int(raw.get("week") or raw.get("semana") or 0)
+            except Exception:
+                continue
+            if week_int < 1 or week_int > 16:
+                continue
+            knowledge = _clean_text(raw.get("knowledge") or raw.get("conocimiento") or raw.get("tema"))
+            subtopics = _as_text_list(raw.get("subtopics") or raw.get("subtemas"))
+            emphasis = _clean_text(raw.get("emphasis") or raw.get("enfasis") or raw.get("aplicacion"))
+            source_notes = _clean_text(raw.get("source_notes") or raw.get("fuente") or raw.get("source"))
+            try:
+                unit_number = int(raw.get("unit_number") or unit_for_week.get(week_int) or 1)
+            except Exception:
+                unit_number = unit_for_week.get(week_int, 1)
+            cleaned.append(
+                {
+                    "week": week_int,
+                    "unit_number": unit_number,
+                    "knowledge": knowledge,
+                    "subtopics": subtopics,
+                    "emphasis": emphasis,
+                    "source_notes": source_notes,
+                    "locked": bool(raw.get("locked", False)),
+                    "warnings": [],
+                }
+            )
+        cleaned.sort(key=lambda item: item["week"])
+        seen: set[int] = set()
+        deduped: list[dict[str, Any]] = []
+        for entry in cleaned:
+            if entry["week"] in seen:
+                continue
+            seen.add(entry["week"])
+            deduped.append(entry)
+        return deduped
+
+    def _knowledge_map_complete(self, weeks: list[dict[str, Any]]) -> bool:
+        if len(weeks) != 16:
+            return False
+        if {entry["week"] for entry in weeks} != set(range(1, 17)):
+            return False
+        return all(str(entry.get("knowledge") or "").strip() for entry in weeks)
+
+    def validate_knowledge_map_completeness(self, weeks: list[dict[str, Any]]) -> tuple[bool, list[str]]:
+        problems: list[str] = []
+        if len(weeks or []) != 16:
+            problems.append(f"El mapa debe tener 16 semanas (tiene {len(weeks or [])}).")
+        present: set[int] = set()
+        for entry in weeks or []:
+            try:
+                week_int = int(entry.get("week") or 0)
+            except Exception:
+                continue
+            present.add(week_int)
+            if not str(entry.get("knowledge") or "").strip():
+                problems.append(f"Semana {week_int or '?'} sin conocimiento principal.")
+        missing = sorted(set(range(1, 17)) - present)
+        if missing:
+            problems.append(f"Semanas faltantes: {missing}.")
+        return (not problems, problems)
+
+    def knowledge_map_for_unit(
+        self,
+        confirmed_map: list[dict[str, Any]],
+        unit_number: int,
+        total_units: int,
+    ) -> list[dict[str, Any]]:
+        ranges = _unit_week_ranges(total_units)
+        start, end = ranges.get(unit_number, (1, 16))
+        return [
+            entry for entry in (confirmed_map or [])
+            if start <= int(entry.get("week") or 0) <= end
+        ]
+
+    def _knowledge_map_prompt(
+        self,
+        *,
+        curso: dict[str, Any] | None,
+        method: dict[str, Any] | str | None,
+        performances: list[Any],
+        product_option: dict[str, Any] | None,
+        notebook_context_text: str,
+        teacher_instruction: str,
+        total_units: int,
+    ) -> str:
+        profile = self._profile_for_method(method)
+        ranges = _unit_week_ranges(total_units)
+        unit_distribution = [
+            {"unit_number": unit_number, "weeks": list(range(start, end + 1))}
+            for unit_number, (start, end) in ranges.items()
+        ]
+        performance_list = [
+            {
+                "unit_number": index + 1,
+                "performance": self._performance_text(item),
+            }
+            for index, item in enumerate(performances or [])
+        ]
+        official_knowledge = _as_text_list((curso or {}).get("temas_conocimientos"))
+        official_skills = _as_text_list((curso or {}).get("habilidades_desempenos"))
+        return json.dumps(
+            {
+                "role": "Diseñador curricular universitario",
+                "task": "Construir el Mapa Semanal de Conocimientos: 16 semanas con 1 conocimiento principal + subtemas + enfasis + fuente.",
+                "hard_rules": [
+                    "Devuelve EXACTAMENTE 16 semanas, una por cada semana del 1 al 16.",
+                    "Cada semana DEBE tener un campo knowledge no vacio: tema disciplinar concreto, secuencial y de complejidad creciente.",
+                    "Prohibido repetir el mismo conocimiento en semanas distintas.",
+                    "official_knowledge contiene los conocimientos OFICIALES extraidos de la sumilla del curso. Son materia prima OBLIGATORIA del mapa.",
+                    "Distribuye los conocimientos oficiales a lo largo de las 16 semanas. No los descartes.",
+                    "Si official_knowledge tiene menos de 16 entradas, complementalos con subtemas derivados de la sumilla y del consolidado, sin inventar temas ajenos.",
+                    "Si official_knowledge tiene mas de 16 entradas, agrupalos por afinidad disciplinar para que entren en 16 semanas.",
+                    "Prohibido reformular un conocimiento oficial al punto de cambiar su sentido disciplinar.",
+                    "El mapa prioriza logica disciplinar sobre el producto. El producto orienta aplicacion, no domina temas.",
+                    "Respeta la distribucion semana->unidad provista en unit_distribution.",
+                    "Subtopics: 2 a 5 puntos cortos, no oraciones largas.",
+                    "Emphasis: una frase de aplicacion docente especifica, sin etiquetas.",
+                    "source_notes: cita corta del consolidado NotebookLM o '' si no aplica. Sin formato Markdown ni [1].",
+                    "No propongas actividades ni evidencias; solo conocimientos y subtemas.",
+                    "Tono universitario, concreto, no escolar.",
+                    "Devuelve SOLO JSON.",
+                ],
+                "course": curso or {},
+                "official_knowledge": official_knowledge,
+                "official_skills": official_skills,
+                "method_profile": profile,
+                "performances_by_unit": performance_list,
+                "selected_product": product_option or {},
+                "unit_distribution": unit_distribution,
+                "notebook_consolidated_research": _clean_text(notebook_context_text)[:8000],
+                "teacher_instruction": _clean_text(teacher_instruction)[:1200],
+                "response_schema": {
+                    "weeks": [
+                        {
+                            "week": 1,
+                            "unit_number": 1,
+                            "knowledge": "tema principal de la semana",
+                            "subtopics": ["subtema 1", "subtema 2"],
+                            "emphasis": "frase de aplicacion docente",
+                            "source_notes": "referencia breve",
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        )
+
+    def _knowledge_map_reprompt_prompt(
+        self,
+        *,
+        curso: dict[str, Any] | None,
+        method: dict[str, Any] | str | None,
+        performances: list[Any],
+        product_option: dict[str, Any] | None,
+        existing_map: list[dict[str, Any]],
+        weeks_to_change: list[int],
+        teacher_instruction: str,
+        notebook_context_text: str,
+        total_units: int,
+    ) -> str:
+        profile = self._profile_for_method(method)
+        ranges = _unit_week_ranges(total_units)
+        unit_distribution = [
+            {"unit_number": unit_number, "weeks": list(range(start, end + 1))}
+            for unit_number, (start, end) in ranges.items()
+        ]
+        locked_map = [
+            {
+                "week": int(entry.get("week") or 0),
+                "knowledge": entry.get("knowledge"),
+                "subtopics": entry.get("subtopics") or [],
+            }
+            for entry in (existing_map or [])
+            if int(entry.get("week") or 0) not in set(weeks_to_change)
+        ]
+        official_knowledge = _as_text_list((curso or {}).get("temas_conocimientos"))
+        return json.dumps(
+            {
+                "role": "Diseñador curricular universitario",
+                "task": "Reescribir SOLO las semanas indicadas en weeks_to_change. No toques las demas.",
+                "hard_rules": [
+                    "Devuelve unicamente las semanas listadas en weeks_to_change.",
+                    "Cada semana reescrita debe tener knowledge no vacio.",
+                    "No dupliques temas que ya aparecen en locked_weeks_map.",
+                    "Mantente dentro de la unidad asignada a cada semana segun unit_distribution.",
+                    "Respeta la instruccion docente al pie de la letra.",
+                    "Si reescribes con conocimientos nuevos, alinealos con official_knowledge cuando sea posible; no inventes temas ajenos a la sumilla.",
+                    "Devuelve SOLO JSON con weeks.",
+                ],
+                "weeks_to_change": weeks_to_change,
+                "locked_weeks_map": locked_map,
+                "official_knowledge": official_knowledge,
+                "teacher_instruction": _clean_text(teacher_instruction)[:1500],
+                "course": curso or {},
+                "method_profile": profile,
+                "performances_by_unit": [
+                    {
+                        "unit_number": index + 1,
+                        "performance": self._performance_text(item),
+                    }
+                    for index, item in enumerate(performances or [])
+                ],
+                "selected_product": product_option or {},
+                "unit_distribution": unit_distribution,
+                "notebook_consolidated_research": _clean_text(notebook_context_text)[:6000],
+                "response_schema": {
+                    "weeks": [
+                        {
+                            "week": 1,
+                            "unit_number": 1,
+                            "knowledge": "tema principal reescrito",
+                            "subtopics": ["subtema 1"],
+                            "emphasis": "frase de aplicacion",
+                            "source_notes": "",
                         }
                     ]
                 },
@@ -1624,6 +2118,7 @@ class ProgressiveCurriculumEngine:
         product_option: dict[str, Any] | None,
         locked_weeks: list[int],
         locked_rows: list[dict[str, Any]],
+        mandatory_knowledge_map: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         ranges = _unit_week_ranges(total_units)
         start, end = ranges.get(unit_number, (1, 16))
@@ -1634,12 +2129,22 @@ class ProgressiveCurriculumEngine:
             for row in locked_rows
             if str(row.get("week") or row.get("semana") or "").isdigit()
         }
+        mandatory_by_week: dict[int, dict[str, Any]] = {}
+        for entry in (mandatory_knowledge_map or []):
+            try:
+                week_int = int(entry.get("week") or 0)
+            except Exception:
+                continue
+            if week_int:
+                mandatory_by_week[week_int] = entry
         normalized: list[dict[str, Any]] = []
         work_object = _clean_text((product_option or {}).get("work_object"))
         for index, week_number in enumerate(expected_weeks):
             if week_number in locked_weeks and week_number in locked_by_week:
                 row = dict(locked_by_week[week_number])
                 row["locked"] = True
+                if week_number in mandatory_by_week:
+                    row["knowledge"] = _clean_text(mandatory_by_week[week_number].get("knowledge")) or row.get("knowledge")
                 locked_phase = _clean_text(row.get("phase") or row.get("fase"))
                 locked_skill = _clean_text(row.get("skill") or row.get("habilidad"))
                 if "validation" not in row:
@@ -1651,7 +2156,11 @@ class ProgressiveCurriculumEngine:
             phase = _clean_text(row.get("phase") or row.get("fase"))
             if not phase:
                 phase = _phase_for_position(profile, index, len(expected_weeks), unit_number == total_units)
-            knowledge = _clean_text(row.get("knowledge") or row.get("conocimientos"), "Contenido de la semana")
+            mandatory_entry = mandatory_by_week.get(week_number)
+            if mandatory_entry:
+                knowledge = _clean_text(mandatory_entry.get("knowledge"), "Contenido de la semana")
+            else:
+                knowledge = _clean_text(row.get("knowledge") or row.get("conocimientos"), "Contenido de la semana")
             skill = _clean_text(row.get("skill") or row.get("habilidad"))
             required_skills = _as_text_list(row.get("required_skills") or row.get("habilidades_requeridas"))
             if not skill and required_skills:
@@ -1781,10 +2290,21 @@ class ProgressiveCurriculumEngine:
         locked_weeks: list[int],
         locked_rows: list[dict[str, Any]],
         teacher_instruction: str,
+        mandatory_knowledge_map: list[dict[str, Any]] | None = None,
     ) -> str:
         ranges = _unit_week_ranges(total_units)
         start, end = ranges.get(unit_number, (1, 16))
         work_object = _clean_text((product_option or {}).get("work_object"))
+        mandatory_block = [
+            {
+                "week": int(entry.get("week") or 0),
+                "knowledge": _clean_text(entry.get("knowledge")),
+                "subtopics": _as_text_list(entry.get("subtopics")),
+                "emphasis": _clean_text(entry.get("emphasis")),
+            }
+            for entry in (mandatory_knowledge_map or [])
+            if entry.get("week") and _clean_text(entry.get("knowledge"))
+        ]
         return json.dumps(
             {
                 "role": "Experto en diseno instruccional universitario",
@@ -1803,14 +2323,18 @@ class ProgressiveCurriculumEngine:
                 "locked_weeks": locked_weeks,
                 "locked_rows": locked_rows,
                 "teacher_instruction": teacher_instruction,
+                "mandatory_knowledge_by_week": mandatory_block,
                 "hard_rules": [
+                    "El conocimiento obligatorio de cada semana ya esta fijado en mandatory_knowledge_by_week. Prohibido modificarlo, ampliarlo como nuevo tema, reemplazarlo o crear titulos alternativos.",
+                    "Para cada semana de mandatory_knowledge_by_week, el campo knowledge del response_schema debe ser EXACTAMENTE el valor provisto en knowledge.",
+                    "Tu trabajo es disenar didactica, evidencia, fase y tecnica alrededor de cada conocimiento obligatorio. No inventes temas nuevos.",
                     "Cada activity debe redactarse en prosa docente continua, maximo dos oraciones.",
                     "Prohibido usar prefijos o etiquetas como Fase:, Momento:, Proposito:, Tecnica:, Tecnicas:, Evidencia: o Actividad:.",
                     "La fase metodologica debe integrarse naturalmente en la frase, sin convertirla en etiqueta.",
                     "La tecnica debe integrarse en prosa, por ejemplo: mediante debate academico y ficha de analisis.",
                     "No uses Inicio:, Desarrollo: ni Cierre: como etiquetas.",
-                    "No repitas temas de traceability_context.covered_knowledge.",
-                    "Si disciplinary_context.notebook_raw_context existe, usalo como insumo principal de la unidad: respeta su secuencia, temas, casos, actividades posibles, evidencias y alertas docentes.",
+                    "No repitas actividades, evidencias ni redacciones presentes en traceability_context.approved_unit_memory.",
+                    "Si disciplinary_context.notebook_raw_context existe, usalo como insumo principal de la unidad: respeta su secuencia, casos, actividades posibles, evidencias y alertas docentes.",
                     "Respeta exactamente las semanas bloqueadas.",
                     "Aplica la triple coherencia sin volverla literal: fase del metodo + operacion sobre conocimiento + habilidad + tecnica + evidencia.",
                     "El objeto de trabajo central del curso debe guiar la unidad. Si existe central_work_object, usalo como hilo conductor de actividades y evidencias.",

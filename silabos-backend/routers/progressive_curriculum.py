@@ -74,6 +74,29 @@ class WeekPatchInput(BaseModel):
     locked: bool | None = None
 
 
+class KnowledgeMapSuggestInput(BaseModel):
+    notebook_context_text: str = ""
+    teacher_instruction: str = ""
+
+
+class KnowledgeMapWeekPatchInput(BaseModel):
+    knowledge: str | None = None
+    subtopics: list[str] | None = None
+    emphasis: str | None = None
+    source_notes: str | None = None
+    locked: bool | None = None
+
+
+class KnowledgeMapRepromptInput(BaseModel):
+    weeks_to_change: list[int] = Field(default_factory=list)
+    teacher_instruction: str = ""
+    notebook_context_text: str = ""
+
+
+class KnowledgeMapConfirmInput(BaseModel):
+    teacher_notes: str = ""
+
+
 def _sv(request: Request):
     from main import servicios
 
@@ -746,6 +769,20 @@ async def _generate_or_regenerate_unit(
     if unit_number < 1 or unit_number > total_units:
         raise HTTPException(400, f"Unidad invalida. El curso tiene {total_units} unidad(es)")
 
+    confirmed_map = await supabase.obtener_knowledge_map(syllabus_id, user_id, only_confirmed=True)
+    if not confirmed_map:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "KNOWLEDGE_MAP_REQUIRED",
+                "message": "Debes generar y confirmar el Mapa Semanal de Conocimientos antes de generar unidades.",
+            },
+        )
+    map_weeks_full = confirmed_map.get("map_json") or []
+    if not isinstance(map_weeks_full, list):
+        map_weeks_full = []
+    mandatory_unit_map = engine.knowledge_map_for_unit(map_weeks_full, unit_number, total_units)
+
     raw_context_text = (body.raw_context_text or "").strip()
     if raw_context_text:
         extracted_context = engine.raw_unit_context_payload(raw_context_text)
@@ -798,6 +835,7 @@ async def _generate_or_regenerate_unit(
             teacher_instruction=body.teacher_instruction or "",
             ai_service=ai_service,
             force_provider=force_provider,
+            mandatory_knowledge_map=mandatory_unit_map,
         )
     except ProgressiveContentGenerationError as exc:
         raise HTTPException(
@@ -1409,6 +1447,323 @@ async def aprobar_unidad_progresiva(
         data={"approved": approved, "traceability_context": traceability},
         error=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Mapa Semanal de Conocimientos (Step 9)
+# ---------------------------------------------------------------------------
+async def _suggest_knowledge_map_payload(
+    *,
+    syllabus_id: str,
+    body: KnowledgeMapSuggestInput,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> dict:
+    supabase = _require_db(servicios)
+    engine = get_progressive_curriculum_engine()
+    user_id = _current_user_id(current_user)
+    context = await _course_context(supabase=supabase, syllabus_id=syllabus_id, user_id=user_id)
+    result = await engine.suggest_knowledge_map(
+        curso=context["curso"],
+        method=context["method"],
+        performances=context["performances"],
+        product_option=context["product_option"],
+        notebook_context_text=body.notebook_context_text,
+        teacher_instruction=body.teacher_instruction,
+        ai_service=_optional_ai(servicios),
+        force_provider=force_provider,
+    )
+    saved = await supabase.guardar_knowledge_map_draft(
+        syllabus_id,
+        map_json=result["weeks"],
+        audit_json=result["audit"],
+        notebook_context_text=body.notebook_context_text,
+        teacher_instruction=body.teacher_instruction,
+        user_id=user_id,
+    )
+    if not saved:
+        raise HTTPException(500, "No se pudo guardar el Mapa de Conocimientos")
+    return saved
+
+
+async def _reprompt_knowledge_map_payload(
+    *,
+    syllabus_id: str,
+    body: KnowledgeMapRepromptInput,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> dict:
+    supabase = _require_db(servicios)
+    engine = get_progressive_curriculum_engine()
+    user_id = _current_user_id(current_user)
+    existing = await supabase.obtener_knowledge_map(syllabus_id, user_id)
+    if not existing or not isinstance(existing.get("map_json"), list):
+        raise HTTPException(404, "No existe un mapa para reescribir")
+    context = await _course_context(supabase=supabase, syllabus_id=syllabus_id, user_id=user_id)
+    notebook_text = body.notebook_context_text or existing.get("notebook_context_text") or ""
+    result = await engine.reprompt_knowledge_map_weeks(
+        curso=context["curso"],
+        method=context["method"],
+        performances=context["performances"],
+        product_option=context["product_option"],
+        existing_map=existing["map_json"],
+        weeks_to_change=body.weeks_to_change,
+        teacher_instruction=body.teacher_instruction,
+        notebook_context_text=notebook_text,
+        ai_service=_optional_ai(servicios),
+        force_provider=force_provider,
+    )
+    saved = await supabase.guardar_knowledge_map_draft(
+        syllabus_id,
+        map_json=result["weeks"],
+        audit_json=result["audit"],
+        notebook_context_text=notebook_text,
+        teacher_instruction=body.teacher_instruction,
+        user_id=user_id,
+    )
+    if not saved:
+        raise HTTPException(500, "No se pudo guardar el reprompt del Mapa")
+    return saved
+
+
+async def _run_knowledge_map_suggest_job(
+    *,
+    job_id: str,
+    syllabus_id: str,
+    body_data: dict,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> None:
+    supabase = _require_db(servicios)
+    await supabase.marcar_ai_generation_job_running(job_id)
+    try:
+        result = await _suggest_knowledge_map_payload(
+            syllabus_id=syllabus_id,
+            body=KnowledgeMapSuggestInput(**body_data),
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+        await supabase.completar_ai_generation_job(job_id, result)
+    except HTTPException as exc:
+        message, payload = _job_error_payload(exc)
+        await supabase.fallar_ai_generation_job(job_id, message, payload)
+    except Exception as exc:
+        logger.exception("Fallo inesperado en job %s de mapa de conocimientos", job_id)
+        await supabase.fallar_ai_generation_job(
+            job_id,
+            JOB_HIGH_DEMAND_MESSAGE,
+            {"code": "UNEXPECTED_KNOWLEDGE_MAP_JOB_ERROR", "detail": str(exc)},
+        )
+
+
+async def _run_knowledge_map_reprompt_job(
+    *,
+    job_id: str,
+    syllabus_id: str,
+    body_data: dict,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> None:
+    supabase = _require_db(servicios)
+    await supabase.marcar_ai_generation_job_running(job_id)
+    try:
+        result = await _reprompt_knowledge_map_payload(
+            syllabus_id=syllabus_id,
+            body=KnowledgeMapRepromptInput(**body_data),
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+        await supabase.completar_ai_generation_job(job_id, result)
+    except HTTPException as exc:
+        message, payload = _job_error_payload(exc)
+        await supabase.fallar_ai_generation_job(job_id, message, payload)
+    except Exception as exc:
+        logger.exception("Fallo inesperado en job %s de reprompt de mapa", job_id)
+        await supabase.fallar_ai_generation_job(
+            job_id,
+            JOB_HIGH_DEMAND_MESSAGE,
+            {"code": "UNEXPECTED_KNOWLEDGE_MAP_REPROMPT_JOB_ERROR", "detail": str(exc)},
+        )
+
+
+@router.get(
+    "/syllabi/{syllabus_id}/progressive/knowledge-map",
+    response_model=APIResponse,
+)
+async def obtener_knowledge_map(
+    syllabus_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    supabase = _require_db(_sv(request))
+    knowledge_map = await supabase.obtener_knowledge_map(
+        syllabus_id,
+        _current_user_id(current_user),
+    )
+    return APIResponse(success=True, data=knowledge_map, error=None)
+
+
+@router.post(
+    "/syllabi/{syllabus_id}/progressive/knowledge-map/suggest",
+    response_model=APIResponse,
+)
+async def sugerir_knowledge_map(
+    syllabus_id: str,
+    body: KnowledgeMapSuggestInput,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    current_user: dict = Depends(get_current_user_record),
+    force_provider: str | None = Query(default=None),
+):
+    force_provider = _validate_force_provider(force_provider)
+    servicios = _sv(request)
+    supabase = _require_db(servicios)
+    user_id = _current_user_id(current_user)
+    body_data = _dump_model(body)
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        job_type="progressive_knowledge_map_suggest",
+        request_payload={"body": body_data, "force_provider": force_provider},
+        user_id=user_id,
+    )
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_knowledge_map_suggest_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = (
+        "Ya hay una sugerencia de mapa en proceso"
+        if job.get("reused")
+        else "Sugerencia de mapa enviada a cola"
+    )
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
+
+
+@router.post(
+    "/syllabi/{syllabus_id}/progressive/knowledge-map/reprompt",
+    response_model=APIResponse,
+)
+async def reprompt_knowledge_map(
+    syllabus_id: str,
+    body: KnowledgeMapRepromptInput,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    current_user: dict = Depends(get_current_user_record),
+    force_provider: str | None = Query(default=None),
+):
+    if not body.weeks_to_change:
+        raise HTTPException(400, "Debes enviar al menos una semana en weeks_to_change")
+    force_provider = _validate_force_provider(force_provider)
+    servicios = _sv(request)
+    supabase = _require_db(servicios)
+    user_id = _current_user_id(current_user)
+    body_data = _dump_model(body)
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        job_type="progressive_knowledge_map_reprompt",
+        request_payload={"body": body_data, "force_provider": force_provider},
+        user_id=user_id,
+    )
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_knowledge_map_reprompt_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = (
+        "Ya hay un reprompt de mapa en proceso"
+        if job.get("reused")
+        else "Reprompt de mapa enviado a cola"
+    )
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
+
+
+@router.patch(
+    "/syllabi/{syllabus_id}/progressive/knowledge-map/weeks/{week}",
+    response_model=APIResponse,
+)
+async def patch_knowledge_map_week(
+    syllabus_id: str,
+    week: int,
+    body: KnowledgeMapWeekPatchInput,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    if week < 1 or week > 16:
+        raise HTTPException(400, "Semana fuera de rango (1..16)")
+    patch = _dump_model(body)
+    if not patch:
+        raise HTTPException(400, "No se enviaron cambios")
+    if "knowledge" in patch and not str(patch["knowledge"] or "").strip():
+        raise HTTPException(400, "El conocimiento no puede quedar vacio")
+    supabase = _require_db(_sv(request))
+    updated = await supabase.actualizar_knowledge_map_week(
+        syllabus_id,
+        week,
+        patch,
+        user_id=_current_user_id(current_user),
+    )
+    if not updated:
+        raise HTTPException(404, "Mapa o semana no encontrada")
+    engine = get_progressive_curriculum_engine()
+    audit = engine.audit_knowledge_map(updated.get("map_json") or [])
+    return APIResponse(success=True, data={"map": updated, "audit": audit}, error=None)
+
+
+@router.post(
+    "/syllabi/{syllabus_id}/progressive/knowledge-map/confirm",
+    response_model=APIResponse,
+)
+async def confirmar_knowledge_map(
+    syllabus_id: str,
+    body: KnowledgeMapConfirmInput,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    supabase = _require_db(_sv(request))
+    engine = get_progressive_curriculum_engine()
+    existing = await supabase.obtener_knowledge_map(syllabus_id, _current_user_id(current_user))
+    if not existing or not isinstance(existing.get("map_json"), list):
+        raise HTTPException(404, "No existe un mapa para confirmar")
+    ok, problems = engine.validate_knowledge_map_completeness(existing["map_json"])
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "KNOWLEDGE_MAP_INCOMPLETE",
+                "message": "El mapa no esta completo",
+                "problems": problems,
+            },
+        )
+    confirmed = await supabase.confirmar_knowledge_map(
+        syllabus_id,
+        teacher_notes=body.teacher_notes,
+        user_id=_current_user_id(current_user),
+    )
+    if not confirmed:
+        raise HTTPException(500, "No se pudo confirmar el Mapa de Conocimientos")
+    return APIResponse(success=True, data=confirmed, error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/progressive/assemble", response_model=APIResponse)

@@ -15,7 +15,8 @@
       "Bash(npx tsc *)",
       "Bash(node -e \"const p = require\\('./silabos-frontend/node_modules/react/package.json'\\); console.log\\('types:', p.types, 'typings:', p.typings, 'exports:', JSON.stringify\\(p.exports?.['./index.js'] || p.exports?.['.'], null, 2\\)\\)\")",
       "Bash(node -e \"const p = require\\('./silabos-frontend/node_modules/react/package.json'\\); console.log\\('types:', p.types\\); console.log\\('typings:', p.typings\\)\")",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "mcp__claude_ai_Supabase__execute_sql"
     ]
   }
 }

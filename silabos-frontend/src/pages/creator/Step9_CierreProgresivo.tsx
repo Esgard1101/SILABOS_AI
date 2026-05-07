@@ -93,7 +93,7 @@ export default function Step9_CierreProgresivo() {
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-            Paso 11 de 11 - Ensamblaje final
+            Paso 12 de 12 - Ensamblaje final
           </p>
           <h1 className="font-playfair text-2xl font-bold text-white">Cierre del motor progresivo</h1>
           <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/62">

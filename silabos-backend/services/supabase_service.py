@@ -5290,6 +5290,17 @@ class SupabaseService:
                 ),
                 {"sid": syllabus_id},
             ).mappings().all()
+            knowledge_map_row = sesion.execute(
+                text(
+                    """
+                    SELECT * FROM syllabus_knowledge_maps
+                    WHERE syllabus_id = :sid AND status IN ('draft', 'confirmed')
+                    ORDER BY status = 'draft' DESC, version DESC
+                    LIMIT 1
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().first()
         payload = syllabus["payload_json"]
         if isinstance(payload, str):
             payload = json.loads(payload)
@@ -5308,6 +5319,7 @@ class SupabaseService:
             "product_options": [self._mapear_progressive_row(row) for row in products],
             "unit_contexts": [self._mapear_progressive_row(row) for row in contexts],
             "unit_generations": [self._mapear_progressive_row(row) for row in generations],
+            "knowledge_map": self._mapear_knowledge_map_row(knowledge_map_row),
         }
 
     async def obtener_progressive_curriculum_state(
@@ -5438,6 +5450,352 @@ class SupabaseService:
             )
         except Exception as e:
             logger.error(f"Error al guardar ensamblaje progressive curriculum {syllabus_id}: {e}")
+            return None
+
+    # ------------------------------------------------------------------
+    # Mapa Semanal de Conocimientos (Step 9)
+    # ------------------------------------------------------------------
+    def _mapear_knowledge_map_row(self, fila) -> Optional[dict]:
+        if not fila:
+            return None
+        data = dict(fila)
+        for campo in ("id", "syllabus_id"):
+            if data.get(campo) is not None:
+                data[campo] = str(data[campo])
+        for campo in ("created_at", "updated_at", "confirmed_at"):
+            if campo in data:
+                data[campo] = self._serializar_fecha(data.get(campo))
+        for campo in ("map_json", "audit_json"):
+            if isinstance(data.get(campo), str):
+                try:
+                    data[campo] = json.loads(data[campo])
+                except Exception:
+                    pass
+        return data
+
+    def _obtener_knowledge_map_sync(
+        self,
+        syllabus_id: str,
+        user_id: Optional[str] = None,
+        only_confirmed: bool = False,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            owner = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not owner:
+                return None
+            if only_confirmed:
+                fila = sesion.execute(
+                    text(
+                        """
+                        SELECT * FROM syllabus_knowledge_maps
+                        WHERE syllabus_id = :sid AND status = 'confirmed'
+                        LIMIT 1
+                        """
+                    ),
+                    {"sid": syllabus_id},
+                ).mappings().first()
+            else:
+                fila = sesion.execute(
+                    text(
+                        """
+                        SELECT * FROM syllabus_knowledge_maps
+                        WHERE syllabus_id = :sid
+                          AND status IN ('draft', 'confirmed')
+                        ORDER BY status = 'draft' DESC, version DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"sid": syllabus_id},
+                ).mappings().first()
+        return self._mapear_knowledge_map_row(fila)
+
+    async def obtener_knowledge_map(
+        self,
+        syllabus_id: str,
+        user_id: Optional[str] = None,
+        only_confirmed: bool = False,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._obtener_knowledge_map_sync,
+                syllabus_id,
+                user_id,
+                only_confirmed,
+            )
+        except Exception as e:
+            logger.error(f"Error al obtener knowledge map silabo {syllabus_id}: {e}")
+            return None
+
+    def _guardar_knowledge_map_draft_sync(
+        self,
+        syllabus_id: str,
+        map_json: list[dict],
+        audit_json: dict,
+        notebook_context_text: str = "",
+        teacher_instruction: str = "",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            owner = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not owner:
+                return None
+            sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_knowledge_maps
+                    SET status = 'superseded'
+                    WHERE syllabus_id = :sid AND status = 'draft'
+                    """
+                ),
+                {"sid": syllabus_id},
+            )
+            next_version = sesion.execute(
+                text(
+                    """
+                    SELECT COALESCE(MAX(version), 0) + 1
+                    FROM syllabus_knowledge_maps
+                    WHERE syllabus_id = :sid
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).scalar_one()
+            fila = sesion.execute(
+                text(
+                    """
+                    INSERT INTO syllabus_knowledge_maps (
+                        id, syllabus_id, version, status,
+                        notebook_context_text, map_json, audit_json,
+                        teacher_instruction, created_at, updated_at
+                    )
+                    VALUES (
+                        gen_random_uuid(), :sid, :version, 'draft',
+                        :notebook, CAST(:map AS JSONB), CAST(:audit AS JSONB),
+                        :teacher_instruction, now(), now()
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "sid": syllabus_id,
+                    "version": int(next_version),
+                    "notebook": notebook_context_text or "",
+                    "map": json.dumps(map_json or [], ensure_ascii=False),
+                    "audit": json.dumps(audit_json or {}, ensure_ascii=False),
+                    "teacher_instruction": teacher_instruction or "",
+                },
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_knowledge_map_row(fila)
+
+    async def guardar_knowledge_map_draft(
+        self,
+        syllabus_id: str,
+        map_json: list[dict],
+        audit_json: dict,
+        notebook_context_text: str = "",
+        teacher_instruction: str = "",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._guardar_knowledge_map_draft_sync,
+                syllabus_id,
+                map_json,
+                audit_json,
+                notebook_context_text,
+                teacher_instruction,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar knowledge map draft {syllabus_id}: {e}")
+            return None
+
+    def _actualizar_knowledge_map_week_sync(
+        self,
+        syllabus_id: str,
+        week: int,
+        patch: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            owner = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not owner:
+                return None
+            row = sesion.execute(
+                text(
+                    """
+                    SELECT id, map_json FROM syllabus_knowledge_maps
+                    WHERE syllabus_id = :sid AND status = 'draft'
+                    ORDER BY version DESC LIMIT 1
+                    FOR UPDATE
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().first()
+            if not row:
+                return None
+            map_json = row["map_json"]
+            if isinstance(map_json, str):
+                try:
+                    map_json = json.loads(map_json)
+                except Exception:
+                    map_json = []
+            if not isinstance(map_json, list):
+                map_json = []
+            updated = False
+            week_int = int(week)
+            for entry in map_json:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    entry_week = int(entry.get("week") or 0)
+                except Exception:
+                    entry_week = 0
+                if entry_week == week_int:
+                    for key, value in (patch or {}).items():
+                        if value is not None:
+                            entry[key] = value
+                    updated = True
+                    break
+            if not updated:
+                return None
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_knowledge_maps
+                    SET map_json = CAST(:map AS JSONB),
+                        updated_at = now()
+                    WHERE id = :id
+                    RETURNING *
+                    """
+                ),
+                {"id": row["id"], "map": json.dumps(map_json, ensure_ascii=False)},
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_knowledge_map_row(fila)
+
+    async def actualizar_knowledge_map_week(
+        self,
+        syllabus_id: str,
+        week: int,
+        patch: dict,
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._actualizar_knowledge_map_week_sync,
+                syllabus_id,
+                week,
+                patch,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al actualizar semana {week} de knowledge map {syllabus_id}: {e}")
+            return None
+
+    def _confirmar_knowledge_map_sync(
+        self,
+        syllabus_id: str,
+        teacher_notes: str = "",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            owner = sesion.execute(
+                text(f"SELECT id FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).first()
+            if not owner:
+                return None
+            draft = sesion.execute(
+                text(
+                    """
+                    SELECT id, map_json FROM syllabus_knowledge_maps
+                    WHERE syllabus_id = :sid AND status = 'draft'
+                    ORDER BY version DESC LIMIT 1
+                    """
+                ),
+                {"sid": syllabus_id},
+            ).mappings().first()
+            if not draft:
+                return None
+            map_json = draft["map_json"]
+            if isinstance(map_json, str):
+                try:
+                    map_json = json.loads(map_json)
+                except Exception:
+                    map_json = []
+            if not isinstance(map_json, list) or len(map_json) != 16:
+                return None
+            seen_weeks: set[int] = set()
+            for entry in map_json:
+                if not isinstance(entry, dict):
+                    return None
+                try:
+                    week_int = int(entry.get("week") or 0)
+                except Exception:
+                    return None
+                if week_int < 1 or week_int > 16 or week_int in seen_weeks:
+                    return None
+                seen_weeks.add(week_int)
+                if not str(entry.get("knowledge") or "").strip():
+                    return None
+            if seen_weeks != set(range(1, 17)):
+                return None
+            sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_knowledge_maps
+                    SET status = 'superseded'
+                    WHERE syllabus_id = :sid AND status = 'confirmed' AND id <> :draft_id
+                    """
+                ),
+                {"sid": syllabus_id, "draft_id": draft["id"]},
+            )
+            fila = sesion.execute(
+                text(
+                    """
+                    UPDATE syllabus_knowledge_maps
+                    SET status = 'confirmed',
+                        teacher_notes = :notes,
+                        confirmed_at = now(),
+                        updated_at = now()
+                    WHERE id = :id
+                    RETURNING *
+                    """
+                ),
+                {"id": draft["id"], "notes": teacher_notes or ""},
+            ).mappings().first()
+            sesion.commit()
+            return self._mapear_knowledge_map_row(fila)
+
+    async def confirmar_knowledge_map(
+        self,
+        syllabus_id: str,
+        teacher_notes: str = "",
+        user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._confirmar_knowledge_map_sync,
+                syllabus_id,
+                teacher_notes,
+                user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al confirmar knowledge map {syllabus_id}: {e}")
             return None
 
     def _obtener_draft_progresivo_sync(
