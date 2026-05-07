@@ -170,6 +170,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function isTransientGenerationPollError(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+
+  if (error instanceof Error) {
+    return /tiempo de espera|conexion con el servidor|Failed to fetch|NetworkError|Load failed/i.test(error.message);
+  }
+
+  return false;
+}
+
 export const api = {
   login: (data: LoginRequest) =>
     request<LoginResponse>('/api/auth/login', {
@@ -874,7 +886,7 @@ export const api = {
     request<APIResponse<import('./types').AiGenerationJob<T>>>(
       `/api/jobs/${encodeURIComponent(jobId)}`,
       { method: 'GET' },
-      15000,
+      30000,
     ),
 
   pollAiGenerationJob: async <T = unknown>(
@@ -889,8 +901,30 @@ export const api = {
     const timeoutMs = options?.timeoutMs ?? 300000;
     const startedAt = Date.now();
 
+    let lastTransientError: Error | null = null;
+
     while (Date.now() - startedAt <= timeoutMs) {
-      const response = await api.getAiGenerationJob<T>(jobId);
+      let response: APIResponse<import('./types').AiGenerationJob<T>>;
+      try {
+        response = await api.getAiGenerationJob<T>(jobId);
+      } catch (error) {
+        if (!isTransientGenerationPollError(error)) {
+          throw error;
+        }
+
+        lastTransientError = error instanceof Error ? error : new Error('Error temporal consultando el avance');
+        options?.onUpdate?.({
+          id: jobId,
+          job_id: jobId,
+          job_type: '',
+          status: 'running',
+          message: 'Seguimos esperando la generacion. La consulta de avance tardo mas de lo normal.',
+        } as import('./types').AiGenerationJob<T>);
+        await sleep(intervalMs);
+        continue;
+      }
+
+      lastTransientError = null;
       const job = response.data;
       options?.onUpdate?.(job);
 
@@ -909,7 +943,12 @@ export const api = {
       await sleep(intervalMs);
     }
 
-    throw new ApiError('La generacion sigue en cola. Intenta revisar nuevamente en unos segundos.', 408);
+    throw new ApiError(
+      lastTransientError
+        ? 'La generacion sigue en proceso. Mantuvimos la espera, pero la consulta de avance no respondio a tiempo.'
+        : 'La generacion sigue en cola. Intenta revisar nuevamente en unos segundos.',
+      408,
+    );
   },
 
   suggestProgressiveProducts: (
@@ -953,7 +992,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raw_context_text: rawContextText }),
       },
-      15000,
+      60000,
     );
   },
 
@@ -971,7 +1010,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      15000,
+      60000,
     );
   },
 
@@ -989,7 +1028,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      15000,
+      60000,
     );
   },
 
