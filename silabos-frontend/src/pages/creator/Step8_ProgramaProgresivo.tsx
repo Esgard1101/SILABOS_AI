@@ -13,6 +13,7 @@ import {
   Pencil,
   RotateCcw,
   Sparkles,
+  Trash2,
   Unlock,
   UploadCloud,
   X,
@@ -36,6 +37,7 @@ type ProductSummary = {
 } | null | undefined;
 
 const NOTEBOOK_IMAGE = '/images/notebooklm_steps/step2d5.png';
+const NOTEBOOK_ICON = '/ICONEMPEZARNOTEBOOKLM.png';
 const MIN_CONTEXT_CHARS = 80;
 const TOTAL_SYLLABUS_WEEKS = 16;
 
@@ -608,6 +610,30 @@ function ProductReferenceDialog({
   );
 }
 
+function NotebookHelpDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">NotebookLM</p>
+            <h2 className="mt-1 text-base font-bold text-white">Guia rapida para traer el consolidado</h2>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white">
+            <X size={15} />
+          </button>
+        </div>
+        <div className="min-h-0 overflow-y-auto p-5">
+          <img src={NOTEBOOK_IMAGE} alt="Video guia NotebookLM" className="aspect-video w-full border border-white/10 bg-black object-cover" />
+          <p className="mt-4 text-[12px] leading-6 text-white/68">
+            Usa este video/placeholder como referencia visual: copia el prompt, pegalo en NotebookLM y trae el consolidado completo para esta unidad.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BlockingLoader({ title, message }: { title: string; message: string }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
@@ -641,6 +667,7 @@ export default function Step8_ProgramaProgresivo() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
   const [productReferenceOpen, setProductReferenceOpen] = useState(false);
+  const [notebookHelpOpen, setNotebookHelpOpen] = useState(false);
 
   const unitCount = useMemo(
     () => resolveUnitCount(state, draftPerformances),
@@ -713,6 +740,11 @@ export default function Step8_ProgramaProgresivo() {
     setContextTextByUnit((prev) => ({ ...prev, [selectedUnit]: value }));
   };
 
+  const handleClearContext = () => {
+    updateContextText('');
+    showToast('Contexto limpiado. Puedes pegar un nuevo consolidado.', 'success');
+  };
+
   const handleCopyPrompt = async () => {
     try {
       await navigator.clipboard.writeText(notebookPrompt);
@@ -731,24 +763,9 @@ export default function Step8_ProgramaProgresivo() {
     }
     setLoading(true);
     setActiveJobId(null);
-    setJobStatusText('Preparando extraccion del contexto de unidad...');
+    setJobStatusText('Guardando contexto de unidad...');
     try {
-      const queued = await api.extractProgressiveUnitContext(draftId, selectedUnit, currentContext);
-      const jobId = queued.data.job_id || queued.data.id;
-      if (!jobId) throw new Error('El servidor no devolvio job_id para el contexto');
-      setActiveJobId(jobId);
-      setJobStatusText('La IA esta sintetizando el consolidado de NotebookLM.');
-      await api.pollAiGenerationJob(jobId, {
-        intervalMs: 3000,
-        timeoutMs: 180000,
-        onUpdate: (job) => {
-          setJobStatusText(
-            job.status === 'running'
-              ? 'Extrayendo temas, casos, operaciones cognitivas y evidencias...'
-              : 'Solicitud en cola. Esperando proveedor disponible...',
-          );
-        },
-      });
+      await api.saveProgressiveUnitContext(draftId, selectedUnit, currentContext);
       await loadState();
       setCurrentScreen('workshop');
       showToast('Contexto de unidad guardado', 'success');
@@ -1039,13 +1056,29 @@ export default function Step8_ProgramaProgresivo() {
                     </span>
                     {contextSaved ? <span className="text-[#72E7F6]">Contexto guardado previamente</span> : null}
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleClearContext}
+                    disabled={loading || !currentContext.trim()}
+                    className="mt-3 inline-flex items-center gap-1.5 border border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-white/52 transition hover:border-[#E9B44C]/45 hover:text-[#F2C260] disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <Trash2 size={12} />
+                    Limpiar
+                  </button>
                 </label>
 
                 <div className="border border-[#00B4D8]/20 bg-[#0B192C] p-4">
-                  <img src={NOTEBOOK_IMAGE} alt="Guia NotebookLM" className="mb-3 aspect-video w-full border border-white/10 object-cover opacity-85" />
+                  <button
+                    type="button"
+                    onClick={() => setNotebookHelpOpen(true)}
+                    className="mb-3 flex aspect-video w-full items-center justify-center border border-[#00B4D8]/20 bg-[#061224] p-5 transition hover:border-[#00B4D8]/55 hover:bg-[#00B4D8]/8"
+                    title="Ver guia visual de NotebookLM"
+                  >
+                    <img src={NOTEBOOK_ICON} alt="NotebookLM" className="max-h-full max-w-full object-contain opacity-95" />
+                  </button>
                   <p className="text-[11px] font-bold text-white">Prompt para NotebookLM</p>
                   <p className="mt-1 text-[10px] leading-5 text-white/52">
-                    Copia esta instruccion, pegala en NotebookLM y trae el consolidado. El prompt ya indica que esta unidad abarca semanas {unitWeekRange.start} a {unitWeekRange.end}.
+                    Copia esta instruccion, pegala en NotebookLM y trae el consolidado. Haz click en el icono para ver la guia visual; el prompt ya indica que esta unidad abarca semanas {unitWeekRange.start} a {unitWeekRange.end}.
                   </p>
                   <button
                     type="button"
@@ -1151,6 +1184,9 @@ export default function Step8_ProgramaProgresivo() {
           timeline={productTimeline}
           onClose={() => setProductReferenceOpen(false)}
         />
+      ) : null}
+      {notebookHelpOpen ? (
+        <NotebookHelpDialog onClose={() => setNotebookHelpOpen(false)} />
       ) : null}
     </div>
     </>

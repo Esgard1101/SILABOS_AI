@@ -996,6 +996,21 @@ export const api = {
     );
   },
 
+  saveProgressiveUnitContext: (
+    syllabusId: string,
+    unitNumber: number,
+    rawContextText: string,
+  ) =>
+    request<APIResponse<import('./types').ProgressiveUnitContext>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/unit-contexts/${unitNumber}/save`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw_context_text: rawContextText }),
+      },
+      30000,
+    ),
+
   generateProgressiveUnit: (
     syllabusId: string,
     unitNumber: number,

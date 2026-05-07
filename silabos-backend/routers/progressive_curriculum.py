@@ -748,22 +748,21 @@ async def _generate_or_regenerate_unit(
 
     raw_context_text = (body.raw_context_text or "").strip()
     if raw_context_text:
-        extracted_context = await engine.extract_unit_context(
-            raw_context_text=raw_context_text,
-            ai_service=ai_service,
-            force_provider=force_provider,
-        )
+        extracted_context = engine.raw_unit_context_payload(raw_context_text)
         await supabase.upsert_unit_context(
             syllabus_id,
             unit_number,
             raw_context_text,
             extracted_context,
-            notebook_prompt_version="progressive-v1",
+            notebook_prompt_version="progressive-raw-v1",
             user_id=user_id,
         )
     else:
         saved_context = await supabase.obtener_unit_context(syllabus_id, unit_number, user_id)
         extracted_context = (saved_context or {}).get("extracted_context_json") or {}
+        saved_raw_context = (saved_context or {}).get("raw_context_text") or ""
+        if saved_raw_context and not extracted_context.get("notebook_raw_context"):
+            extracted_context = engine.raw_unit_context_payload(saved_raw_context)
 
     approved_generations = await supabase.listar_unit_generations(
         syllabus_id,
@@ -898,6 +897,31 @@ async def _extract_unit_context_payload(
         body.raw_context_text,
         extracted,
         notebook_prompt_version="progressive-v1",
+        user_id=_current_user_id(current_user),
+    )
+    if not saved:
+        raise HTTPException(404, "No se pudo guardar el contexto de unidad")
+    return saved
+
+
+async def _save_unit_context_payload(
+    *,
+    syllabus_id: str,
+    unit_number: int,
+    body: UnitContextInput,
+    servicios: dict,
+    current_user: dict,
+) -> dict:
+    supabase = _require_db(servicios)
+    engine = get_progressive_curriculum_engine()
+    raw_context_text = (body.raw_context_text or "").strip()
+    extracted_context = engine.raw_unit_context_payload(raw_context_text)
+    saved = await supabase.upsert_unit_context(
+        syllabus_id,
+        unit_number,
+        raw_context_text,
+        extracted_context,
+        notebook_prompt_version="progressive-raw-v1",
         user_id=_current_user_id(current_user),
     )
     if not saved:
@@ -1125,6 +1149,24 @@ async def seleccionar_producto_integrador(
     if not selected:
         raise HTTPException(404, "Opcion de producto no encontrada")
     return APIResponse(success=True, data=selected, error=None)
+
+
+@router.post("/syllabi/{syllabus_id}/progressive/unit-contexts/{unit_number}/save", response_model=APIResponse)
+async def guardar_contexto_unidad(
+    syllabus_id: str,
+    unit_number: int,
+    body: UnitContextInput,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    saved = await _save_unit_context_payload(
+        syllabus_id=syllabus_id,
+        unit_number=unit_number,
+        body=body,
+        servicios=_sv(request),
+        current_user=current_user,
+    )
+    return APIResponse(success=True, data=saved, error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/progressive/unit-contexts/{unit_number}/extract", response_model=APIResponse)

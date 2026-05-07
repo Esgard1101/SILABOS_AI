@@ -13,3 +13,5 @@ uploads/*
 !uploads/.gitkeep
 templates/*.docx
 __codex_*.py
+tests
+database/credentials

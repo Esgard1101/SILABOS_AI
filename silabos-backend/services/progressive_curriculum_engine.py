@@ -713,6 +713,17 @@ class ProgressiveCurriculumEngine:
                 pass
         return self._fallback_context_extract(raw_context_text)
 
+    def raw_unit_context_payload(self, raw_context_text: str) -> dict[str, Any]:
+        raw_context_text = _clean_text(raw_context_text)
+        return {
+            "notebook_raw_context": raw_context_text,
+            "key_concepts": [],
+            "cases_or_examples": [],
+            "suggested_activities": [],
+            "possible_evidence": [],
+            "common_errors": [],
+        }
+
     def build_traceability_context(
         self,
         approved_generations: list[dict[str, Any]],
@@ -1799,6 +1810,7 @@ class ProgressiveCurriculumEngine:
                     "La tecnica debe integrarse en prosa, por ejemplo: mediante debate academico y ficha de analisis.",
                     "No uses Inicio:, Desarrollo: ni Cierre: como etiquetas.",
                     "No repitas temas de traceability_context.covered_knowledge.",
+                    "Si disciplinary_context.notebook_raw_context existe, usalo como insumo principal de la unidad: respeta su secuencia, temas, casos, actividades posibles, evidencias y alertas docentes.",
                     "Respeta exactamente las semanas bloqueadas.",
                     "Aplica la triple coherencia sin volverla literal: fase del metodo + operacion sobre conocimiento + habilidad + tecnica + evidencia.",
                     "El objeto de trabajo central del curso debe guiar la unidad. Si existe central_work_object, usalo como hilo conductor de actividades y evidencias.",
