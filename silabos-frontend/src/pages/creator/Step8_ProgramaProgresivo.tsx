@@ -27,6 +27,7 @@ import type {
   SuggestedPerformance,
 } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import { useAppContext } from '../../hooks/useAppContext';
 
 type UnitScreen = 'context' | 'workshop';
 type DialogMode = 'edit' | 'regenerate' | null;
@@ -106,7 +107,7 @@ function getUnitWeekRange(totalUnits: number, unitNumber: number): WeekRange {
 
 function buildUnitWeekMapText(totalUnits: number): string {
   return getUnitWeekRanges(totalUnits)
-    .map((range, index) => `- Prompt unidad ${index + 1}: estamos desde semana ${range.start} hasta semana ${range.end}.`)
+    .map((range, index) => `- U${index + 1}: sem. ${range.start}-${range.end}`)
     .join('\n');
 }
 
@@ -184,58 +185,75 @@ function performanceForUnit(
   return unitText.replace(/^Unidad\s+\d+\s*:\s*/i, '');
 }
 
-function buildUnitNotebookPrompt(unitNumber: number, totalUnits: number, courseName: string, performance: string) {
+function buildUnitNotebookPrompt(
+  unitNumber: number,
+  totalUnits: number,
+  courseName: string,
+  performance: string,
+  knowledgeMapWeeks: { week: number; knowledge: string; subtopics?: string[] }[],
+) {
   const range = getUnitWeekRange(totalUnits, unitNumber);
   const unitWeekMapText = buildUnitWeekMapText(totalUnits);
-  return `Necesito un CONSOLIDADO DIDACTICO CONCRETO de la Unidad ${unitNumber} para pegarlo en SIGEISIL.
+  const knowledgeListText = knowledgeMapWeeks
+    .filter((item) => item.week >= range.start && item.week <= range.end)
+    .map((item) => {
+      const subtopicsText = (item.subtopics || [])
+        .filter(Boolean)
+        .map((subtopic) => `  - ${subtopic}`)
+        .join('\n');
+      return [
+        `- Sem. ${item.week}: ${item.knowledge}`,
+        subtopicsText ? `  Subtemas:\n${subtopicsText}` : '  Subtemas: sin registro.',
+      ].join('\n');
+    })
+    .join('\n');
+
+  return `Genera un CONSOLIDADO DIDACTICO CONCRETO para SIGEISIL.
 
 CURSO: ${courseName || '[nombre del curso]'}
-DESEMPENO OFICIAL DE LA UNIDAD: ${performance || '[pegar desempeno oficial]'}
+UNIDAD: ${unitNumber}/${totalUnits}
+DESEMPENO: ${performance || '[pegar desempeno oficial]'}
 NIVEL: universitario
-CANTIDAD TOTAL DE UNIDADES DEL SILABO: ${totalUnits}
 
-DISTRIBUCION TEMPORAL DEL SILABO:
+DISTRIBUCION:
 ${unitWeekMapText}
 
-ALCANCE DE ESTE PROMPT:
-Estamos trabajando la Unidad ${unitNumber}, desde la semana ${range.start} hasta la semana ${range.end}. Tus sugerencias deben cubrir solo ese tramo y no deben adelantar contenidos de otras unidades.
+ALCANCE: Unidad ${unitNumber}, semanas ${range.start}-${range.end}. No adelantes contenidos de otras unidades.
 
-Usa exclusivamente las fuentes cargadas en este cuaderno de NotebookLM. No redactes el silabo final. Entrega insumos docentes y sugerencias semanales no finales para que SIGEISIL genere y valide actividades didacticas universitarias no roboticas.
+Usa solo fuentes del cuaderno NotebookLM. No redactes el silabo final; entrega insumos didacticos concretos.
 
 Estructura obligatoria:
 
-1. TEMAS NUCLEARES DE LA UNIDAD
-- 6 a 10 temas exactos tomados de las fuentes.
-- Cada tema debe tener una frase de aplicacion docente.
+1. CONOCIMIENTOS INMUTABLES
+Temas y subtemas aprobados:
+${knowledgeListText || '- No se encontraron conocimientos confirmados para esta unidad. Detente y solicita confirmar el Mapa Semanal de Conocimientos antes de proponer didactica.'}
+REGLA ABSOLUTA: prohibido inventar, modificar, resumir o extraer temas/subtemas nuevos. Solo indica como ensenar y evaluar lo listado.
 
-2. SITUACIONES UNIVERSITARIAS PARA TRABAJAR EN AULA
-- 3 casos, problemas, escenarios profesionales o situaciones de analisis.
-- Deben estar vinculados al desempeno oficial, no ser ejemplos genericos.
+2. SITUACIONES UNIVERSITARIAS
+- 3 casos, problemas o escenarios profesionales aplicados al punto 1 y al desempeno.
 
-3. OPERACIONES COGNITIVAS ESPERADAS
-- Indica que debe hacer el estudiante con el conocimiento: comparar, disenar, diagnosticar, argumentar, modelar, validar, aplicar, sustentar.
+3. OPERACIONES COGNITIVAS
+- Que debe hacer el estudiante: comparar, disenar, diagnosticar, argumentar, modelar, validar, aplicar, sustentar.
 
-4. ACTIVIDADES DOCENTES VIABLES
-- Propon 4 actividades concretas con tecnica: caso breve, taller guiado, revision de pares, modelado docente, microdiseno, debate academico, laboratorio, simulacion o practica supervisada.
-- Evita frases vagas como "analizar el tema", "realizar lectura" o "desarrollar actividad".
+4. ACTIVIDADES DOCENTES
+- 4 actividades con tecnica: caso breve, taller guiado, revision de pares, modelado, microdiseno, debate, laboratorio, simulacion o practica.
+- Evita vaguedades como "analizar el tema" o "desarrollar actividad".
 
 5. EVIDENCIAS VERIFICABLES
-- Propon evidencias observables: matriz, ficha, borrador, guion, informe tecnico, prototipo, plan, instrumento, dossier o sustentacion.
+- Evidencias observables: matriz, ficha, borrador, guion, informe, prototipo, plan, instrumento, dossier o sustentacion.
 
-6. SUGERENCIAS SEMANALES NO FINALES
-- Propon una sugerencia breve por cada semana del rango semana ${range.start} a semana ${range.end}, si puedes inferir la secuencia.
-- Identifica cada sugerencia como Semana N y respeta estrictamente el rango temporal de esta unidad.
-- No uses formato de silabo final ni etiquetas como Fase:, Momento:, Proposito:, Tecnicas: o Evidencia:.
-- Cada sugerencia debe conectar tema, operacion cognitiva, habilidad y evidencia posible.
+6. SUGERENCIAS DIDACTICAS SEMANALES (Semana ${range.start} a ${range.end})
+- Para CADA semana del bloque 1, propone una dinamica sobre EXACTAMENTE ese tema y subtemas.
+- Identifica como Semana N y conecta: tema + operacion cognitiva + tecnica + evidencia.
+- No uses etiquetas Fase:, Momento:, Proposito:, Tecnicas: o Evidencia:.
 
 7. RIESGOS DE COMPRENSION
-- Lista errores frecuentes o puntos que el docente debe reforzar.
+- Errores frecuentes al aprender estos temas.
 
 Reglas finales:
-- Tono docente universitario, profesional y concreto.
-- No inventes bibliografia.
-- No uses citas internas de NotebookLM como [1] o [2].
-- No propongas producto final del curso; solo insumos para esta unidad.
+- Tono universitario, profesional y concreto.
+- No inventes bibliografia ni uses citas internas [1], [2].
+- No propongas producto final del curso.
 - Devuelve texto ordenado y facil de copiar.`;
 }
 
@@ -662,6 +680,7 @@ function BlockingLoader({ title, message }: { title: string; message: string }) 
 export default function Step8_ProgramaProgresivo() {
   const navigate = useNavigate();
   const { draftId, courseDetail, draftPerformances, showToast } = useSyllabus();
+  const { context } = useAppContext();
   const [state, setState] = useState<ProgressiveCurriculumState | null>(null);
   const [selectedUnit, setSelectedUnit] = useState(1);
   const [screenByUnit, setScreenByUnit] = useState<Record<number, UnitScreen>>({});
@@ -696,7 +715,25 @@ export default function Step8_ProgramaProgresivo() {
   const contextSaved = Boolean(savedContextText && savedContextText === currentContext.trim());
   const currentScreen = screenByUnit[selectedUnit] || (currentGeneration ? 'workshop' : 'context');
   const lockedWeeks = weeks.filter((week) => week.locked).map((week) => week.week);
-  const notebookPrompt = buildUnitNotebookPrompt(selectedUnit, unitCount, courseDetail?.name || '', currentPerformance);
+  const knowledgeMapWeeks = useMemo(
+    () => (state?.knowledge_map?.map_json || [])
+      .map((item) => ({
+        week: Number(item.week),
+        knowledge: String(item.knowledge || '').trim(),
+        subtopics: Array.isArray(item.subtopics)
+          ? item.subtopics.map((subtopic) => String(subtopic || '').trim()).filter(Boolean)
+          : [],
+      }))
+      .filter((item) => Number.isFinite(item.week) && item.knowledge),
+    [state?.knowledge_map?.map_json],
+  );
+  const notebookPrompt = buildUnitNotebookPrompt(
+    selectedUnit,
+    unitCount,
+    courseDetail?.name || context?.course_name || '',
+    currentPerformance,
+    knowledgeMapWeeks,
+  );
   const approvedCount = state?.unit_generations?.filter((item) => item.status === 'approved').length || 0;
   const selectedProduct = state?.progressive_curriculum?.selected_product
     || state?.product_options?.find((item) => item.selected);

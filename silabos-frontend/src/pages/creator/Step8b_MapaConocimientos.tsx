@@ -219,6 +219,73 @@ function VideoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ConfirmedMapRevisionDialog({
+  currentVersion,
+  onClose,
+  onConfirm,
+}: {
+  currentVersion?: number;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const nextVersion = (currentVersion || 0) + 1;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl border border-[#E9B44C]/45 bg-[#0B192C] shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
+              Mapa confirmado v{currentVersion || 1}
+            </p>
+            <h2 className="mt-1 text-base font-bold text-white">Crear una nueva version del mapa</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-start gap-3 border border-amber-400/30 bg-amber-400/10 p-4 text-[12px] leading-5 text-amber-100">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-bold">Esto no modificara el mapa confirmado inmediatamente.</p>
+              <p className="mt-1 text-amber-100/82">
+                Editar el consolidado creara un borrador v{nextVersion}. La version confirmada actual seguira siendo
+                la verdad curricular hasta que el docente confirme el nuevo mapa.
+              </p>
+            </div>
+          </div>
+          <p className="mt-4 text-[11px] leading-5 text-white/58">
+            Usa este flujo si el consolidado de NotebookLM cambio, si el docente quiere corregir la secuencia de
+            conocimientos o si necesita regenerar las 16 semanas con nuevos criterios.
+          </p>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-white/10 p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="border border-white/10 px-4 py-2 text-[11px] font-bold text-white/58 hover:text-white"
+          >
+            Mantener confirmado
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="bg-[#00A896] px-4 py-2 text-[11px] font-bold text-white hover:bg-[#00B4D8]"
+          >
+            Crear borrador v{nextVersion}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type WeekCardProps = {
   entry: KnowledgeMapWeek;
   totalUnits: number;
@@ -681,6 +748,8 @@ export default function Step8b_MapaConocimientos() {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [promptModalOpen, setPromptModalOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [revisingConfirmedMap, setRevisingConfirmedMap] = useState(false);
   const [screen, setScreen] = useState<Screen>('context');
 
   const performances = useMemo(() => {
@@ -708,7 +777,10 @@ export default function Step8b_MapaConocimientos() {
   const allWeeksHaveKnowledge = mapWeeks.every((entry) => (entry.knowledge || '').trim().length > 0);
   const hasMap = (knowledgeMap?.map_json?.length || 0) > 0;
   const canConfirm = hasMap && allWeeksHaveKnowledge && !confirmed;
+  const canProceed = confirmed || canConfirm;
   const contextReady = notebookContext.trim().length >= MIN_NOTEBOOK_CHARS;
+  const canEditNotebookContext = !confirmed || revisingConfirmedMap;
+  const nextMapVersion = (knowledgeMap?.version || 0) + 1;
   const editingEntry = useMemo(
     () => mapWeeks.find((entry) => entry.week === editingWeek) || null,
     [editingWeek, mapWeeks],
@@ -791,6 +863,7 @@ export default function Step8b_MapaConocimientos() {
       });
       showToast('Mapa generado', 'success');
       await loadState();
+      setRevisingConfirmedMap(false);
       setScreen('map');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'No se pudo generar el mapa', 'error');
@@ -840,6 +913,20 @@ export default function Step8b_MapaConocimientos() {
     setRepromptOpen(true);
   };
 
+  const handleEditConsolidated = () => {
+    if (confirmed) {
+      setRevisionDialogOpen(true);
+      return;
+    }
+    setScreen('context');
+  };
+
+  const handleStartConfirmedRevision = () => {
+    setRevisionDialogOpen(false);
+    setRevisingConfirmedMap(true);
+    setScreen('context');
+  };
+
   const handleReprompt = async () => {
     if (!draftId) return;
     const targetWeeks = repromptScope === 'unlocked' ? unlockedWeeks : manualSelection;
@@ -887,6 +974,10 @@ export default function Step8b_MapaConocimientos() {
 
   const handleConfirm = async () => {
     if (!draftId) return;
+    if (confirmed) {
+      navigate('/creator/evaluacion');
+      return;
+    }
     if (!allWeeksHaveKnowledge) {
       showToast('Hay semanas sin conocimiento. Edita o regenera antes de confirmar.', 'warning');
       return;
@@ -924,6 +1015,14 @@ export default function Step8b_MapaConocimientos() {
 
       {videoModalOpen ? <VideoModal onClose={() => setVideoModalOpen(false)} /> : null}
 
+      {revisionDialogOpen ? (
+        <ConfirmedMapRevisionDialog
+          currentVersion={knowledgeMap?.version}
+          onClose={() => setRevisionDialogOpen(false)}
+          onConfirm={handleStartConfirmedRevision}
+        />
+      ) : null}
+
       <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -943,6 +1042,10 @@ export default function Step8b_MapaConocimientos() {
             <ScreenTabs
               screen={screen}
               onSelect={(value) => {
+                if (value === 'context' && confirmed && !revisingConfirmedMap) {
+                  setRevisionDialogOpen(true);
+                  return;
+                }
                 if (value === 'map' && !hasMap && !contextReady) {
                   showToast('Primero pega el consolidado de NotebookLM', 'warning');
                   return;
@@ -966,6 +1069,24 @@ export default function Step8b_MapaConocimientos() {
 
         {screen === 'context' ? (
           <section className="border border-white/10 bg-[#162A45] p-5">
+            {confirmed ? (
+              <div className="mb-4 flex items-start gap-3 border border-[#E9B44C]/35 bg-[#E9B44C]/10 p-4 text-[12px] leading-5 text-[#F2C260]">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-bold">
+                    {revisingConfirmedMap
+                      ? `Editando consolidado para crear borrador v${nextMapVersion}`
+                      : 'El mapa confirmado esta protegido'}
+                  </p>
+                  <p className="mt-1 text-[#F2C260]/78">
+                    {revisingConfirmedMap
+                      ? 'Cuando generes el mapa, se guardara como nueva version borrador. La version confirmada seguira intacta hasta confirmar el nuevo mapa.'
+                      : 'Para cambiarlo, crea una nueva version desde "Editar consolidado". No se modifica la verdad curricular confirmada sin una nueva confirmacion docente.'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
               <button
                 type="button"
@@ -1036,7 +1157,7 @@ export default function Step8b_MapaConocimientos() {
                 value={notebookContext}
                 onChange={(event) => setNotebookContext(event.target.value)}
                 rows={10}
-                disabled={confirmed}
+                disabled={!canEditNotebookContext}
                 className="w-full resize-none border border-white/10 bg-[#0B192C] px-3 py-3 text-[12px] leading-5 text-white outline-none placeholder:text-white/24 focus:border-[#00B4D8]/60 disabled:opacity-60"
                 placeholder="Pega aqui el consolidado de NotebookLM (temas, casos, secuencia disciplinar) o apuntes docentes."
               />
@@ -1044,16 +1165,23 @@ export default function Step8b_MapaConocimientos() {
                 <button
                   type="button"
                   onClick={handleSuggest}
-                  disabled={loading || confirmed || !contextReady}
+                  disabled={loading || !canEditNotebookContext || !contextReady}
                   className="inline-flex h-10 items-center gap-2 whitespace-nowrap bg-[#00A896] px-4 text-[11px] font-bold text-white transition hover:bg-[#00B4D8] disabled:opacity-50"
                 >
                   {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                  {hasMap ? 'Regenerar mapa con IA' : 'Generar mapa con IA'}
+                  {confirmed && revisingConfirmedMap
+                    ? `Generar borrador v${nextMapVersion}`
+                    : hasMap
+                      ? 'Regenerar mapa con IA'
+                      : 'Generar mapa con IA'}
                 </button>
                 {hasMap ? (
                   <button
                     type="button"
-                    onClick={() => setScreen('map')}
+                    onClick={() => {
+                      if (confirmed) setRevisingConfirmedMap(false);
+                      setScreen('map');
+                    }}
                     className="inline-flex h-10 items-center gap-2 whitespace-nowrap border border-white/10 px-4 text-[11px] font-bold text-white/65 transition hover:border-[#E9B44C]/50 hover:text-[#E9B44C]"
                   >
                     <ArrowRight size={12} />
@@ -1079,7 +1207,7 @@ export default function Step8b_MapaConocimientos() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setScreen('context')}
+                  onClick={handleEditConsolidated}
                   className="flex h-9 items-center gap-2 border border-white/10 bg-[#0B192C] px-3 text-[10px] font-bold text-white/65 hover:border-[#E9B44C]/50 hover:text-[#E9B44C]"
                 >
                   <FileText size={13} />
@@ -1161,10 +1289,10 @@ export default function Step8b_MapaConocimientos() {
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!canConfirm || loading || screen === 'context'}
+            disabled={!canProceed || loading || (screen === 'context' && !confirmed)}
             className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {confirmed ? 'Mapa confirmado' : 'Confirmar y continuar'}
+            {confirmed ? 'Continuar a evaluacion' : 'Confirmar y continuar'}
             <ArrowRight size={12} />
           </button>
         </div>

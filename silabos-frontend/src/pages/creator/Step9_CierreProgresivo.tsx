@@ -229,9 +229,15 @@ export default function Step9_CierreProgresivo() {
           className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:opacity-45"
         >
           {assembling ? <Loader2 size={13} className="animate-spin" /> : <BookOpenCheck size={13} />}
-          Ensamblar y preparar entrega
+          {assembling ? 'Ensamblando silabo final...' : 'Ensamblar y preparar entrega'}
         </button>
       </div>
+      {assembling ? (
+        <p className="mt-3 text-right text-[11px] leading-5 text-white/52">
+          Este cierre puede tardar varios minutos porque la IA esta integrando unidades, producto, evaluacion y
+          trazabilidad. Mantén esta pantalla abierta; si ya se guardo, te llevaremos a la entrega final.
+        </p>
+      ) : null}
     </div>
   );
 }

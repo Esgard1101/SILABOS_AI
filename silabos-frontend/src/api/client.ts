@@ -1149,7 +1149,7 @@ export const api = {
     request<APIResponse<{ syllabus_id: string; saved: boolean; final_syllabus: Record<string, unknown> }>>(
       `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/assemble`,
       { method: 'POST' },
-      90000,
+      600000,
     ),
 };
 

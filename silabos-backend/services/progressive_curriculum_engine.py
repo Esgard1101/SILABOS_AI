@@ -868,6 +868,7 @@ class ProgressiveCurriculumEngine:
             total_units=total_units,
             profile=profile,
             performance=performance,
+            grading_rows=grading_rows or [],
             product_option=product_option,
             locked_weeks=locked_weeks,
             locked_rows=locked_rows or [],
@@ -907,6 +908,7 @@ class ProgressiveCurriculumEngine:
                         total_units=total_units,
                         profile=profile,
                         performance=performance,
+                        grading_rows=grading_rows or [],
                         product_option=product_option,
                         locked_weeks=locked_weeks,
                         locked_rows=locked_rows or [],
@@ -935,6 +937,7 @@ class ProgressiveCurriculumEngine:
         phase: str,
         skill: str = "",
         work_object: str = "",
+        work_object_required: bool = False,
     ) -> dict[str, Any]:
         activity = _clean_text(row.get("activity") or row.get("actividad"))
         knowledge = _clean_text(row.get("knowledge") or row.get("conocimientos"))
@@ -992,13 +995,13 @@ class ProgressiveCurriculumEngine:
         evidence_score = 2 if evidence_key else 0
         work_object_score, object_diagnosis = _work_object_score(activity, evidence, work_object)
         raw_total = methodological_score + cognitive_score + formative_score + technique_score + evidence_score
-        if work_object:
+        if work_object and work_object_required:
             total = round(((raw_total + work_object_score) / 12) * 10)
         else:
             total = raw_total
-        if work_object and work_object_score == 1:
+        if work_object and work_object_required and work_object_score == 1:
             total = min(total, 7)
-        if work_object and work_object_score == 0:
+        if work_object and work_object_required and work_object_score == 0:
             total = min(total, 5)
         if technique_score == 0:
             total = min(total, 7)
@@ -1009,12 +1012,12 @@ class ProgressiveCurriculumEngine:
             diagnosis = "Usa etiquetas rigidas; debe redactarse en prosa docente"
         elif technique_score == 0:
             diagnosis = "Tecnica didactica ausente"
-        elif work_object and work_object_score == 0:
+        elif work_object and work_object_required and work_object_score == 0:
             diagnosis = "Objeto de trabajo ausente"
-        elif work_object and work_object_score == 1:
+        elif work_object and work_object_required and work_object_score == 1:
             diagnosis = object_diagnosis or "Objeto mencionado de forma generica"
         elif total >= 8:
-            diagnosis = "Triple coherencia alta con trazabilidad del producto" if work_object else "Coherencia alta"
+            diagnosis = "Triple coherencia alta con trazabilidad del producto" if work_object_required else "Coherencia alta"
         elif total >= 6:
             diagnosis = "Revisar precision didactica"
         else:
@@ -1025,7 +1028,7 @@ class ProgressiveCurriculumEngine:
             "formative_score": formative_score,
             "technique_score": technique_score,
             "evidence_score": evidence_score,
-            "work_object_score": work_object_score if work_object else None,
+            "work_object_score": work_object_score if work_object and work_object_required else None,
             "total_score": total,
             "diagnosis": diagnosis,
         }
@@ -1112,7 +1115,7 @@ class ProgressiveCurriculumEngine:
                 "role": "Editor academico universitario",
                 "task": (
                     "Reescribe solo el campo activity de las semanas con redaccion robotica "
-                    "o validacion incompleta por falta de fase, tecnica u objeto de trabajo. "
+                    "o validacion incompleta por falta de fase o tecnica. "
                     "Mantén week, unit_number, performance, required_skills, knowledge, evidence y phase."
                 ),
                 "unit_number": unit_number,
@@ -1129,6 +1132,7 @@ class ProgressiveCurriculumEngine:
                     "La fase metodologica debe integrarse en prosa natural.",
                     "La tecnica debe integrarse en prosa natural mediante expresiones como mediante, a partir de, con apoyo de o usando.",
                     "Cada activity debe mencionar una tecnica concreta del metodo o de aula: preguntas esenciales, arbol del problema, mapa de actores, entrevista breve, design thinking, prototipado rapido, revision entre pares, matriz, ficha, debate o pitch.",
+                    "Solo menciona el objeto de trabajo si validation.work_object_score no es null; no lo fuerces en semanas formativas.",
                     "Cada activity debe tener maximo dos oraciones.",
                     "No repitas la misma apertura gramatical en semanas consecutivas.",
                     "Alterna sujetos y estructuras: El docente..., Los estudiantes..., Durante..., En equipos..., Con apoyo de..., La sesion se centra en...",
@@ -2115,6 +2119,7 @@ class ProgressiveCurriculumEngine:
         total_units: int,
         profile: dict[str, Any],
         performance: dict[str, Any] | str | None,
+        grading_rows: list[dict[str, Any]],
         product_option: dict[str, Any] | None,
         locked_weeks: list[int],
         locked_rows: list[dict[str, Any]],
@@ -2139,6 +2144,11 @@ class ProgressiveCurriculumEngine:
                 mandatory_by_week[week_int] = entry
         normalized: list[dict[str, Any]] = []
         work_object = _clean_text((product_option or {}).get("work_object"))
+        pa_weeks = {
+            int(week)
+            for _code, week in self._timeline_specs(grading_rows, total_units)
+            if str(week).isdigit()
+        }
         for index, week_number in enumerate(expected_weeks):
             if week_number in locked_weeks and week_number in locked_by_week:
                 row = dict(locked_by_week[week_number])
@@ -2148,7 +2158,13 @@ class ProgressiveCurriculumEngine:
                 locked_phase = _clean_text(row.get("phase") or row.get("fase"))
                 locked_skill = _clean_text(row.get("skill") or row.get("habilidad"))
                 if "validation" not in row:
-                    row["validation"] = self.validate_week(row=row, phase=locked_phase, skill=locked_skill, work_object=work_object)
+                    row["validation"] = self.validate_week(
+                        row=row,
+                        phase=locked_phase,
+                        skill=locked_skill,
+                        work_object=work_object,
+                        work_object_required=week_number in pa_weeks,
+                    )
                 normalized.append(row)
                 continue
 
@@ -2179,7 +2195,13 @@ class ProgressiveCurriculumEngine:
                 "locked": False,
                 "phase": phase,
             }
-            clean_row["validation"] = self.validate_week(row=clean_row, phase=phase, skill=skill, work_object=work_object)
+            clean_row["validation"] = self.validate_week(
+                row=clean_row,
+                phase=phase,
+                skill=skill,
+                work_object=work_object,
+                work_object_required=week_number in pa_weeks,
+            )
             normalized.append(clean_row)
         return normalized
 
@@ -2295,6 +2317,31 @@ class ProgressiveCurriculumEngine:
         ranges = _unit_week_ranges(total_units)
         start, end = ranges.get(unit_number, (1, 16))
         work_object = _clean_text((product_option or {}).get("work_object"))
+        timeline = _coerce_json_object((product_option or {}).get("timeline_json"))
+        pa_milestones = []
+        for code, week in self._timeline_specs(grading_rows, total_units):
+            week_text = _clean_text(week)
+            week_value: int | str = int(week_text) if week_text.isdigit() else week_text
+            if isinstance(week_value, int) and not (start <= week_value <= end):
+                continue
+            description = _clean_text(timeline.get(code))
+            if not description:
+                description = next(
+                    (
+                        _clean_text(value)
+                        for key, value in timeline.items()
+                        if _normalize(key) == _normalize(code)
+                        or f"semana {week_text}" in _normalize(value)
+                    ),
+                    "",
+                )
+            pa_milestones.append(
+                {
+                    "code": code,
+                    "week": week_value,
+                    "description": description,
+                }
+            )
         mandatory_block = [
             {
                 "week": int(entry.get("week") or 0),
@@ -2317,6 +2364,7 @@ class ProgressiveCurriculumEngine:
                     "grading_rows": grading_rows,
                     "selected_product": product_option or {},
                     "central_work_object": work_object,
+                    "pa_milestones": pa_milestones,
                 },
                 "traceability_context": traceability_context,
                 "disciplinary_context": extracted_context,
@@ -2337,9 +2385,11 @@ class ProgressiveCurriculumEngine:
                     "Si disciplinary_context.notebook_raw_context existe, usalo como insumo principal de la unidad: respeta su secuencia, casos, actividades posibles, evidencias y alertas docentes.",
                     "Respeta exactamente las semanas bloqueadas.",
                     "Aplica la triple coherencia sin volverla literal: fase del metodo + operacion sobre conocimiento + habilidad + tecnica + evidencia.",
-                    "El objeto de trabajo central del curso debe guiar la unidad. Si existe central_work_object, usalo como hilo conductor de actividades y evidencias.",
-                    "El objeto de trabajo debe aparecer explicitamente en semanas clave: introduccion del objeto, analisis o desarrollo, ajuste con retroalimentacion y cada evidencia PA.",
-                    "Las evidencias PA deben nombrar el objeto concreto; no escribas solo 'avance del producto' o 'desarrollo del proyecto'.",
+                    "El PA es horizonte integrador del curso, no una entrega semanal. No conviertas todas las evidencias en PA.",
+                    "Solo las semanas listadas en static_context.pa_milestones son semanas PA/hito. En esas semanas, la evidencia puede iniciar con PA1, PA2, etc. y debe nombrar el objeto concreto.",
+                    "En semanas que NO aparecen en pa_milestones, la evidencia debe ser formativa y breve: ficha, matriz, registro, borrador, reporte breve, lista de cotejo o bitacora. Prohibido iniciar con PA1, PA2, PAFinal o 'avance acreditable'.",
+                    "El objeto de trabajo puede orientar el contexto, pero no lo pegues al final de cada actividad o evidencia. Mencionalo solo cuando sea natural o cuando la semana sea PA/hito.",
+                    "No termines repetidamente evidencias con frases como 'para/sobre/orientado a' + central_work_object.",
                     "No uses frases genericas como analisis del caso, desarrollo del proyecto o resolucion del problema sin nombrar que caso, que proyecto o que problema.",
                     "Varia la sintaxis semana a semana; no uses la misma apertura gramatical en semanas consecutivas.",
                     "Alterna sujetos y estructuras: El docente..., Los estudiantes..., Durante..., En equipos..., Con apoyo de..., La sesion se centra en...",
@@ -2355,8 +2405,8 @@ class ProgressiveCurriculumEngine:
                             "performance": "desempeno oficial intacto",
                             "required_skills": ["habilidad requerida"],
                             "knowledge": "conocimiento semanal",
-                            "activity": "Durante la fase metodologica correspondiente, los estudiantes operan sobre el conocimiento semanal y movilizan la habilidad requerida mediante una tecnica pertinente vinculada al objeto de trabajo central.",
-                            "evidence": "evidencia verificable que nombra el avance del producto y el objeto de trabajo",
+                            "activity": "Actividad en prosa que integra fase metodologica, conocimiento, habilidad y tecnica sin forzar el PA semanal.",
+                            "evidence": "evidencia formativa verificable; solo nombra PA y objeto si esta semana figura en pa_milestones",
                             "phase": "fase metodologica",
                         }
                     ]

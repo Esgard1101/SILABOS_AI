@@ -79,3 +79,49 @@ This folder intentionally has 8 markdown files total:
 6. `05_FINAL_ASSEMBLY_EXPORT.md`
 7. `06_AI_PROVIDERS_DB_OPERATIONS.md`
 8. `07_KNOWLEDGE_MAP.md`
+
+
+# ADDENDUM: Arquitectura "Mapa de Conocimientos" y Triple Coherencia (V2)
+
+## 1. Contexto y Problema Resuelto
+Se detectó que el motor de generación curricular sufría del **"Síndrome del método vacío"** y repetición cíclica: 
+* La IA y el código Python (`index % len()`) repetían el mismo conocimiento en las últimas semanas de una unidad al quedarse sin temas base de la BD (que suele tener solo de 5 a 9 temas macro para 16 semanas).
+* Las actividades y evidencias se robotizaban ("PA1: Ficha de grupo"), sin concretizar el aprendizaje de la semana.
+
+**Solución Arquitectónica:** Separar el "Qué" (Contenido) del "Cómo" (Didáctica) mediante la inserción de un nuevo paso obligatorio antes de generar unidades.
+
+---
+
+## 2. Nuevo Step: Mapa Semanal de Conocimientos (Paso 9)
+Se crea una pantalla exclusiva donde el docente define el "esqueleto" temático del semestre.
+* **Obligatoriedad:** Step obligatorio ubicado después de definir el Producto Acreditable (PA) y antes del Programa Progresivo (ahora Paso 11).
+* **Estructura Estricta:** Genera exactamente 16 nodos (1 por semana). Cada nodo contiene un conocimiento principal obligatorio y subtemas opcionales.
+* **Input Híbrido:** La IA desglosa el mapa usando Sumilla + Desempeños + Temas Base + PA + Método.
+* **Inmutabilidad (Ground Truth):** Una vez que el docente aprueba este mapa, los conocimientos de las 16 semanas se vuelven **inmutables**. El motor de unidades tiene estrictamente prohibido alterarlos, resumirlos o inventar nuevos.
+
+---
+
+## 3. Paradigma UX/UI y "Human-in-the-Loop"
+Para mantener el control del docente sin sacrificar fluidez, se implementaron las siguientes reglas de interfaz:
+* **Layout Horizontal / Extra Small Cards:** Representación visual en formato línea de tiempo o grid ligero. Las semanas se ven como micro-tarjetas para evaluar la progresión cognitiva de un vistazo.
+* **Soft Warnings (Agente Validador):** Si la IA detecta temas semánticamente repetidos, NO bloquea al usuario. Muestra un "warning" visual (ej. borde amarillo) sugiriendo revisión.
+* **Confirmación Forzada:** El botón "Confirmar y Continuar" siempre está activo (override docente), excepto si el JSON está incompleto (faltan semanas) o un campo de conocimiento está vacío.
+* **Reprompting Parcial (Icono Candado):** Para corregir mapas débiles, el docente usa un ícono de "candado" en las semanas que le gustan. El reprompting solo envía al backend las semanas desbloqueadas (`weeks_to_change[]`), dejando el resto intacto.
+
+---
+
+## 4. Redefinición del Rol de NotebookLM
+Dado que el Mapa de Conocimientos ahora dicta el "Qué", NotebookLM se restringe puramente a la **Didáctica (El "Cómo")**.
+* **Integración en el Prompt:** La función `buildUnitNotebookPrompt` ahora inyecta el array de `knowledgeMapWeeks` filtrado por la unidad actual bajo la etiqueta *"CONOCIMIENTOS INMUTABLES"*.
+* **Tarea Restringida:** Se le prohíbe a NotebookLM inventar temas. Su única tarea es usar la bibliografía cargada para proponer Dinámicas (Operaciones Cognitivas + Actividad + Técnica) y Evidencias para enseñar *exactamente* el tema fijado en el mapa para esa semana.
+
+---
+
+## 5. Corrección del Motor (Evidencias y el PA)
+Se corrigió la "obsesión" del LLM por etiquetar todas las evidencias semanales como el Producto Acreditable (ej. `PA1: Mapa conceptual`).
+Se agregaron dos `hard_rules` críticas en `progressive_curriculum_engine.py` (`_unit_prompt`):
+1. **Regla Formativa:** Prohibido usar prefijos como 'PA1:', 'PA2:' en semanas ordinarias. Deben ser evidencias formativas simples.
+2. **Regla Sumativa:** El Producto Acreditable (PA) solo puede aparecer como evidencia en las semanas exactas de presentación/sustentación dictadas por el `timeline_json` del producto seleccionado.
+
+---
+**Estado Final:** El pipeline ahora garantiza una **Triple Coherencia real** (Conocimiento exacto -> Actividad procesada -> Evidencia tangible), eliminando repeticiones y alucinaciones de contenido.
