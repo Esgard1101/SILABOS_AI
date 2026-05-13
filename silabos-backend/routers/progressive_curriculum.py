@@ -240,6 +240,19 @@ def _clean_text(value: Any, fallback: str = "") -> str:
     return text or fallback
 
 
+def _has_concrete_work_object(value: Any) -> bool:
+    text = _normalize_key(value)
+    if not text:
+        return False
+    weak_markers = (
+        "objeto de trabajo pendiente",
+        "pendiente de contextualizacion",
+        "pendiente de contextualizacion",
+        "pendiente",
+    )
+    return not any(marker in text for marker in weak_markers)
+
+
 def _normalize_key(value: Any) -> str:
     text = unicodedata.normalize("NFKD", _clean_text(value))
     text = "".join(char for char in text if not unicodedata.combining(char))
@@ -699,7 +712,7 @@ async def _enrich_assembly_with_previous_steps(
         method.get("name") if isinstance(method, dict) else method
     ) or _clean_text((payload.get("method") or {}).get("selected_method_name"))
     selected_product = context.get("product_option") or {}
-    if not _clean_text((selected_product or {}).get("work_object")):
+    if not _has_concrete_work_object((selected_product or {}).get("work_object")):
         raise HTTPException(
             status_code=400,
             detail={

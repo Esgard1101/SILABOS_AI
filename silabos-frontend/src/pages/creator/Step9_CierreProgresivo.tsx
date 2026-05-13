@@ -21,6 +21,15 @@ function timelineEntries(product?: { timeline_json?: Record<string, string> } | 
   return Object.entries(product?.timeline_json || {}).filter(([, value]) => String(value || '').trim());
 }
 
+function hasConcreteWorkObject(product?: { work_object?: string } | null) {
+  const text = (product?.work_object || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  return Boolean(text) && !text.includes('pendiente');
+}
+
 export default function Step9_CierreProgresivo() {
   const navigate = useNavigate();
   const {
@@ -35,16 +44,41 @@ export default function Step9_CierreProgresivo() {
   const [loading, setLoading] = useState(true);
   const [assembling, setAssembling] = useState(false);
 
-  const unitCount = Math.max(1, draftPerformances.length || state?.unit_generations?.length || 1);
+  const statePerformanceCount = state?.performances?.length || 0;
+  const unitCount = Math.max(1, draftPerformances.length || statePerformanceCount || state?.unit_generations?.length || 1);
   const approved = useMemo(
     () => (state?.unit_generations || []).filter((item) => item.status === 'approved'),
     [state],
   );
-  const selectedProduct = state?.progressive_curriculum?.selected_product
-    || state?.product_options?.find((item) => item.selected);
+  const selectedProductFromList = state?.product_options?.find((item) => item.selected);
+  const selectedProduct = selectedProductFromList || state?.progressive_curriculum?.selected_product;
   const productTimeline = timelineEntries(selectedProduct);
   const allUnitsApproved = approved.length >= unitCount;
-  const productReady = Boolean(selectedProduct?.work_object?.trim());
+  const productReady = hasConcreteWorkObject(selectedProduct);
+  const weeksGenerated = approved.reduce((sum, item) => sum + weeksCount(item), 0) >= 16;
+  const assemblyCriteria = [
+    {
+      icon: CheckCircle2,
+      label: 'Unidades aprobadas',
+      ok: allUnitsApproved,
+      route: '/creator/programa',
+      hint: allUnitsApproved ? 'Revisar taller' : 'Ir a aprobar unidades',
+    },
+    {
+      icon: FileCheck2,
+      label: 'Producto con objeto',
+      ok: productReady,
+      route: '/creator/producto',
+      hint: productReady ? 'Revisar producto' : 'Ir a corregir producto',
+    },
+    {
+      icon: Rows3,
+      label: 'Semanas generadas',
+      ok: weeksGenerated,
+      route: '/creator/programa',
+      hint: weeksGenerated ? 'Revisar semanas' : 'Ir a generar semanas',
+    },
+  ];
 
   const loadState = useCallback(async () => {
     if (!draftId) return;
@@ -71,6 +105,10 @@ export default function Step9_CierreProgresivo() {
     }
     if (!productReady) {
       showToast('El producto acreditable debe tener objeto de trabajo antes de ensamblar', 'warning');
+      return;
+    }
+    if (!weeksGenerated) {
+      showToast('Genera y aprueba las 16 semanas antes de ensamblar', 'warning');
       return;
     }
     setAssembling(true);
@@ -163,18 +201,29 @@ export default function Step9_CierreProgresivo() {
             <p className="text-[13px] font-bold text-white">Criterios de ensamblaje</p>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-3">
-            {[
-              { icon: CheckCircle2, label: 'Unidades aprobadas', ok: allUnitsApproved },
-              { icon: FileCheck2, label: 'Producto con objeto', ok: productReady },
-              { icon: Rows3, label: 'Semanas generadas', ok: approved.reduce((sum, item) => sum + weeksCount(item), 0) >= 16 },
-            ].map((item) => {
+            {assemblyCriteria.map((item) => {
               const Icon = item.icon;
               return (
-                <div key={item.label} className="border border-white/10 bg-[#0B192C] p-3">
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => navigate(item.route)}
+                  className={[
+                    'border p-3 text-left transition hover:-translate-y-0.5 hover:border-[#00B4D8]/55 hover:bg-[#10213A]',
+                    item.ok
+                      ? 'border-white/10 bg-[#0B192C]'
+                      : 'border-amber-400/35 bg-amber-400/10',
+                  ].join(' ')}
+                >
                   <Icon size={16} className={item.ok ? 'text-emerald-300' : 'text-white/30'} />
                   <p className="mt-2 text-[10px] font-bold text-white/74">{item.label}</p>
-                  <p className="mt-1 text-[9px] uppercase tracking-[0.12em] text-white/34">{item.ok ? 'OK' : 'Pendiente'}</p>
-                </div>
+                  <p className="mt-1 text-[9px] uppercase tracking-[0.12em] text-white/34">
+                    {item.ok ? 'OK' : 'Pendiente'}
+                  </p>
+                  <p className={`mt-2 text-[9px] font-bold uppercase tracking-[0.12em] ${item.ok ? 'text-[#6FE9F5]/70' : 'text-[#E9B44C]'}`}>
+                    {item.hint}
+                  </p>
+                </button>
               );
             })}
           </div>
@@ -225,7 +274,7 @@ export default function Step9_CierreProgresivo() {
         <button
           type="button"
           onClick={handleAssemble}
-          disabled={assembling || !allUnitsApproved || !productReady}
+          disabled={assembling || !allUnitsApproved || !productReady || !weeksGenerated}
           className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:opacity-45"
         >
           {assembling ? <Loader2 size={13} className="animate-spin" /> : <BookOpenCheck size={13} />}

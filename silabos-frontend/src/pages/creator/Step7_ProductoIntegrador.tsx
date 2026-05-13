@@ -39,6 +39,15 @@ function workObjectText(option: ProgressiveProductOption) {
   return option.work_object?.trim() || 'Objeto de trabajo pendiente de contextualizacion.';
 }
 
+function hasConcreteWorkObject(option?: ProgressiveProductOption | null) {
+  const text = (option?.work_object || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  return Boolean(text) && !text.includes('pendiente');
+}
+
 function BlockingLoader({ title, message }: { title: string; message: string }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
@@ -305,8 +314,10 @@ export default function Step7_ProductoIntegrador() {
   const [loadingState, setLoadingState] = useState(Boolean(draftId));
 
   const unitsCount = Math.max(1, draftPerformances.length || 1);
-  const selectedId = selected?.id || options.find((option) => option.selected)?.id;
-  const selectedTitle = selected?.title || options.find((option) => option.selected)?.title || '';
+  const selectedOption = selected || options.find((option) => option.selected) || null;
+  const selectedId = selectedOption?.id;
+  const selectedTitle = selectedOption?.title || '';
+  const selectedHasWorkObject = hasConcreteWorkObject(selectedOption);
   const notebookPrompt = buildProductNotebookPrompt(courseDetail?.name || '', selectedMethodName || '', category, unitsCount);
 
   const statusLabel = useMemo(() => {
@@ -328,7 +339,7 @@ export default function Step7_ProductoIntegrador() {
         setOptions(response.data.product_options || []);
         const fromState = response.data.progressive_curriculum?.selected_product;
         const fromList = (response.data.product_options || []).find((option) => option.selected);
-        setSelected(fromState || fromList || null);
+        setSelected(fromList || fromState || null);
       })
       .catch(() => {
         if (active) setOptions([]);
@@ -410,6 +421,10 @@ export default function Step7_ProductoIntegrador() {
   const handleNext = () => {
     if (!selectedId) {
       showToast('Selecciona un producto integrador antes de continuar', 'warning');
+      return;
+    }
+    if (!selectedHasWorkObject) {
+      showToast('El producto seleccionado necesita un objeto de trabajo contextualizado antes de continuar', 'warning');
       return;
     }
     navigate('/creator/mapa-conocimientos');
@@ -573,6 +588,16 @@ export default function Step7_ProductoIntegrador() {
         )}
       </section>
 
+      {selectedOption && !selectedHasWorkObject ? (
+        <div className="mt-3 border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-[11px] leading-5 text-amber-100">
+          <p className="font-bold">Producto seleccionado incompleto.</p>
+          <p className="mt-1 text-amber-100/80">
+            Este producto no tiene objeto de trabajo contextualizado. Regenera opciones con el consolidado de NotebookLM
+            o selecciona una opcion que incluya objeto antes de pasar al mapa de conocimientos.
+          </p>
+        </div>
+      ) : null}
+
       <div className="mt-5 flex items-center justify-between">
         <button
           type="button"
@@ -585,7 +610,8 @@ export default function Step7_ProductoIntegrador() {
         <button
           type="button"
           onClick={handleNext}
-          className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110"
+          disabled={!selectedId || !selectedHasWorkObject}
+          className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
         >
           Continuar al mapa de conocimientos
           <ArrowRight size={12} />

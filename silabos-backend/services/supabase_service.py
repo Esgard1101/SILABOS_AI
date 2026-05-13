@@ -5311,12 +5311,17 @@ class SupabaseService:
         performances = self._listar_performances_curso_sync(str(course_id), include_archived=False) if course_id else []
         if not performances:
             performances = (payload or {}).get("purpose", {}).get("performances") or []
+        mapped_products = [self._mapear_progressive_row(row) for row in products]
+        progressive = dict((payload or {}).get("progressive_curriculum", {}) or {})
+        selected_product = next((item for item in mapped_products if item.get("selected")), None)
+        if selected_product:
+            progressive["selected_product"] = selected_product
         return {
             "syllabus_id": syllabus_id,
-            "progressive_curriculum": (payload or {}).get("progressive_curriculum", {}),
+            "progressive_curriculum": progressive,
             "units": [self._mapear_progressive_row(row) for row in units],
             "performances": performances,
-            "product_options": [self._mapear_progressive_row(row) for row in products],
+            "product_options": mapped_products,
             "unit_contexts": [self._mapear_progressive_row(row) for row in contexts],
             "unit_generations": [self._mapear_progressive_row(row) for row in generations],
             "knowledge_map": self._mapear_knowledge_map_row(knowledge_map_row),
