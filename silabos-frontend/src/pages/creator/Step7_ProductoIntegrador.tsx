@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckCircle2,
   Copy,
-  FileUp,
   Info,
   Loader2,
   PackageCheck,
@@ -30,6 +29,8 @@ const PRODUCT_CATEGORIES = [
 
 const TERRITORIAL_CONTEXT_BLOCK =
   'La Universidad Nacional Pedro Ruiz Gallo (UNPRG) tiene su sede en Lambayeque. Su zona de influencia directa abarca Chiclayo (capital y eje comercial/urbano con distritos densos como Jose Leonardo Ortiz y La Victoria), balnearios y zonas costeras (Pimentel, Puerto Eten), zonas agricolas e historicas (Ferrenafe, Monsefu, Chongoyape, Sana, Cayalti, Tuman y Huaca Rajada). Regla: elige organicamente un solo lugar o distrito de esta lista que tenga total sentido semantico con el tema del curso.';
+const NOTEBOOK_ICON = '/ICONEMPEZARNOTEBOOKLM.png';
+const NOTEBOOK_VIDEO_PLACEHOLDER = '/images/notebooklm_steps/metodopdfantiguo/step3.png';
 
 function timelineEntries(option: ProgressiveProductOption) {
   return Object.entries(option.timeline_json || {}).filter(([, value]) => String(value || '').trim());
@@ -59,6 +60,41 @@ function BlockingLoader({ title, message }: { title: string; message: string }) 
         <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
         <div className="mt-5 h-1 overflow-hidden bg-white/10">
           <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotebookHelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">NotebookLM</p>
+            <h2 className="mt-1 text-base font-bold text-white">Guia para traer el consolidado del producto</h2>
+            <p className="mt-1 text-[11px] leading-4 text-white/55">
+              Copia el prompt, pegalo en NotebookLM y trae el consolidado para que la IA proponga productos con objeto de trabajo.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <img
+            src={NOTEBOOK_VIDEO_PLACEHOLDER}
+            alt="Guia visual NotebookLM"
+            className="aspect-video w-full bg-black object-cover"
+          />
+          <p className="mt-3 text-[11px] leading-5 text-white/58">
+            Este espacio queda preparado para reemplazar la imagen por un video tutorial cuando este listo.
+          </p>
         </div>
       </div>
     </div>
@@ -309,6 +345,7 @@ export default function Step7_ProductoIntegrador() {
   const [notebookProductContext, setNotebookProductContext] = useState('');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [detailOption, setDetailOption] = useState<ProgressiveProductOption | null>(null);
+  const [notebookHelpOpen, setNotebookHelpOpen] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
   const [loadingState, setLoadingState] = useState(Boolean(draftId));
@@ -450,6 +487,7 @@ export default function Step7_ProductoIntegrador() {
         message="Estamos guardando el producto acreditable seleccionado para sincronizarlo con evaluacion y programa."
       />
     ) : null}
+    {notebookHelpOpen ? <NotebookHelpModal onClose={() => setNotebookHelpOpen(false)} /> : null}
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -516,9 +554,14 @@ export default function Step7_ProductoIntegrador() {
         </div>
         <div className="grid gap-3 border-b border-white/10 px-4 py-4 lg:grid-cols-[260px_1fr_auto] lg:items-start">
           <div className="flex items-start gap-2">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-[#00B4D8]/30 bg-[#00B4D8]/10 text-[#6FE9F5]">
-              <FileUp size={15} />
-            </span>
+            <button
+              type="button"
+              onClick={() => setNotebookHelpOpen(true)}
+              title="Ver guia visual de NotebookLM"
+              className="h-14 w-14 shrink-0 transition hover:brightness-110"
+            >
+              <img src={NOTEBOOK_ICON} alt="NotebookLM" className="h-14 w-14 object-contain" />
+            </button>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#E9B44C]">
                 Subir consolidado de Notebook para plantear producto
