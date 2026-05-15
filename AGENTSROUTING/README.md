@@ -108,6 +108,9 @@ Para mantener el control del docente sin sacrificar fluidez, se implementaron la
 * **Confirmación Forzada:** El botón "Confirmar y Continuar" siempre está activo (override docente), excepto si el JSON está incompleto (faltan semanas) o un campo de conocimiento está vacío.
 * **Reprompting Parcial (Icono Candado):** Para corregir mapas débiles, el docente usa un ícono de "candado" en las semanas que le gustan. El reprompting solo envía al backend las semanas desbloqueadas (`weeks_to_change[]`), dejando el resto intacto.
 
+* la images de elaboracion propia que el user diga que son icons nunca deben tener marco o class con bordes , ya que la idea es que sean observables , medianas y generalmente abren una vista o un modal con videos de guia para los docentes o indicaciones 
+
+
 ---
 
 ## 4. Redefinición del Rol de NotebookLM
