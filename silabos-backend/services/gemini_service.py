@@ -1,6 +1,9 @@
 # Servicio principal de IA con enrutamiento por familias de agentes.
-# Unidad con payload NotebookLM: Google -> OpenAI -> cascada OpenRouter.
-# Producto, tareas ligeras y auditoria: Google -> cascada OpenRouter.
+# Generadores criticos de unidad/conocimiento (gemini_unit): Google -> OpenAI
+#   -> cascada OpenRouter/NVIDIA -> Mistral.
+# Producto, tareas ligeras y auditoria (openrouter_*): cascada OpenRouter/NVIDIA
+#   -> Mistral. Google/OpenAI reservados solo para los criticos.
+# Mistral Free Tier: limite global 1 req/seg; solo ultimo fallback en serie.
 
 import json
 import logging
@@ -77,73 +80,73 @@ class AIProviderError(RuntimeError):
 
 TASK_CONFIGS: dict[str, TaskConfig] = {
     "syllabus_generate": TaskConfig(
-        provider="gemini_product",
+        provider="openrouter_product",
         temperature=0.4,
         max_output_tokens=8192,
         json_mode=True,
     ),
     "syllabus_generate_v2": TaskConfig(
-        provider="gemini_product",
+        provider="openrouter_product",
         temperature=0.4,
         max_output_tokens=8192,
         json_mode=True,
     ),
     "syllabus_validate": TaskConfig(
-        provider="gemini_audit",
+        provider="openrouter_audit",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=True,
         reasoning=True,
     ),
     "document_chat": TaskConfig(
-        provider="gemini_audit",
+        provider="openrouter_audit",
         temperature=0.3,
         max_output_tokens=2048,
     ),
     "search_query_build": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=512,
         json_mode=False,
     ),
     "search_result_filter": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "bibliography_format": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.1,
         max_output_tokens=2048,
         json_mode=False,
     ),
     "method_suggest": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.1,
         max_output_tokens=512,
         json_mode=False,
     ),
     "suggest_performances": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=True,
     ),
     "suggest_content": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=4096,
         json_mode=True,
     ),
     "suggest_grading": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=True,
     ),
     "progressive_purpose_suggest": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=False,
@@ -167,7 +170,7 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         json_mode=False,
     ),
     "progressive_grading_suggest": TaskConfig(
-        provider="gemini_light",
+        provider="openrouter_light",
         temperature=0.2,
         max_output_tokens=2048,
         json_mode=False,
@@ -866,6 +869,19 @@ class GeminiService:
             _provider_prefixed_models(os.getenv("NVIDIA_AUDIT_MODELS"), "nvidia"),
             self.openrouter_global_fallback_models,
         )
+        self.mistral_api_key = os.getenv("MISTRAL_API_KEY", "").strip()
+        self.mistral_unit_model = (
+            os.getenv("MISTRAL_UNIT_MODEL", "").strip() or "mistral-large-latest"
+        )
+        self.mistral_product_model = (
+            os.getenv("MISTRAL_PRODUCT_MODEL", "").strip() or "mistral-medium-latest"
+        )
+        self.mistral_audit_model = (
+            os.getenv("MISTRAL_AUDIT_MODEL", "").strip() or "mistral-small-latest"
+        )
+        self.mistral_light_model = (
+            os.getenv("MISTRAL_LIGHT_MODEL", "").strip() or "mistral-small-latest"
+        )
         self.ai_usage_log_path = os.getenv("AI_USAGE_LOG_PATH", "").strip()
         self.openrouter_audit_reasoning = _as_bool(
             os.getenv("OPENROUTER_AUDIT_REASONING"),
@@ -945,6 +961,16 @@ class GeminiService:
         if route_type == "openrouter_light":
             return self.openrouter_light_models or [self.openrouter_light_model]
         raise ValueError(f"Tipo de ruta OpenRouter no soportado: {route_type}")
+
+    def _resolve_mistral_model(self, provider: str) -> str:
+        route = self._provider_route(provider)
+        if route == "product":
+            return self.mistral_product_model
+        if route == "unit":
+            return self.mistral_unit_model
+        if route == "audit":
+            return self.mistral_audit_model
+        return self.mistral_light_model
 
     def _log_result(self, task_name: str, result: AIResult) -> None:
         logger.info(
@@ -1354,6 +1380,73 @@ class GeminiService:
             provider="openrouter",
         )
 
+    async def _call_mistral(
+        self,
+        task_name: str,
+        prompt: str,
+        config: TaskConfig,
+        *,
+        fallback_used: bool = True,
+    ) -> AIResult:
+        from services.mistral_service import call_mistral
+
+        model = self._resolve_mistral_model(config.provider)
+        result = await call_mistral(
+            task_name=task_name,
+            prompt=prompt,
+            config=config,
+            api_key=self.mistral_api_key,
+            model=model,
+            fallback_used=fallback_used,
+        )
+        self._log_result(task_name, result)
+        return result
+
+    async def _call_openrouter_with_mistral(
+        self,
+        task_name: str,
+        prompt: str,
+        config: TaskConfig,
+        *,
+        fallback_used: bool = False,
+    ) -> AIResult:
+        """OpenRouter/NVIDIA cascade con Mistral como ultimo eslabon.
+
+        Si la cascada OpenRouter/NVIDIA se agota, antes de propagar el error se
+        intenta Mistral una sola vez (es el ultimo proveedor disponible). Mistral
+        en Free Tier tiene limite global de 1 req/seg, por eso jamas se llama en
+        paralelo: solo aqui, en serie, como defensa final.
+        """
+        try:
+            return await self._call_openrouter(
+                task_name, prompt, config, fallback_used=fallback_used
+            )
+        except AIProviderError as orexc:
+            if not self.mistral_api_key:
+                raise
+            try:
+                logger.warning(
+                    "Cascada OpenRouter/NVIDIA agotada para %s; ultimo fallback Mistral | error=%s",
+                    task_name,
+                    orexc,
+                )
+                return await self._call_mistral(
+                    task_name, prompt, config, fallback_used=True
+                )
+            except AIProviderError as mistral_exc:
+                logger.error(
+                    "Mistral (ultimo fallback) tambien fallo para %s | error=%s",
+                    task_name,
+                    mistral_exc,
+                )
+                raise AIProviderError(
+                    f"Todos los proveedores fallaron para {task_name} "
+                    f"(incluido Mistral): openrouter={orexc} | mistral={mistral_exc}",
+                    retryable=False,
+                    provider="mistral",
+                    model=mistral_exc.model,
+                ) from mistral_exc
+
     async def _run_task(
         self,
         task_name: str,
@@ -1362,7 +1455,7 @@ class GeminiService:
     ) -> AIResult:
         config = _task_config(task_name)
         forced = (force_provider or "").strip().lower()
-        if forced and forced not in {"gemini", "openai", "openrouter"}:
+        if forced and forced not in {"gemini", "openai", "openrouter", "mistral"}:
             raise ValueError(f"Proveedor forzado no soportado: {force_provider}")
 
         if forced == "openai":
@@ -1377,8 +1470,15 @@ class GeminiService:
                 fallback_used=True,
             )
 
+        if forced == "mistral":
+            return await self._call_mistral(
+                task_name, prompt, config, fallback_used=True
+            )
+
         if forced == "openrouter":
-            return await self._call_openrouter(task_name, prompt, config, fallback_used=True)
+            return await self._call_openrouter_with_mistral(
+                task_name, prompt, config, fallback_used=True
+            )
 
         if config.provider.startswith("gemini"):
             try:
@@ -1408,10 +1508,14 @@ class GeminiService:
                     task_name,
                     exc,
                 )
-                return await self._call_openrouter(task_name, prompt, config, fallback_used=True)
+                return await self._call_openrouter_with_mistral(
+                    task_name, prompt, config, fallback_used=True
+                )
 
         if config.provider.startswith("openrouter"):
-            return await self._call_openrouter(task_name, prompt, config)
+            return await self._call_openrouter_with_mistral(
+                task_name, prompt, config
+            )
         raise ValueError(f"Proveedor no soportado para tarea {task_name}: {config.provider}")
 
     async def generate_text(

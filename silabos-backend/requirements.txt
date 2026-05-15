@@ -12,6 +12,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 google-auth>=2.47.0
 requests==2.32.3
+mistralai==1.9.11
 
 # IA y RAG — Fase 2
 # llama-index deshabilitado: conflicto de dependencias entre vector-stores-postgres y embeddings-gemini

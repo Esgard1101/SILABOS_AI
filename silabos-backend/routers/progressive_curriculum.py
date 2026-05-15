@@ -176,8 +176,8 @@ def _validate_force_provider(force_provider: str | None) -> str | None:
     value = force_provider.strip().lower()
     if not value:
         return None
-    if value not in {"gemini", "openrouter"}:
-        raise HTTPException(400, "force_provider debe ser gemini u openrouter")
+    if value not in {"gemini", "openrouter", "mistral"}:
+        raise HTTPException(400, "force_provider debe ser gemini, openrouter o mistral")
     return value
 
 
