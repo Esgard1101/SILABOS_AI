@@ -122,11 +122,40 @@ class GeminiServiceRoutingTests(unittest.TestCase):
             with self.subTest(task=task_name):
                 self.assertFalse(TASK_CONFIGS[task_name].json_mode)
 
-    def test_openrouter_audit_keeps_native_json_mode(self):
+    def test_finops_routing_keeps_critical_on_gemini_moves_rest(self):
+        # Validation keeps native JSON mode but FinOps moved it off Google.
         self.assertTrue(TASK_CONFIGS["syllabus_validate"].json_mode)
-        self.assertEqual(TASK_CONFIGS["syllabus_validate"].provider, "gemini_audit")
-        self.assertEqual(TASK_CONFIGS["progressive_unit_context_extract"].provider, "gemini_unit")
-        self.assertEqual(TASK_CONFIGS["progressive_unit_generate"].provider, "gemini_unit")
+        self.assertEqual(TASK_CONFIGS["syllabus_validate"].provider, "openrouter_audit")
+        # Critical unit/knowledge generators + content companions stay on Google.
+        for critical in (
+            "progressive_unit_generate",
+            "progressive_unit_repair",
+            "content_engine_generate",
+            "progressive_knowledge_map_suggest",
+            "progressive_knowledge_map_reprompt",
+            "progressive_unit_context_extract",
+            "suggest_instruments",
+        ):
+            with self.subTest(task=critical):
+                self.assertEqual(TASK_CONFIGS[critical].provider, "gemini_unit")
+        # Tasks that feed the final payload keep Google as head (cascade
+        # Google -> OpenRouter/NVIDIA -> Mistral, no OpenAI).
+        self.assertEqual(TASK_CONFIGS["progressive_product_suggest"].provider, "gemini_product")
+        self.assertEqual(TASK_CONFIGS["progressive_rsu_suggest"].provider, "gemini_light")
+        self.assertEqual(TASK_CONFIGS["progressive_content_suggest"].provider, "gemini_light")
+        # Final-export prose (Step9 methodology + tutoria) also stays on Google.
+        self.assertEqual(TASK_CONFIGS["progressive_methodology_text"].provider, "gemini_light")
+        self.assertEqual(TASK_CONFIGS["progressive_tutoria_text"].provider, "gemini_light")
+        # Light/audit tasks moved to the openrouter cascade.
+        for moved in (
+            "method_suggest",
+            "syllabus_generate",
+            "syllabus_validate",
+            "search_query_build",
+            "bibliography_format",
+        ):
+            with self.subTest(task=moved):
+                self.assertTrue(TASK_CONFIGS[moved].provider.startswith("openrouter_"))
 
 
 class GeminiServiceUnitFallbackTests(unittest.IsolatedAsyncioTestCase):
