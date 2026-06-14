@@ -258,7 +258,7 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
       ? 'border-amber-400/60'
       : entry.locked
         ? 'border-[#00B4D8]/55'
-        : 'border-white/10';
+        : 'border-white/12';
 
   return (
     <div
@@ -274,7 +274,7 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
         }
       }}
       title={confirmed ? 'Mapa confirmado' : 'Click para editar semana'}
-      className={`relative flex min-h-[190px] w-[230px] shrink-0 cursor-pointer flex-col border bg-[#0B192C] px-3 py-3 transition hover:-translate-y-0.5 hover:border-[#00B4D8]/55 hover:bg-[#10213A] ${borderClass} ${confirmed ? 'cursor-default hover:translate-y-0' : ''}`}
+      className={`group relative flex min-h-[190px] w-[230px] shrink-0 cursor-pointer flex-col rounded-3xl border bg-white/[0.06] px-4 py-3.5 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-[#00B4D8]/55 hover:bg-white/[0.09] ${borderClass} ${entry.locked ? 'shadow-lg shadow-cyan-950/25 ring-1 ring-[#00B4D8]/30' : ''} ${confirmed ? 'cursor-default hover:translate-y-0 hover:bg-white/[0.06]' : ''}`}
     >
       <div className="mb-2 flex items-center justify-between">
         <div>
@@ -292,7 +292,7 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
               onToggleLock();
             }}
             disabled={busy || confirmed}
-            className="flex h-7 w-7 items-center justify-center border border-white/10 bg-[#162A45] text-white/55 transition hover:border-[#00B4D8]/55 hover:text-[#72E7F6] disabled:opacity-40"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/12 bg-white/[0.05] text-white/55 backdrop-blur transition hover:border-[#00B4D8]/55 hover:text-[#72E7F6] disabled:opacity-40"
           >
             {entry.locked ? <Lock size={11} /> : <Unlock size={11} />}
           </button>
@@ -304,7 +304,7 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
               onStartEdit();
             }}
             disabled={busy || confirmed}
-            className="flex h-7 w-7 items-center justify-center border border-white/10 bg-[#162A45] text-white/55 transition hover:border-[#E9B44C]/55 hover:text-[#F2C260] disabled:opacity-40"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/12 bg-white/[0.05] text-white/55 backdrop-blur transition hover:border-[#E9B44C]/55 hover:text-[#F2C260] disabled:opacity-40"
           >
             <Pencil size={11} />
           </button>

@@ -5,7 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Copy,
-  Info,
+  Eye,
   Loader2,
   PackageCheck,
   Sparkles,
@@ -36,6 +36,21 @@ const NOTEBOOK_VIDEO_PLACEHOLDER = '/images/notebooklm_steps/metodopdfantiguo/st
 
 function timelineEntries(option: ProgressiveProductOption) {
   return Object.entries(option.timeline_json || {}).filter(([, value]) => String(value || '').trim());
+}
+
+/** Deriva el numero de semana del texto del avance (CA-04: sin IA, solo regex local). */
+function extractWeek(value: string): number | null {
+  const match = /semana\s+(\d+)/i.exec(value || '');
+  return match ? Number(match[1]) : null;
+}
+
+/** Avances PA normalizados: codigo, semana derivada y descripcion completa. */
+function paMilestones(option: ProgressiveProductOption) {
+  return timelineEntries(option).map(([code, value]) => ({
+    code,
+    week: extractWeek(value),
+    value,
+  }));
 }
 
 function workObjectText(option: ProgressiveProductOption) {
@@ -125,16 +140,18 @@ function ProductDetailModal({
   option,
   selected,
   busy,
+  canSelect,
   onSelect,
   onClose,
 }: {
   option: ProgressiveProductOption;
   selected: boolean;
   busy: boolean;
+  canSelect: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
-  const timeline = timelineEntries(option);
+  const milestones = paMilestones(option);
   return (
     <GlassModal
       onClose={onClose}
@@ -147,15 +164,15 @@ function ProductDetailModal({
           <button
             type="button"
             onClick={onClose}
-            className="border border-white/10 px-4 py-2 text-[11px] font-bold text-white/58 transition hover:text-white"
+            className="rounded-xl border border-white/10 px-4 py-2 text-[11px] font-bold text-white/58 transition hover:text-white"
           >
             Cerrar
           </button>
           <button
             type="button"
             onClick={onSelect}
-            disabled={busy || selected || !option.id}
-            className="flex items-center gap-2 bg-[#00A896] px-4 py-2 text-[11px] font-bold text-white transition hover:bg-[#00B4D8] disabled:opacity-50"
+            disabled={busy || selected || !canSelect}
+            className="flex items-center gap-2 rounded-xl bg-[#00A896] px-4 py-2 text-[11px] font-bold text-white transition hover:bg-[#00B4D8] disabled:opacity-50"
           >
             {selected ? <CheckCircle2 size={13} /> : busy ? <Loader2 size={13} className="animate-spin" /> : null}
             {selected ? 'Seleccionado' : 'Seleccionar producto'}
@@ -163,136 +180,145 @@ function ProductDetailModal({
         </>
       }
     >
-      <div className="grid gap-5 lg:grid-cols-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">Producto acreditable</p>
-          <p className="mt-2 text-[12px] leading-6 text-white/74">{option.justification}</p>
-        </div>
-        <div className="border border-white/10 bg-[#162A45] p-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
-            Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
-          </p>
-          <p className="mt-2 text-[11px] leading-5 text-white/72">{workObjectText(option)}</p>
-        </div>
-        <div className="border border-white/10 bg-[#162A45] p-4">
-          <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">
-            <CalendarDays size={12} />
-            Linea de tiempo PA
-          </div>
-          <div className="space-y-2">
-            {timeline.length ? timeline.map(([code, value]) => (
-              <div key={code} className="grid grid-cols-[54px_1fr] gap-2">
-                <span className="font-jetbrains text-[10px] font-bold text-[#6FE9F5]">{code}</span>
-                <span className="text-[11px] leading-5 text-white/68">{value}</span>
-              </div>
-            )) : (
-              <p className="text-[10px] text-white/35">Sin hitos definidos.</p>
-            )}
-          </div>
-        </div>
+      {/* Objeto de trabajo destacado (regla de oro routing 02: nunca desaparece) */}
+      <div className="rounded-2xl border border-[#00B4D8]/25 bg-[#00B4D8]/[0.07] p-4">
+        <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6FE9F5]">
+          <PackageCheck size={13} />
+          Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
+        </p>
+        <p className="mt-2 text-[12px] leading-6 text-white/82">{workObjectText(option)}</p>
+      </div>
+
+      {/* Justificacion en prosa completa */}
+      <div className="mt-5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/38">Justificacion del producto</p>
+        <p className="mt-2 text-[12px] leading-6 text-white/72">{option.justification}</p>
+      </div>
+
+      {/* Timeline vertical PA1 -> PA2 -> PA3 */}
+      <div className="mt-5">
+        <p className="mb-4 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/38">
+          <CalendarDays size={13} />
+          Desagregacion del producto acreditable
+        </p>
+        {milestones.length ? (
+          <ol className="relative ml-3 space-y-5 border-l border-[#00B4D8]/30 pl-6">
+            {milestones.map((milestone) => (
+              <li key={milestone.code} className="relative">
+                <span className="absolute -left-[37px] flex h-8 w-8 items-center justify-center rounded-full border border-[#00B4D8]/45 bg-[#0B192C] font-jetbrains text-[9px] font-bold text-[#6FE9F5] shadow-lg shadow-cyan-950/40">
+                  {milestone.code}
+                </span>
+                {milestone.week !== null ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[#E9B44C]/30 bg-[#E9B44C]/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#F2C260]">
+                    Semana {milestone.week}
+                  </span>
+                ) : null}
+                <p className="mt-2 text-[12px] leading-6 text-white/74">{milestone.value}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-[11px] text-white/35">Sin hitos definidos para este producto.</p>
+        )}
       </div>
     </GlassModal>
   );
 }
 
-function ProductOptionRow({
+function ProductCard({
   option,
   selected,
   busy,
+  disabled,
   onSelect,
   onDetails,
 }: {
   option: ProgressiveProductOption;
   selected: boolean;
   busy: boolean;
+  disabled: boolean;
   onSelect: () => void;
   onDetails: () => void;
 }) {
-  const timeline = timelineEntries(option);
+  const milestones = paMilestones(option);
+  const ready = hasConcreteWorkObject(option) && Boolean(option.id);
   return (
-    <div
+    <article
       className={[
-        'grid gap-4 border-b border-white/10 px-4 py-4 transition lg:grid-cols-[1.05fr_1fr_1fr_auto]',
-        selected ? 'bg-[#00B4CC]/10' : 'bg-[#0B192C]/35 hover:bg-white/[0.035]',
+        'group relative flex flex-col gap-3 rounded-3xl border p-5 backdrop-blur-xl transition',
+        selected
+          ? 'border-[#00B4D8]/60 bg-[#00B4D8]/[0.08] shadow-lg shadow-cyan-950/30 ring-1 ring-[#00B4D8]/50'
+          : 'border-white/12 bg-white/[0.06] hover:-translate-y-0.5 hover:border-[#00B4D8]/45',
+        disabled ? 'pointer-events-none opacity-45' : '',
       ].join(' ')}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#00B4CC]/30 bg-[#00B4CC]/10 text-[#6FE9F5]">
-            <PackageCheck size={15} />
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#D4AF37]">{option.category}</span>
+        {selected ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-[#00B4D8]/40 bg-[#00B4D8]/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#6FE9F5]">
+            <CheckCircle2 size={11} />
+            Seleccionado
           </span>
-          <div className="min-w-0">
-            <button
-              type="button"
-              onClick={onDetails}
-              className="text-left text-[13px] font-bold leading-5 text-white transition hover:text-[#6FE9F5]"
+        ) : null}
+      </div>
+
+      <h3 className="font-playfair text-[15px] font-bold leading-6 text-white line-clamp-2">{option.title}</h3>
+
+      <p className="text-[11px] leading-5 text-white/62 line-clamp-3">{workObjectText(option)}</p>
+
+      {milestones.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {milestones.map((milestone) => (
+            <span
+              key={milestone.code}
+              className="inline-flex items-center gap-1 rounded-full border border-white/12 bg-white/[0.04] px-2 py-0.5 font-jetbrains text-[9px] font-bold text-white/64"
             >
-              {option.title}
-            </button>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#D4A351]">
-              {option.category}
-            </p>
-          </div>
+              <span className="text-[#6FE9F5]">{milestone.code}</span>
+              {milestone.week !== null ? <span className="text-white/40">{`· S${milestone.week}`}</span> : null}
+            </span>
+          ))}
         </div>
+      ) : null}
+
+      {!ready ? (
+        <p className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-2.5 py-1.5 text-[9px] leading-4 text-amber-100/85">
+          Objeto de trabajo pendiente - regenerar sugerencias.
+        </p>
+      ) : null}
+
+      <div className="mt-auto flex items-center gap-2 pt-2">
         <button
           type="button"
           onClick={onDetails}
-          className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-white/42 transition hover:text-[#E9B44C]"
+          className="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-[#00B4D8]/35 px-2 text-[10px] font-bold text-[#72E7F6] transition hover:bg-[#00B4D8]/10"
         >
-          <Info size={12} />
-          Ver explicacion
+          <Eye size={13} className="shrink-0" />
+          <span className="truncate">Ver desagregacion</span>
         </button>
-      </div>
-
-      <div className="min-w-0 border-l border-white/10 pl-4">
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
-          Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
-        </p>
-        <p className="text-[10px] leading-4 text-white/64">{workObjectText(option)}</p>
-      </div>
-
-      <div className="min-w-0 border-l border-white/10 pl-4">
-        <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
-          <CalendarDays size={12} />
-          Linea de tiempo PA
-        </div>
-        <div className="space-y-1.5">
-          {timeline.length ? timeline.map(([code, value]) => (
-            <div key={code} className="grid grid-cols-[54px_1fr] gap-2">
-              <span className="font-jetbrains text-[10px] font-bold text-[#6FE9F5]">{code}</span>
-              <span className="text-[10px] leading-4 text-white/62">{value}</span>
-            </div>
-          )) : (
-            <p className="text-[10px] text-white/35">Sin hitos definidos.</p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-end">
         <button
           type="button"
           onClick={onSelect}
-          disabled={busy || !option.id || selected}
+          disabled={busy || selected || !ready}
           className={[
-            'flex h-9 min-w-[118px] items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-bold transition',
+            'flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-2 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50',
             selected
-              ? 'border-[#00B4CC]/35 bg-[#00B4CC]/20 text-[#6FE9F5]'
-              : 'border-white/12 bg-white/[0.04] text-white/72 hover:border-[#D4A351]/45 hover:text-[#F2C260]',
+              ? 'bg-[#00B4D8]/20 text-[#6FE9F5]'
+              : 'bg-[#00A896] text-white hover:bg-[#00B4D8]',
           ].join(' ')}
         >
           {selected ? (
             <>
-              <CheckCircle2 size={13} />
-              Seleccionado
+              <CheckCircle2 size={13} className="shrink-0" />
+              <span className="truncate">Seleccionado</span>
             </>
           ) : busy ? (
             <Loader2 size={13} className="animate-spin" />
           ) : (
-            'Seleccionar'
+            <span className="truncate">Seleccionar</span>
           )}
         </button>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -319,6 +345,18 @@ export default function Step7_ProductoIntegrador() {
   const selectedTitle = selectedOption?.title || '';
   const selectedHasWorkObject = hasConcreteWorkObject(selectedOption);
   const notebookPrompt = buildProductNotebookPrompt(courseDetail?.name || '', selectedMethodName || '', category, unitsCount);
+  const jobRunning = loading || Boolean(activeJobId);
+
+  // Dedupe de opciones acumuladas (riesgo routing 02): 3 mas recientes no-seleccionadas + la
+  // seleccionada si existe. Determinista, sin tocar BD. created_at ausente = recien generada (top).
+  const visibleOptions = useMemo(() => {
+    const recency = (option: ProgressiveProductOption) =>
+      option.created_at ? Date.parse(option.created_at) : Number.POSITIVE_INFINITY;
+    const sorted = [...options].sort((a, b) => recency(b) - recency(a));
+    const selectedFirst = sorted.filter((option) => option.id && option.id === selectedId);
+    const rest = sorted.filter((option) => option.id !== selectedId).slice(0, 3);
+    return [...selectedFirst, ...rest];
+  }, [options, selectedId]);
 
   const statusLabel = useMemo(() => {
     if (selectedTitle) return 'Horizonte del curso fijado';
@@ -563,29 +601,29 @@ export default function Step7_ProductoIntegrador() {
         </div>
       ) : null}
 
-      <section className="overflow-hidden border border-white/10 bg-[#162A45]">
-        {options.length ? (
-          options.map((option) => (
-            <div key={option.id || option.title}>
-              <ProductOptionRow
-                option={option}
-                selected={selectedId === option.id}
-                busy={selectingId === option.id}
-                onSelect={() => handleSelect(option)}
-                onDetails={() => setDetailOption(option)}
-              />
-            </div>
-          ))
-        ) : (
-          <div className="flex min-h-[260px] flex-col items-center justify-center px-6 text-center">
-            <Sparkles size={24} className="text-[#00B4D8]" />
-            <p className="mt-3 text-[13px] font-bold text-white">Genera el horizonte acreditable</p>
-            <p className="mt-1 max-w-md text-[11px] leading-5 text-white/48">
-              El motor propondra productos concretos y los repartira como avances PA por unidad.
-            </p>
-          </div>
-        )}
-      </section>
+      {visibleOptions.length ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleOptions.map((option) => (
+            <ProductCard
+              key={option.id || option.title}
+              option={option}
+              selected={selectedId === option.id}
+              busy={selectingId === option.id}
+              disabled={jobRunning || (Boolean(selectingId) && selectingId !== option.id)}
+              onSelect={() => handleSelect(option)}
+              onDetails={() => setDetailOption(option)}
+            />
+          ))}
+        </div>
+      ) : (
+        <section className="flex min-h-[260px] flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/[0.04] px-6 text-center backdrop-blur-xl">
+          <Sparkles size={24} className="text-[#00B4D8]" />
+          <p className="mt-3 text-[13px] font-bold text-white">Genera el horizonte acreditable</p>
+          <p className="mt-1 max-w-md text-[11px] leading-5 text-white/48">
+            El motor propondra productos concretos y los repartira como avances PA por unidad.
+          </p>
+        </section>
+      )}
 
       {selectedOption && !selectedHasWorkObject ? (
         <div className="mt-3 border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-[11px] leading-5 text-amber-100">
@@ -622,6 +660,7 @@ export default function Step7_ProductoIntegrador() {
         option={detailOption}
         selected={selectedId === detailOption.id}
         busy={selectingId === detailOption.id}
+        canSelect={hasConcreteWorkObject(detailOption) && Boolean(detailOption.id) && !jobRunning}
         onSelect={() => handleSelect(detailOption)}
         onClose={() => setDetailOption(null)}
       />
