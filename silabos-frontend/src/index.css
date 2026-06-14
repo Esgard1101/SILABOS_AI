@@ -90,6 +90,12 @@
   --master-gold: #D4A351;
   --master-cyan: #00B4CC;
   --master-cyan-dark: #007A8A;
+
+  /* Tipografía fluida (responsive + zoom-safe). Escala con el viewport en lugar
+     de saltar por breakpoints, evitando que nombres largos rompan el layout. */
+  --fluid-display: clamp(1.6rem, 1rem + 2.6vw, 3rem);
+  --fluid-title: clamp(1.3rem, 0.95rem + 1.5vw, 2rem);
+  --fluid-lead: clamp(0.92rem, 0.88rem + 0.3vw, 1.05rem);
 }
 
 html {
@@ -177,6 +183,27 @@ samp,
   background: rgba(255, 255, 255, 0.8);
   box-shadow: 0 16px 36px rgba(16, 35, 63, 0.08);
   backdrop-filter: blur(18px);
+}
+
+/* Liquid glass reutilizable (translúcido + blur saturado). */
+.app-glass {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+
+/* Títulos fluidos: escalan con el viewport y nunca desbordan su contenedor. */
+.app-fluid-display {
+  font-size: var(--fluid-display);
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.app-fluid-title {
+  font-size: var(--fluid-title);
+  line-height: 1.12;
+  overflow-wrap: anywhere;
 }
 
 .app-topbar-blur {

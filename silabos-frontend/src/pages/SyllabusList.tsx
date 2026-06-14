@@ -11,6 +11,7 @@ import {
   Pencil,
   PlusCircle,
   Rocket,
+  Search,
   Send,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -43,6 +44,26 @@ import {
 type VersionMap = Record<string, SyllabusVersion[]>;
 type LoadingMap = Record<string, boolean>;
 const MANAGEMENT_ROLES = new Set(['admin', 'director', 'coordinador']);
+
+// Etiquetas de estado para el filtro (mismo vocabulario que StatusBadge).
+const STATUS_LABELS: Record<SyllabusStatus, string> = {
+  draft: 'Borrador',
+  generated: 'Generado',
+  exported: 'Exportado',
+  review: 'En revisión',
+  returned: 'Observado',
+  approved: 'Aprobado',
+  published: 'Publicado',
+};
+
+// Normaliza acentos para que "robó" y "robo" coincidan (CA-04).
+function normalizeText(value?: string | null): string {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
 
 const REVIEW_MODULE_MESSAGE =
   'Módulo de revisión académica en desarrollo. Estará disponible próximamente.';
@@ -123,10 +144,41 @@ export default function SyllabusList() {
   const [observationText, setObservationText] = useState('');
   const { showToast, toasts, removeToast } = useToast();
 
+  // Filtros (SPEC-06). No persisten entre sesiones (CA-04).
+  const [query, setQuery] = useState('');
+  const [periodFilter, setPeriodFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | SyllabusStatus>('all');
+
   const selectedItem = useMemo(
     () => syllabi.find((item) => item.id === selectedObservationId) || null,
     [selectedObservationId, syllabi],
   );
+
+  const periods = useMemo(
+    () => Array.from(new Set(syllabi.map((item) => getSemesterName(item)).filter(Boolean))).sort(),
+    [syllabi],
+  );
+
+  const availableStatuses = useMemo(
+    () => Array.from(new Set(syllabi.map((item) => resolveSyllabusStatus(item)))),
+    [syllabi],
+  );
+
+  // resolveSyllabusStatus es la ÚNICA fuente de estado, también para filtrar.
+  const filteredSyllabi = useMemo(() => {
+    const q = normalizeText(query);
+    return syllabi.filter((item) => {
+      if (statusFilter !== 'all' && resolveSyllabusStatus(item) !== statusFilter) return false;
+      if (periodFilter !== 'all' && getSemesterName(item) !== periodFilter) return false;
+      if (q) {
+        const haystack = normalizeText(
+          `${getCourseName(item)} ${getCareerName(item)} ${getTeacherName(item)}`,
+        );
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [syllabi, query, periodFilter, statusFilter]);
 
   const handleCreateSyllabus = () => {
     if (currentUser?.role && MANAGEMENT_ROLES.has(currentUser.role)) {
@@ -499,90 +551,135 @@ export default function SyllabusList() {
               </button>
             </div>
           ) : (
-            <div className="space-y-5">
-              {syllabi.map((item) => {
-                const status = resolveSyllabusStatus(item);
-                const isExpanded = expandedId === item.id;
-                const versions = versionsById[item.id] || [];
+            <>
+              {/* Barra de filtros (SPEC-06) */}
+              <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div className="relative flex-1">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Buscar por curso, carrera o docente"
+                    className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                  />
+                </div>
+                <select
+                  value={periodFilter}
+                  onChange={(event) => setPeriodFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                >
+                  <option value="all">Todos los periodos</option>
+                  {periods.map((period) => (
+                    <option key={period} value={period}>
+                      {period}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as 'all' | SyllabusStatus)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                >
+                  <option value="all">Todos los estados</option>
+                  {availableStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {STATUS_LABELS[status]}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                return (
-                  <article
-                    key={item.id}
-                    className="overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-all hover:shadow-md"
-                  >
-                    <div className="flex flex-col gap-5 p-6">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="space-y-3">
-                          <button
-                            onClick={() => openInEditor(item)}
-                            className="text-left text-2xl font-black tracking-tight text-slate-900 hover:text-orange-600"
-                          >
-                            {getCourseName(item)}
-                          </button>
-                          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                            <span>{getCareerName(item)}</span>
-                            <span className="text-slate-300">•</span>
-                            <span>{getSemesterName(item)}</span>
-                            <span className="text-slate-300">•</span>
-                            <span>{getTeacherName(item)}</span>
+              {filteredSyllabi.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-8 py-12 text-center text-sm text-slate-500">
+                  No hay sílabos que coincidan con los filtros.
+                </div>
+              ) : (
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredSyllabi.map((item) => {
+                    const status = resolveSyllabusStatus(item);
+                    const isExpanded = expandedId === item.id;
+                    const versions = versionsById[item.id] || [];
+
+                    return (
+                      <article
+                        key={item.id}
+                        className="flex h-full flex-col overflow-hidden rounded-3xl border border-orange-100 bg-white shadow-sm transition-all hover:shadow-md"
+                      >
+                        <div className="flex flex-1 flex-col gap-4 p-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <button
+                              onClick={() => openInEditor(item)}
+                              className="line-clamp-2 text-left text-lg font-black leading-tight tracking-tight text-slate-900 hover:text-orange-600"
+                            >
+                              {getCourseName(item)}
+                            </button>
+                            <StatusBadge status={status} className="shrink-0" />
                           </div>
-                        </div>
 
-                        <div className="flex flex-wrap items-center gap-3">
-                          <StatusBadge status={status} />
-                          <span className="text-sm text-slate-500">
-                            Creado: {formatDateLabel(item.created_at)}
-                          </span>
-                        </div>
-                      </div>
+                          <div className="space-y-1 text-sm text-slate-500">
+                            <p className="truncate">{getCareerName(item)}</p>
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span>{getSemesterName(item)}</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="truncate">{getTeacherName(item)}</span>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                              Actualizado: {formatDateLabel(item.updated_at)}
+                            </p>
+                          </div>
 
-                      <div className="flex flex-wrap items-center gap-3">{renderActionButtons(item)}</div>
+                          <div className="mt-auto flex flex-wrap items-center gap-2">
+                            {renderActionButtons(item)}
+                          </div>
 
-                      <div className="border-t border-slate-100 pt-4">
-                        <button
-                          onClick={() => handleToggleVersions(item.id)}
-                          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-orange-600"
-                        >
-                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                          Ver historial
-                        </button>
+                          <div className="border-t border-slate-100 pt-3">
+                            <button
+                              onClick={() => handleToggleVersions(item.id)}
+                              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-orange-600"
+                            >
+                              {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                              Ver historial
+                            </button>
 
-                        {isExpanded ? (
-                          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-                            {versionsLoading[item.id] ? (
-                              <p className="text-sm text-slate-500">Cargando historial...</p>
-                            ) : versions.length === 0 ? (
-                              <p className="text-sm text-slate-500">No hay versiones registradas.</p>
-                            ) : (
-                              <div className="space-y-3">
-                                {versions.map((version) => (
-                                  <div
-                                    key={version.id || `${item.id}-${version.version_number}`}
-                                    className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between"
-                                  >
-                                    <div>
-                                      <p className="text-sm font-bold text-slate-800">
-                                        Versión {version.version_number}
-                                      </p>
-                                      <p className="text-xs text-slate-500">
-                                        {version.changed_by || 'sistema'} · {version.change_note || 'Sin nota'}
-                                      </p>
-                                    </div>
-                                    <p className="text-xs font-medium text-slate-500">
-                                      {formatDateLabel(version.created_at)}
-                                    </p>
+                            {isExpanded ? (
+                              <div className="mt-3 rounded-2xl bg-slate-50 p-3">
+                                {versionsLoading[item.id] ? (
+                                  <p className="text-sm text-slate-500">Cargando historial...</p>
+                                ) : versions.length === 0 ? (
+                                  <p className="text-sm text-slate-500">No hay versiones registradas.</p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {versions.map((version) => (
+                                      <div
+                                        key={version.id || `${item.id}-${version.version_number}`}
+                                        className="flex flex-col gap-1 rounded-2xl border border-slate-200 bg-white px-3 py-2"
+                                      >
+                                        <p className="text-sm font-bold text-slate-800">
+                                          Versión {version.version_number}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                          {version.changed_by || 'sistema'} · {version.change_note || 'Sin nota'}
+                                        </p>
+                                        <p className="text-xs font-medium text-slate-400">
+                                          {formatDateLabel(version.created_at)}
+                                        </p>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
+                                )}
                               </div>
-                            )}
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </main>
       </div>
