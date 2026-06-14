@@ -319,13 +319,13 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
           {entry.subtopics.slice(0, 3).map((sub, index) => (
             <span
               key={`${entry.week}-sub-${index}`}
-              className="inline-flex items-center border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-1.5 py-0.5 text-[9px] leading-3 text-[#A6EAF5]"
+              className="inline-flex items-center rounded-full border border-[#00B4D8]/25 bg-[#00B4D8]/10 px-2 py-0.5 text-[9px] leading-3 text-[#A6EAF5]"
             >
               {sub}
             </span>
           ))}
           {entry.subtopics.length > 3 ? (
-            <span className="inline-flex items-center border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] leading-3 text-white/45">
+            <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] leading-3 text-white/45">
               +{entry.subtopics.length - 3}
             </span>
           ) : null}
@@ -335,7 +335,7 @@ const WeekCard: React.FC<WeekCardProps> = (props) => {
         {warning ? (
           <div
             title={warning.message}
-            className="flex items-center gap-1 border border-amber-400/35 bg-amber-400/10 px-1.5 py-1 text-[9px] leading-3 text-amber-200"
+            className="flex items-center gap-1 rounded-lg border border-amber-400/35 bg-amber-400/10 px-2 py-1 text-[9px] leading-3 text-amber-200"
           >
             <AlertTriangle size={10} className="shrink-0" />
             <span className="line-clamp-1">{warning.message}</span>
@@ -1168,7 +1168,7 @@ export default function Step8b_MapaConocimientos() {
               </div>
             ) : null}
 
-            <section className="border border-white/10 bg-[#162A45] p-4">
+            <section className="rounded-3xl border border-white/10 bg-gradient-to-b from-[#0E2138] to-[#0B192C] p-4">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#E9B44C]">
                   Linea de tiempo - 16 semanas
