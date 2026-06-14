@@ -1,10 +1,13 @@
-import { MessageSquare, Monitor, User, Users } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { Home, MessageSquare, Monitor, User, Users } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { getPanelMessage } from '../../data/panelMessages';
 
 export default function PersistentRightPanel() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const msg = getPanelMessage(pathname);
+  // Solo dentro del asistente: aquí hay un draft en progreso que ya se autoguarda.
+  const enCreador = pathname.startsWith('/creator');
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#F8F9FA]">
@@ -68,6 +71,26 @@ export default function PersistentRightPanel() {
           </div>
         </div>
       </div>
+
+      {/* Zona de acciones fija (pie). Stack vertical → escalable para mas botones. */}
+      {enCreador ? (
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/dashboard')}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#00B4CC] px-4 py-3 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#0A8797] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00B4CC]/40"
+            >
+              <Home size={17} className="shrink-0" />
+              Guardar y salir al inicio
+            </button>
+          </div>
+          <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-500">
+            Tu avance queda guardado. Puedes continuar mas tarde con
+            <span className="font-semibold text-[#0A8797]"> Continuar ultimo silabo</span>.
+          </p>
+        </div>
+      ) : null}
 
       <div className="shrink-0 border-t border-slate-200 px-4 py-3">
         <div className="flex items-center gap-2">
