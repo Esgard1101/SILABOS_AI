@@ -13,6 +13,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { CourseDetail, PerformanceDB, SuggestedPerformance } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 type AlignmentState = 'aligned' | 'partial' | 'weak';
 
@@ -315,6 +317,7 @@ export default function Step3_Desempenos() {
   const [loadingOfficial, setLoadingOfficial] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmedCodes, setConfirmedCodes] = useState<string[]>([]);
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   useEffect(() => {
     if (!draftId && !courseDetail?.id) {
@@ -406,6 +409,15 @@ export default function Step3_Desempenos() {
 
   return (
     <>
+      <OverlayLoader
+        show={loadingOfficial || saving}
+        title={saving ? 'Guardando desempeños' : 'Cargando desempeños'}
+        message={
+          saving
+            ? 'Estamos guardando los desempeños y abriendo el programa de contenidos...'
+            : 'Recuperando los desempeños oficiales del curso...'
+        }
+      />
       <div className="h-full overflow-y-auto bg-[#041A3A] px-4 py-3 text-white sm:px-6">
         <div className="mb-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_250px]">
           <div>
@@ -418,7 +430,7 @@ export default function Step3_Desempenos() {
               Volver a Fuentes
             </button>
             <p className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.28em] text-[#D4A351]">
-              PASO 5 DE 8 - DESEMPEÑOS
+              Paso {stepCurrent} de {stepTotal} - DESEMPEÑOS
             </p>
             <h1 className="font-playfair text-[1.55rem] font-bold leading-tight text-white">
               Desempeños oficiales

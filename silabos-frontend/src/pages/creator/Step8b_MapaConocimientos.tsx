@@ -12,7 +12,6 @@ import {
   RotateCcw,
   Sparkles,
   Unlock,
-  X,
   Loader2,
   ShieldCheck,
   UploadCloud,
@@ -27,6 +26,9 @@ import type {
   SuggestedPerformance,
 } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import GlassModal from '../../components/ui/GlassModal';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 const TOTAL_WEEKS = 16;
 const MIN_NOTEBOOK_CHARS = 80;
@@ -140,82 +142,37 @@ function ensureFullMap(map: KnowledgeMapWeek[]): KnowledgeMapWeek[] {
   return result;
 }
 
-function BlockingLoader({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
-      <div className="w-full max-w-sm border border-[#00B4D8]/35 bg-[#0B192C] p-6 text-center shadow-2xl shadow-cyan-950/40">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#00B4D8]/35 bg-[#00B4D8]/10">
-          <Loader2 size={26} className="animate-spin text-[#6FE9F5]" />
-        </div>
-        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4AF37]">{title}</p>
-        <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
-        <div className="mt-5 h-1 overflow-hidden bg-white/10">
-          <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function PromptModal({ prompt, onClose }: { prompt: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">NotebookLM</p>
-            <h2 className="mt-1 text-base font-bold text-white">Vista previa del prompt</h2>
-            <p className="mt-1 text-[11px] text-white/55">
-              Pegalo en NotebookLM con tus fuentes y trae el consolidado curricular.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <pre className="whitespace-pre-wrap border border-white/10 bg-[#162A45] p-4 font-jetbrains text-[11px] leading-5 text-white/82">
-            {prompt}
-          </pre>
-        </div>
-      </div>
-    </div>
+    <GlassModal
+      onClose={onClose}
+      size="md"
+      eyebrow="NotebookLM"
+      title="Vista previa del prompt"
+      description="Pegalo en NotebookLM con tus fuentes y trae el consolidado curricular."
+    >
+      <pre className="whitespace-pre-wrap border border-white/10 bg-[#162A45] p-4 font-jetbrains text-[11px] leading-5 text-white/82">
+        {prompt}
+      </pre>
+    </GlassModal>
   );
 }
 
 function VideoModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">NotebookLM</p>
-            <h2 className="mt-1 text-base font-bold text-white">Guia rapida para traer el consolidado</h2>
-            <p className="mt-1 text-[11px] text-white/55">
-              Por ahora se muestra una imagen placeholder. Sera reemplazada por el video definitivo.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <img
-            src={NOTEBOOK_VIDEO_PLACEHOLDER}
-            alt="Guia visual NotebookLM"
-            className="aspect-video w-full border border-white/10 bg-black object-cover"
-          />
-        </div>
-      </div>
-    </div>
+    <GlassModal
+      onClose={onClose}
+      size="lg"
+      eyebrow="NotebookLM"
+      title="Guia rapida para traer el consolidado"
+      description="Por ahora se muestra una imagen placeholder. Sera reemplazada por el video definitivo."
+    >
+      <img
+        src={NOTEBOOK_VIDEO_PLACEHOLDER}
+        alt="Guia visual NotebookLM"
+        className="aspect-video w-full border border-white/10 bg-black object-cover"
+      />
+    </GlassModal>
   );
 }
 
@@ -230,42 +187,14 @@ function ConfirmedMapRevisionDialog({
 }) {
   const nextVersion = (currentVersion || 0) + 1;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl border border-[#E9B44C]/45 bg-[#0B192C] shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
-              Mapa confirmado v{currentVersion || 1}
-            </p>
-            <h2 className="mt-1 text-base font-bold text-white">Crear una nueva version del mapa</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
-          >
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="p-5">
-          <div className="flex items-start gap-3 border border-amber-400/30 bg-amber-400/10 p-4 text-[12px] leading-5 text-amber-100">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-            <div>
-              <p className="font-bold">Esto no modificara el mapa confirmado inmediatamente.</p>
-              <p className="mt-1 text-amber-100/82">
-                Editar el consolidado creara un borrador v{nextVersion}. La version confirmada actual seguira siendo
-                la verdad curricular hasta que el docente confirme el nuevo mapa.
-              </p>
-            </div>
-          </div>
-          <p className="mt-4 text-[11px] leading-5 text-white/58">
-            Usa este flujo si el consolidado de NotebookLM cambio, si el docente quiere corregir la secuencia de
-            conocimientos o si necesita regenerar las 16 semanas con nuevos criterios.
-          </p>
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-white/10 p-4">
+    <GlassModal
+      onClose={onClose}
+      size="md"
+      accent="amber"
+      eyebrow={`Mapa confirmado v${currentVersion || 1}`}
+      title="Crear una nueva version del mapa"
+      footer={
+        <>
           <button
             type="button"
             onClick={onClose}
@@ -280,9 +209,24 @@ function ConfirmedMapRevisionDialog({
           >
             Crear borrador v{nextVersion}
           </button>
+        </>
+      }
+    >
+      <div className="flex items-start gap-3 border border-amber-400/30 bg-amber-400/10 p-4 text-[12px] leading-5 text-amber-100">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          <p className="font-bold">Esto no modificara el mapa confirmado inmediatamente.</p>
+          <p className="mt-1 text-amber-100/82">
+            Editar el consolidado creara un borrador v{nextVersion}. La version confirmada actual seguira siendo
+            la verdad curricular hasta que el docente confirme el nuevo mapa.
+          </p>
         </div>
       </div>
-    </div>
+      <p className="mt-4 text-[11px] leading-5 text-white/58">
+        Usa este flujo si el consolidado de NotebookLM cambio, si el docente quiere corregir la secuencia de
+        conocimientos o si necesita regenerar las 16 semanas con nuevos criterios.
+      </p>
+    </GlassModal>
   );
 }
 
@@ -444,85 +388,15 @@ function KnowledgeWeekEditDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
-              Semana {entry.week} · Unidad {unitNumber}
-            </p>
-            <h2 className="mt-1 text-base font-bold text-white">Editar conocimiento semanal</h2>
-            <p className="mt-1 text-[11px] leading-4 text-white/55">
-              Este texto sera la verdad curricular que el motor de unidades debe respetar exactamente.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white disabled:opacity-40"
-          >
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
-            <label className="block">
-              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-                Conocimiento principal
-              </span>
-              <textarea
-                value={knowledgeDraft}
-                onChange={(event) => setKnowledgeDraft(event.target.value)}
-                rows={6}
-                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-                placeholder="Tema disciplinar concreto para esta semana"
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-                Subtemas
-              </span>
-              <textarea
-                value={subtopicsDraft}
-                onChange={(event) => setSubtopicsDraft(event.target.value)}
-                rows={6}
-                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-                placeholder="Un subtema por linea"
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-                Enfasis docente
-              </span>
-              <textarea
-                value={emphasisDraft}
-                onChange={(event) => setEmphasisDraft(event.target.value)}
-                rows={4}
-                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-                placeholder="Como debe aterrizarse el conocimiento en clase"
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-                Fuente o notas
-              </span>
-              <textarea
-                value={sourceNotesDraft}
-                onChange={(event) => setSourceNotesDraft(event.target.value)}
-                rows={4}
-                className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-                placeholder="Referencia corta del consolidado NotebookLM"
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 justify-end gap-2 border-t border-white/10 p-4">
+    <GlassModal
+      onClose={onClose}
+      size="lg"
+      closeDisabled={busy}
+      eyebrow={`Semana ${entry.week} · Unidad ${unitNumber}`}
+      title="Editar conocimiento semanal"
+      description="Este texto sera la verdad curricular que el motor de unidades debe respetar exactamente."
+      footer={
+        <>
           <button
             type="button"
             onClick={onClose}
@@ -540,9 +414,63 @@ function KnowledgeWeekEditDialog({
             {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
             Guardar semana
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+            Conocimiento principal
+          </span>
+          <textarea
+            value={knowledgeDraft}
+            onChange={(event) => setKnowledgeDraft(event.target.value)}
+            rows={6}
+            className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+            placeholder="Tema disciplinar concreto para esta semana"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+            Subtemas
+          </span>
+          <textarea
+            value={subtopicsDraft}
+            onChange={(event) => setSubtopicsDraft(event.target.value)}
+            rows={6}
+            className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+            placeholder="Un subtema por linea"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+            Enfasis docente
+          </span>
+          <textarea
+            value={emphasisDraft}
+            onChange={(event) => setEmphasisDraft(event.target.value)}
+            rows={4}
+            className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+            placeholder="Como debe aterrizarse el conocimiento en clase"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+            Fuente o notas
+          </span>
+          <textarea
+            value={sourceNotesDraft}
+            onChange={(event) => setSourceNotesDraft(event.target.value)}
+            rows={4}
+            className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+            placeholder="Referencia corta del consolidado NotebookLM"
+          />
+        </label>
       </div>
-    </div>
+    </GlassModal>
   );
 }
 
@@ -617,96 +545,14 @@ function RepromptDialog({
 }) {
   const targetWeeks = scope === 'unlocked' ? unlockedWeeks : manualSelection;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col border border-[#E9B44C]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">Reprompt parcial</p>
-            <h2 className="mt-1 text-base font-bold text-white">Reescribir solo semanas seleccionadas</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
-          >
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <div className="mb-4 grid gap-2 text-[11px] text-white/72">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={scope === 'unlocked'}
-                onChange={() => onChangeScope('unlocked')}
-              />
-              <span>
-                Reescribir <strong className="text-white">todas las semanas desbloqueadas</strong> (
-                {unlockedWeeks.length} semana{unlockedWeeks.length === 1 ? '' : 's'}).
-              </span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={scope === 'manual'}
-                onChange={() => onChangeScope('manual')}
-              />
-              <span>Elegir semanas especificas a reescribir.</span>
-            </label>
-          </div>
-
-          {scope === 'manual' ? (
-            <div className="mb-4 grid grid-cols-8 gap-1.5">
-              {Array.from({ length: TOTAL_WEEKS }, (_, index) => index + 1).map((week) => {
-                const selected = manualSelection.includes(week);
-                return (
-                  <button
-                    key={week}
-                    type="button"
-                    onClick={() =>
-                      onChangeManualSelection(
-                        selected
-                          ? manualSelection.filter((value) => value !== week)
-                          : [...manualSelection, week].sort((a, b) => a - b),
-                      )
-                    }
-                    className={[
-                      'h-9 border text-[11px] font-bold transition',
-                      selected
-                        ? 'border-[#E9B44C] bg-[#E9B44C]/15 text-[#F2C260]'
-                        : 'border-white/10 bg-[#162A45] text-white/55 hover:border-[#E9B44C]/40',
-                    ].join(' ')}
-                  >
-                    {week}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-
-          <label className="block">
-            <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-              Instruccion docente
-            </span>
-            <textarea
-              value={instruction}
-              onChange={(event) => onChangeInstruction(event.target.value)}
-              rows={5}
-              className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-              placeholder='Ejemplo: cambia los temas del primer mes para que se enfoquen en jurisprudencia penal aplicada.'
-            />
-          </label>
-
-          <div className="mt-3 border border-white/10 bg-[#162A45] px-3 py-2 text-[11px] text-white/58">
-            Semanas que recibira la IA: {targetWeeks.length ? targetWeeks.join(', ') : 'ninguna seleccionada'}.
-            <span className="mt-1 block text-[10px] text-white/40">
-              Total unidades: {totalUnits}. Las semanas bloqueadas con candado se mantienen intactas.
-            </span>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 justify-end gap-2 border-t border-white/10 p-4">
+    <GlassModal
+      onClose={onClose}
+      size="md"
+      accent="amber"
+      eyebrow="Reprompt parcial"
+      title="Reescribir solo semanas seleccionadas"
+      footer={
+        <>
           <button
             type="button"
             onClick={onClose}
@@ -723,9 +569,80 @@ function RepromptDialog({
             {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
             Reescribir semanas
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="mb-4 grid gap-2 text-[11px] text-white/72">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            checked={scope === 'unlocked'}
+            onChange={() => onChangeScope('unlocked')}
+          />
+          <span>
+            Reescribir <strong className="text-white">todas las semanas desbloqueadas</strong> (
+            {unlockedWeeks.length} semana{unlockedWeeks.length === 1 ? '' : 's'}).
+          </span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            checked={scope === 'manual'}
+            onChange={() => onChangeScope('manual')}
+          />
+          <span>Elegir semanas especificas a reescribir.</span>
+        </label>
       </div>
-    </div>
+
+      {scope === 'manual' ? (
+        <div className="mb-4 grid grid-cols-8 gap-1.5">
+          {Array.from({ length: TOTAL_WEEKS }, (_, index) => index + 1).map((week) => {
+            const selected = manualSelection.includes(week);
+            return (
+              <button
+                key={week}
+                type="button"
+                onClick={() =>
+                  onChangeManualSelection(
+                    selected
+                      ? manualSelection.filter((value) => value !== week)
+                      : [...manualSelection, week].sort((a, b) => a - b),
+                  )
+                }
+                className={[
+                  'h-9 border text-[11px] font-bold transition',
+                  selected
+                    ? 'border-[#E9B44C] bg-[#E9B44C]/15 text-[#F2C260]'
+                    : 'border-white/10 bg-[#162A45] text-white/55 hover:border-[#E9B44C]/40',
+                ].join(' ')}
+              >
+                {week}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <label className="block">
+        <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+          Instruccion docente
+        </span>
+        <textarea
+          value={instruction}
+          onChange={(event) => onChangeInstruction(event.target.value)}
+          rows={5}
+          className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+          placeholder='Ejemplo: cambia los temas del primer mes para que se enfoquen en jurisprudencia penal aplicada.'
+        />
+      </label>
+
+      <div className="mt-3 border border-white/10 bg-[#162A45] px-3 py-2 text-[11px] text-white/58">
+        Semanas que recibira la IA: {targetWeeks.length ? targetWeeks.join(', ') : 'ninguna seleccionada'}.
+        <span className="mt-1 block text-[10px] text-white/40">
+          Total unidades: {totalUnits}. Las semanas bloqueadas con candado se mantienen intactas.
+        </span>
+      </div>
+    </GlassModal>
   );
 }
 
@@ -752,6 +669,7 @@ export default function Step8b_MapaConocimientos() {
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
   const [revisingConfirmedMap, setRevisingConfirmedMap] = useState(false);
   const [screen, setScreen] = useState<Screen>('context');
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   const performances = useMemo(() => {
     return (state?.performances?.length ? state.performances : draftPerformances) || [];
@@ -1008,19 +926,15 @@ export default function Step8b_MapaConocimientos() {
 
   return (
     <>
-      {loading ? (
-        <BlockingLoader
-          title={activeJobId ? 'IA en proceso' : 'Procesando mapa'}
-          message={jobStatusText || 'Trabajando en el Mapa Semanal de Conocimientos.'}
-        />
-      ) : null}
-
-      {initialLoading ? (
-        <BlockingLoader
-          title="Trayendo mapa"
-          message="Estamos recuperando el Mapa de Conocimientos guardado en este draft."
-        />
-      ) : null}
+      <OverlayLoader
+        show={initialLoading || loading}
+        title={initialLoading ? 'Trayendo mapa' : activeJobId ? 'IA en proceso' : 'Procesando mapa'}
+        message={
+          initialLoading
+            ? 'Estamos recuperando el Mapa de Conocimientos guardado en este draft.'
+            : (jobStatusText || 'Trabajando en el Mapa Semanal de Conocimientos.')
+        }
+      />
 
       {promptModalOpen ? (
         <PromptModal prompt={notebookPrompt} onClose={() => setPromptModalOpen(false)} />
@@ -1040,7 +954,7 @@ export default function Step8b_MapaConocimientos() {
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-              Paso 9 de 12 - Mapa Semanal de Conocimientos
+              Paso {stepCurrent} de {stepTotal} - Mapa Semanal de Conocimientos
             </p>
             <h1 className="font-playfair text-2xl font-bold text-white">
               {screen === 'context' ? 'Trae tu consolidado de NotebookLM' : 'Linea de tiempo - 16 semanas'}

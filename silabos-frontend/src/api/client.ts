@@ -44,13 +44,55 @@
 
 export const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+export const TOKEN_STORAGE_KEY = 'silabos_token';
+export const USER_STORAGE_KEY = 'silabos_user';
+
+// Migración suave: la sesión vivía en sessionStorage (perdida por pestaña / al cerrar
+// la ventana). Ahora vive en localStorage para soportar multi-pestaña y supervivencia
+// al cierre. Si quedó un valor viejo en sessionStorage, lo movemos una sola vez.
+function migrateLegacyAuthStorage(): void {
+  try {
+    for (const key of [TOKEN_STORAGE_KEY, USER_STORAGE_KEY]) {
+      const legacy = sessionStorage.getItem(key);
+      if (legacy && !localStorage.getItem(key)) {
+        localStorage.setItem(key, legacy);
+      }
+      if (legacy) sessionStorage.removeItem(key);
+    }
+  } catch {
+    // storage bloqueado (modo privado, etc.) — la app sigue funcionando sin migración
+  }
+}
+
+migrateLegacyAuthStorage();
+
 export const getToken = (): string | null => {
-  return sessionStorage.getItem('silabos_token');
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+};
+
+export const getStoredUser = (): AuthUser | null => {
+  const raw = localStorage.getItem(USER_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    localStorage.removeItem(USER_STORAGE_KEY);
+    return null;
+  }
+};
+
+export const persistUser = (user: AuthUser): void => {
+  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+};
+
+export const persistSession = (accessToken: string, user: AuthUser): void => {
+  localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
+  persistUser(user);
 };
 
 export const clearSession = (): void => {
-  sessionStorage.removeItem('silabos_token');
-  sessionStorage.removeItem('silabos_user');
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(USER_STORAGE_KEY);
 };
 
 export class ApiError extends Error {
@@ -815,6 +857,22 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ block_data: blockData }),
     }),
+
+  // ── Resume / autosave de posición (SPEC-05) ───────────────────────────────
+  saveResumeState: (
+    syllabusId: string,
+    data: { last_route: string; last_step: number | null; step_label: string },
+  ) =>
+    request<APIResponse>(`/api/syllabi/${encodeURIComponent(syllabusId)}/resume-state`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  getLatestProgressiveDraft: () =>
+    request<APIResponse<import('./types').ProgressiveDraftSummary | null>>(
+      '/api/syllabi/progressive/latest',
+    ),
 
   suggestPerformances: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';

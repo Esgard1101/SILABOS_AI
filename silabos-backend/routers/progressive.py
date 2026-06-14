@@ -88,6 +88,94 @@ class SaveStepBlockInput(BaseModel):
     step_key: str | None = None  # fallback si no viene en la URL
 
 
+class SaveResumeStateInput(BaseModel):
+    last_route: str
+    last_step: int | None = None
+    step_label: str | None = None
+
+
+# ── Resume / autosave de posición (SPEC-05) ───────────────────────────────────
+# El "resume" es telemetría de navegación (no un bloque curricular): vive en
+# payload_json._meta.resume y deja al docente retomar el draft en el paso exacto.
+RESUME_LEGACY_ROUTE = "/creator/repositorio"
+RESUME_LEGACY_STEP = 3
+RESUME_LEGACY_LABEL = "Repositorio"
+
+
+def _progress_pct_from_workflow(workflow) -> int:
+    """% de avance = bloques con status ≠ vacío / total de bloques (server-side, sin IA)."""
+    if not isinstance(workflow, dict) or not workflow:
+        return 0
+    total = len(workflow)
+    done = sum(
+        1
+        for block in workflow.values()
+        if isinstance(block, dict) and str(block.get("status") or "").strip() not in ("", "empty")
+    )
+    return int(round(done * 100 / total)) if total else 0
+
+
+def _build_resume_summary(draft, course_name: str = "", program_name: str = "") -> dict | None:
+    """Resumen de un draft para "continuar último sílabo".
+
+    Devuelve None si el draft ya está ensamblado/completado (CA-03), de modo que
+    `latest` lo excluya. Draft legacy sin `_meta.resume` cae al primer paso con
+    datos (CA-06).
+    """
+    if not isinstance(draft, dict):
+        return None
+
+    payload = draft.get("payload_json") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    meta = payload.get("_meta") if isinstance(payload.get("_meta"), dict) else {}
+    # CA-03: un draft ya ensamblado deja de ser "trabajo en progreso".
+    if payload.get("final_syllabus") or meta.get("assembled_at"):
+        return None
+
+    resume = meta.get("resume") if isinstance(meta.get("resume"), dict) else {}
+    last_route = _clean_text(resume.get("last_route")) or RESUME_LEGACY_ROUTE
+    last_step = resume.get("last_step")
+    if not isinstance(last_step, int):
+        last_step = RESUME_LEGACY_STEP
+    step_label = _clean_text(resume.get("step_label")) or RESUME_LEGACY_LABEL
+
+    datos = payload.get("datos_generales") if isinstance(payload.get("datos_generales"), dict) else {}
+    snapshot = payload.get("course_snapshot") if isinstance(payload.get("course_snapshot"), dict) else {}
+
+    program_id = draft.get("program_id") or datos.get("program_id") or None
+
+    return {
+        "id": _clean_text(draft.get("id")),
+        "course_id": _clean_text(draft.get("course_id")) or _clean_text(snapshot.get("course_id")),
+        "course_name": _clean_text(course_name) or _clean_text(draft.get("course_name")),
+        "program_id": str(program_id) if program_id else None,
+        "program_name": _clean_text(program_name) or _clean_text(draft.get("program_name")),
+        "semester": _clean_text(draft.get("semester")) or _clean_text(datos.get("semestre")),
+        "last_route": last_route,
+        "last_step": last_step,
+        "step_label": step_label,
+        "progress_pct": _progress_pct_from_workflow(payload.get("_workflow")),
+        "fecha_inicio": _clean_text(datos.get("fecha_inicio")),
+        "fecha_fin": _clean_text(datos.get("fecha_fin")),
+        "updated_at": _clean_text(resume.get("updated_at")) or _clean_text(draft.get("updated_at")),
+    }
+
+
+def _select_latest_resume_summary(drafts) -> dict | None:
+    """Primer draft resumible de una lista ya ordenada por updated_at desc."""
+    for draft in drafts or []:
+        summary = _build_resume_summary(
+            draft,
+            (draft or {}).get("course_name") or "",
+            (draft or {}).get("program_name") or "",
+        )
+        if summary:
+            return summary
+    return None
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 def _clean_text(value, fallback: str = "") -> str:
@@ -1555,6 +1643,24 @@ async def crear_o_obtener_draft_progresivo(
     return APIResponse(success=True, data=draft, error=None)
 
 
+@router.get("/syllabi/progressive/latest", response_model=APIResponse)
+async def obtener_ultimo_draft_resumible(
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Último draft en progreso del usuario autenticado (SPEC-05).
+
+    Filtro por `user_id` OBLIGATORIO: jamás devuelve drafts de otro docente (CA-02).
+    Devuelve `{data: null}` si no hay borradores resumibles.
+    """
+    supabase = _require_db(_sv(request))
+    user_id = str(current_user["id"])
+
+    candidates = await supabase.obtener_latest_drafts_resumibles(user_id)
+    summary = _select_latest_resume_summary(candidates)
+    return APIResponse(success=True, data=summary, error=None)
+
+
 @router.get("/syllabi/{syllabus_id}/progressive", response_model=APIResponse)
 async def obtener_draft_progresivo(
     syllabus_id: str,
@@ -1598,6 +1704,37 @@ async def guardar_step_block(
     )
     if not resultado:
         raise HTTPException(500, f"No se pudo guardar el bloque {step_key}")
+
+    return APIResponse(success=True, data=resultado, error=None)
+
+
+@router.patch("/syllabi/{syllabus_id}/resume-state", response_model=APIResponse)
+async def guardar_resume_state(
+    syllabus_id: str,
+    datos: SaveResumeStateInput,
+    request: Request,
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Persiste la posición de navegación del draft (last_route/step) en _meta.resume.
+
+    Endpoint dedicado (no pasa por la allowlist de bloques de steps/{key}): no
+    ensucia `_workflow` ni mezcla telemetría con bloques curriculares. La escritura
+    exige ownership (solo el dueño del draft) → 404 si no le pertenece.
+    """
+    supabase = _require_db(_sv(request))
+    user_id = str(current_user["id"])
+
+    resultado = await supabase.guardar_resume_state(
+        syllabus_id=syllabus_id,
+        user_id=user_id,
+        resume={
+            "last_route": datos.last_route,
+            "last_step": datos.last_step,
+            "step_label": datos.step_label or "",
+        },
+    )
+    if not resultado:
+        raise HTTPException(404, "Draft no encontrado o no pertenece al usuario")
 
     return APIResponse(success=True, data=resultado, error=None)
 

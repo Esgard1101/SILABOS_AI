@@ -22,6 +22,7 @@ import AdminSkills from './pages/AdminSkills';
 import AdminCurriculum from './pages/AdminCurriculum';
 import Landing from './pages/Landing';
 import { useAppContext } from './hooks/useAppContext';
+import { AuthProvider } from './context/AuthContext';
 import MasterLayout from './components/layout/MasterLayout';
 import CreatorLayout from './pages/creator/CreatorLayout';
 import Step1_Repositorio from './pages/creator/Step1_Repositorio';
@@ -49,7 +50,8 @@ const SyllabusEditor = lazy(() => import('./pages/SyllabusEditor'));
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/register" element={<Register />} />
@@ -194,6 +196,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

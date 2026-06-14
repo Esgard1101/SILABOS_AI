@@ -6,6 +6,8 @@ import { api } from '../../api/client';
 import type { MethodItem } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import { getMethodIcon } from '../../utils/methodIcons';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 const normalizeDisplayText = (value?: string | null) =>
   (value ?? '').replace(/\s+/g, ' ').replace(/\s*\.\.\.\s*/g, '. ').trim();
@@ -366,6 +368,7 @@ export default function Step5_Metodo() {
   const [saving, setSaving] = useState(false);
   const [suggestReason, setSuggestReason] = useState('');
   const [suggestReasonItems, setSuggestReasonItems] = useState<string[]>([]);
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   useEffect(() => {
     api
@@ -441,9 +444,18 @@ export default function Step5_Metodo() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#041A3A] px-3 py-3 text-white sm:px-5">
+      <OverlayLoader
+        show={loading || saving}
+        title={saving ? 'Guardando método' : 'Cargando métodos'}
+        message={
+          saving
+            ? 'Estamos guardando el método elegido y abriendo el producto integrador...'
+            : 'Recuperando el catálogo de métodos pedagógicos...'
+        }
+      />
       <div className="mb-2.5 grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div>
-          <p className="mb-1 text-[7.5px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Paso 7 de 8 - método didáctico</p>
+          <p className="mb-1 text-[7.5px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Paso {stepCurrent} de {stepTotal} - método didáctico</p>
           <h1 className="font-playfair text-[1.45rem] font-bold leading-none text-white">Método y secuencia didáctica</h1>
           <p className="mt-1.5 max-w-3xl text-[8.5px] leading-4 text-white/62">
             Selecciona el metodo que mejor conecta el proposito del silabo con sus actividades, evidencias y evaluacion.

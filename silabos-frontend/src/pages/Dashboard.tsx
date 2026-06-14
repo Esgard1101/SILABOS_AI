@@ -4,16 +4,18 @@ import {
   BookOpen,
   Building2,
   FileText,
+  History,
   LayoutDashboard,
   RefreshCcw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { SyllabusListItem } from '../api/types';
+import { ProgressiveDraftSummary, SyllabusListItem } from '../api/types';
 import { api } from '../api/client';
 import AppShell from '../components/AppShell';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
-import { useAppContext } from '../hooks/useAppContext';
+import { DRAFT_STORAGE_KEY, RESUME_FLAG } from '../context/SyllabusContext';
+import { ActiveContext, useAppContext } from '../hooks/useAppContext';
 import { getStoredUser } from '../hooks/useAuth';
 import {
   formatDateLabel,
@@ -96,10 +98,11 @@ function QuickActionCard({
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { context, clearContext } = useAppContext();
+  const { context, setContext, clearContext } = useAppContext();
   const { showToast, toasts, removeToast } = useToast();
   const [syllabi, setSyllabi] = useState<SyllabusListItem[]>([]);
   const [loadingSyllabi, setLoadingSyllabi] = useState(true);
+  const [resumeDraft, setResumeDraft] = useState<ProgressiveDraftSummary | null>(null);
 
   const currentUser = useMemo(() => getStoredUser(), []);
   const userName = currentUser?.full_name || 'Docente';
@@ -111,6 +114,54 @@ export default function Dashboard() {
       .catch(() => showToast('No se pudieron cargar los silabos.', 'error'))
       .finally(() => setLoadingSyllabi(false));
   }, [showToast]);
+
+  // Último draft en progreso (SPEC-05) — punto de entrada provisional para retomar.
+  useEffect(() => {
+    api
+      .getLatestProgressiveDraft()
+      .then((response) => setResumeDraft(response.data ?? null))
+      .catch(() => {
+        /* no-crítico */
+      });
+  }, []);
+
+  // Retomar draft: reconstruye el contexto institucional desde el curso del draft,
+  // fija DRAFT_KEY + sentinel de resume y navega al paso exacto. Reemplaza cualquier
+  // contexto activo divergente sin merge silencioso (CA-04).
+  const handleResume = async (summary: ProgressiveDraftSummary) => {
+    try {
+      const courseRes = await api.getCourse(summary.course_id);
+      const course = courseRes.data;
+      const ctx: ActiveContext = {
+        faculty_id: course?.faculty_id ?? '',
+        faculty_name: course?.faculty_name ?? '',
+        school_id: course?.career_id ?? '',
+        school_name: course?.career_name ?? '',
+        program_id: summary.program_id ?? course?.program_id ?? '',
+        program_name: summary.program_name || course?.program_name || '',
+        semester: summary.semester,
+        course_id: summary.course_id,
+        course_name: summary.course_name || course?.name || '',
+        course_code: course?.code ?? null,
+        credits: course?.credits ?? null,
+        hours_theory: course?.hours_theory ?? null,
+        hours_practice: course?.hours_practice ?? null,
+        prerequisites: course?.prerequisites ?? null,
+        start_date: summary.fecha_inicio || undefined,
+        end_date: summary.fecha_fin || undefined,
+      };
+      setContext(ctx);
+      try {
+        localStorage.setItem(DRAFT_STORAGE_KEY, summary.id);
+        sessionStorage.setItem(RESUME_FLAG, summary.id);
+      } catch {
+        /* storage bloqueado */
+      }
+      navigate(summary.last_route);
+    } catch {
+      showToast('No se pudo retomar el sílabo', 'error');
+    }
+  };
 
   const scopedSyllabi = useMemo(() => {
     if (!context) {
@@ -186,6 +237,21 @@ export default function Dashboard() {
           <p className="mt-4 max-w-md text-base leading-7 text-[var(--text-soft)]">
             Retoma sílabos en progreso o crea uno nuevo para el programa activo.
           </p>
+
+          {resumeDraft && (
+            <button
+              type="button"
+              onClick={() => handleResume(resumeDraft)}
+              className="mt-5 inline-flex w-fit items-center gap-2 rounded-2xl border border-[var(--brand-200)] bg-[var(--brand-50)] px-4 py-2.5 text-sm font-semibold text-[var(--brand-700)] transition hover:bg-[var(--brand-100)]"
+            >
+              <History size={16} />
+              Continuar último sílabo
+              <span className="font-normal text-[var(--text-soft)]">
+                · {resumeDraft.course_name || 'Sílabo'} · {resumeDraft.step_label} ({resumeDraft.progress_pct}%)
+              </span>
+              <ArrowRight size={15} />
+            </button>
+          )}
         </div>
 
         {/* Bloque 2 — Contexto activo */}

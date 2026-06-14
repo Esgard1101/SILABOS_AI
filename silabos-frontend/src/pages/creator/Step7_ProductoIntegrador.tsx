@@ -10,12 +10,14 @@ import {
   PackageCheck,
   Sparkles,
   Wand2,
-  X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { ProgressiveProductOption } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import GlassModal from '../../components/ui/GlassModal';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 const PRODUCT_CATEGORIES = [
   'Libre de proponer por IA',
@@ -49,55 +51,24 @@ function hasConcreteWorkObject(option?: ProgressiveProductOption | null) {
   return Boolean(text) && !text.includes('pendiente');
 }
 
-function BlockingLoader({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
-      <div className="w-full max-w-sm border border-[#00B4D8]/35 bg-[#0B192C] p-6 text-center shadow-2xl shadow-cyan-950/40">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#00B4D8]/35 bg-[#00B4D8]/10">
-          <Loader2 size={26} className="animate-spin text-[#6FE9F5]" />
-        </div>
-        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4AF37]">{title}</p>
-        <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
-        <div className="mt-5 h-1 overflow-hidden bg-white/10">
-          <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function NotebookHelpModal({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">NotebookLM</p>
-            <h2 className="mt-1 text-base font-bold text-white">Guia para traer el consolidado del producto</h2>
-            <p className="mt-1 text-[11px] leading-4 text-white/55">
-              Copia el prompt, pegalo en NotebookLM y trae el consolidado para que la IA proponga productos con objeto de trabajo.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white"
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <img
-            src={NOTEBOOK_VIDEO_PLACEHOLDER}
-            alt="Guia visual NotebookLM"
-            className="aspect-video w-full bg-black object-cover"
-          />
-          <p className="mt-3 text-[11px] leading-5 text-white/58">
-            Este espacio queda preparado para reemplazar la imagen por un video tutorial cuando este listo.
-          </p>
-        </div>
-      </div>
-    </div>
+    <GlassModal
+      onClose={onClose}
+      size="lg"
+      eyebrow="NotebookLM"
+      title="Guia para traer el consolidado del producto"
+      description="Copia el prompt, pegalo en NotebookLM y trae el consolidado para que la IA proponga productos con objeto de trabajo."
+    >
+      <img
+        src={NOTEBOOK_VIDEO_PLACEHOLDER}
+        alt="Guia visual NotebookLM"
+        className="aspect-video w-full bg-black object-cover"
+      />
+      <p className="mt-3 text-[11px] leading-5 text-white/58">
+        Este espacio queda preparado para reemplazar la imagen por un video tutorial cuando este listo.
+      </p>
+    </GlassModal>
   );
 }
 
@@ -165,52 +136,14 @@ function ProductDetailModal({
 }) {
   const timeline = timelineEntries(option);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl border border-[#00B4D8]/35 bg-[#0B192C] p-5 shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">{option.category}</p>
-            <h2 className="mt-2 font-playfair text-xl font-bold leading-7 text-white">{option.title}</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center border border-white/10 text-white/48 transition hover:text-white"
-          >
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="grid gap-5 py-5 lg:grid-cols-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">Producto acreditable</p>
-            <p className="mt-2 text-[12px] leading-6 text-white/74">{option.justification}</p>
-          </div>
-          <div className="border border-white/10 bg-[#162A45] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
-              Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
-            </p>
-            <p className="mt-2 text-[11px] leading-5 text-white/72">{workObjectText(option)}</p>
-          </div>
-          <div className="border border-white/10 bg-[#162A45] p-4">
-            <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">
-              <CalendarDays size={12} />
-              Linea de tiempo PA
-            </div>
-            <div className="space-y-2">
-              {timeline.length ? timeline.map(([code, value]) => (
-                <div key={code} className="grid grid-cols-[54px_1fr] gap-2">
-                  <span className="font-jetbrains text-[10px] font-bold text-[#6FE9F5]">{code}</span>
-                  <span className="text-[11px] leading-5 text-white/68">{value}</span>
-                </div>
-              )) : (
-                <p className="text-[10px] text-white/35">Sin hitos definidos.</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+    <GlassModal
+      onClose={onClose}
+      size="lg"
+      eyebrow={option.category}
+      title={option.title}
+      titleClassName="mt-2 font-playfair text-xl font-bold leading-7 text-white"
+      footer={
+        <>
           <button
             type="button"
             onClick={onClose}
@@ -227,9 +160,38 @@ function ProductDetailModal({
             {selected ? <CheckCircle2 size={13} /> : busy ? <Loader2 size={13} className="animate-spin" /> : null}
             {selected ? 'Seleccionado' : 'Seleccionar producto'}
           </button>
+        </>
+      }
+    >
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">Producto acreditable</p>
+          <p className="mt-2 text-[12px] leading-6 text-white/74">{option.justification}</p>
+        </div>
+        <div className="border border-white/10 bg-[#162A45] p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/38">
+            Objeto de trabajo {option.work_object_type ? `- ${option.work_object_type}` : ''}
+          </p>
+          <p className="mt-2 text-[11px] leading-5 text-white/72">{workObjectText(option)}</p>
+        </div>
+        <div className="border border-white/10 bg-[#162A45] p-4">
+          <div className="mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">
+            <CalendarDays size={12} />
+            Linea de tiempo PA
+          </div>
+          <div className="space-y-2">
+            {timeline.length ? timeline.map(([code, value]) => (
+              <div key={code} className="grid grid-cols-[54px_1fr] gap-2">
+                <span className="font-jetbrains text-[10px] font-bold text-[#6FE9F5]">{code}</span>
+                <span className="text-[11px] leading-5 text-white/68">{value}</span>
+              </div>
+            )) : (
+              <p className="text-[10px] text-white/35">Sin hitos definidos.</p>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </GlassModal>
   );
 }
 
@@ -349,6 +311,7 @@ export default function Step7_ProductoIntegrador() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
   const [loadingState, setLoadingState] = useState(Boolean(draftId));
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   const unitsCount = Math.max(1, draftPerformances.length || 1);
   const selectedOption = selected || options.find((option) => option.selected) || null;
@@ -469,30 +432,23 @@ export default function Step7_ProductoIntegrador() {
 
   return (
     <>
-    {loadingState ? (
-      <BlockingLoader
-        title="Cargando producto"
-        message="Estamos recuperando las opciones guardadas, el producto seleccionado y su linea de tiempo PA."
-      />
-    ) : null}
-    {loading ? (
-      <BlockingLoader
-        title="Generando horizonte"
-        message={jobStatusText || 'La IA esta cruzando metodo, evaluacion y consolidado de NotebookLM. Esto puede tomar unos segundos.'}
-      />
-    ) : null}
-    {selectingId ? (
-      <BlockingLoader
-        title="Fijando producto"
-        message="Estamos guardando el producto acreditable seleccionado para sincronizarlo con evaluacion y programa."
-      />
-    ) : null}
+    <OverlayLoader
+      show={loadingState || loading || Boolean(selectingId)}
+      title={loadingState ? 'Cargando producto' : loading ? 'Generando horizonte' : 'Fijando producto'}
+      message={
+        loadingState
+          ? 'Estamos recuperando las opciones guardadas, el producto seleccionado y su linea de tiempo PA.'
+          : loading
+            ? (jobStatusText || 'La IA esta cruzando metodo, evaluacion y consolidado de NotebookLM. Esto puede tomar unos segundos.')
+            : 'Estamos guardando el producto acreditable seleccionado para sincronizarlo con evaluacion y programa.'
+      }
+    />
     {notebookHelpOpen ? <NotebookHelpModal onClose={() => setNotebookHelpOpen(false)} /> : null}
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-            Paso 8 de 11 - Producto integrador
+            Paso {stepCurrent} de {stepTotal} - Producto integrador
           </p>
           <h1 className="font-playfair text-2xl font-bold text-white">Horizonte acreditable del curso</h1>
           <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/62">

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type {
   CourseDetail,
@@ -94,7 +94,25 @@ interface SyllabusCtxValue {
 
 const SyllabusCtx = createContext<SyllabusCtxValue | null>(null);
 
-const DRAFT_KEY = 'sigesil_draft_id';
+// DRAFT_KEY vive en localStorage (SPEC-05) para sobrevivir al cierre de la pestaña,
+// coherente con la sesión/contexto migrados en SPEC-02. RESUME_FLAG es un sentinel
+// efímero que el Dashboard deja para que el provider hidrate al retomar un draft.
+export const DRAFT_STORAGE_KEY = 'sigesil_draft_id';
+export const RESUME_FLAG = 'sigesil_resume_id';
+
+// Migración suave: el draft_id vivía en sessionStorage (se perdía al cerrar la
+// ventana). Lo movemos a localStorage una sola vez si quedó un valor viejo.
+function migrateLegacyDraftId(): void {
+  try {
+    const legacy = sessionStorage.getItem(DRAFT_STORAGE_KEY);
+    if (legacy && !localStorage.getItem(DRAFT_STORAGE_KEY)) {
+      localStorage.setItem(DRAFT_STORAGE_KEY, legacy);
+    }
+    if (legacy) sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+  } catch {
+    // storage bloqueado — sin migración
+  }
+}
 
 export function useSyllabus(): SyllabusCtxValue {
   const ctx = useContext(SyllabusCtx);
@@ -109,7 +127,14 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
   const { showToast, toasts, removeToast } = useToast();
   const savingRef = useRef(false);
 
-  const [draftId, setDraftId] = useState<string | null>(() => sessionStorage.getItem(DRAFT_KEY));
+  const [draftId, setDraftId] = useState<string | null>(() => {
+    migrateLegacyDraftId();
+    try {
+      return localStorage.getItem(DRAFT_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
   const [courseDetail, _setCourseDetail] = useState<CourseDetail | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowState>({});
   const [saving, setSaving] = useState(false);
@@ -188,7 +213,11 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
       const draft = res.data;
       if (!draft?.id) return;
       setDraftId(draft.id);
-      sessionStorage.setItem(DRAFT_KEY, draft.id);
+      try {
+        localStorage.setItem(DRAFT_STORAGE_KEY, draft.id);
+      } catch {
+        // storage bloqueado — el draftId vive en memoria esta sesión
+      }
 
       const pl = draft.payload_json;
       if (!pl) return;
@@ -252,6 +281,44 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
       showToast('No se pudo inicializar el draft', 'error');
     }
   }, [courseDetail, context, showToast]);
+
+  // Retomar draft (SPEC-05): el Dashboard deja RESUME_FLAG y reconstruye el
+  // contexto antes de navegar. Al montar el provider, hidratamos curso + bloques
+  // vía createOrLoadDraft, que recupera el MISMO draft abierto (course+sem+user+program).
+  const resumeAttempted = useRef(false);
+  useEffect(() => {
+    if (resumeAttempted.current) return;
+    let resumeId: string | null = null;
+    try {
+      resumeId = sessionStorage.getItem(RESUME_FLAG);
+    } catch {
+      resumeId = null;
+    }
+    if (!resumeId) return;
+    resumeAttempted.current = true;
+    try {
+      sessionStorage.removeItem(RESUME_FLAG);
+    } catch {
+      // noop
+    }
+
+    const courseId = context?.course_id;
+    if (!courseId) return;
+
+    void (async () => {
+      try {
+        const res = await api.getCourse(courseId);
+        const course = res.data ?? null;
+        if (!course) return;
+        _setCourseDetail(course);
+        await createOrLoadDraft(course);
+      } catch {
+        showToast('No se pudo retomar el último sílabo', 'error');
+      }
+    })();
+    // Solo al montar: el sentinel se consume una vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const value: SyllabusCtxValue = {
     draftId, courseDetail, workflow, saving,

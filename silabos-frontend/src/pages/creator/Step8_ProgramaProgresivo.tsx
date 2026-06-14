@@ -16,7 +16,6 @@ import {
   Trash2,
   Unlock,
   UploadCloud,
-  X,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
@@ -28,6 +27,9 @@ import type {
 } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
+import GlassModal from '../../components/ui/GlassModal';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 type UnitScreen = 'context' | 'workshop';
 type DialogMode = 'edit' | 'regenerate' | null;
@@ -486,52 +488,48 @@ function EditWeekDialog({
   onSave: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl border border-[#00B4D8]/35 bg-[#0B192C] p-5 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">Edicion manual</p>
-            <h2 className="mt-1 text-base font-bold text-white">Semana {week.week}</h2>
-          </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white">
-            <X size={15} />
-          </button>
-        </div>
-        <div className="grid gap-3">
-          <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-              Conocimiento (fijado por Mapa - solo lectura)
-            </span>
-            <input
-              value={week.knowledge}
-              readOnly
-              disabled
-              className="w-full cursor-not-allowed border border-white/10 bg-[#0B192C] px-3 py-2 text-sm text-white/70 outline-none"
-              title="Este conocimiento viene del Mapa Semanal confirmado y no puede modificarse aqui."
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Habilidad</span>
-            <input value={week.skill || ''} onChange={(event) => onChange({ ...week, skill: event.target.value })} className="w-full border border-white/10 bg-[#162A45] px-3 py-2 text-sm text-white outline-none focus:border-[#00B4D8]/60" />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Actividad didactica</span>
-            <textarea value={week.activity} onChange={(event) => onChange({ ...week, activity: event.target.value })} rows={7} className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60" />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Evidencia</span>
-            <input value={week.evidence} onChange={(event) => onChange({ ...week, evidence: event.target.value })} className="w-full border border-white/10 bg-[#162A45] px-3 py-2 text-sm text-white outline-none focus:border-[#00B4D8]/60" />
-          </label>
-        </div>
-        <div className="mt-4 flex justify-end gap-2 border-t border-white/10 pt-4">
+    <GlassModal
+      onClose={onClose}
+      size="md"
+      eyebrow="Edicion manual"
+      title={`Semana ${week.week}`}
+      footer={
+        <>
           <button type="button" onClick={onClose} className="border border-white/10 px-4 py-2 text-[11px] font-bold text-white/58 hover:text-white">Cancelar</button>
           <button type="button" onClick={onSave} disabled={loading} className="flex items-center gap-2 bg-[#00A896] px-4 py-2 text-[11px] font-bold text-white disabled:opacity-50">
             {loading ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
             Guardar semana
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
+            Conocimiento (fijado por Mapa - solo lectura)
+          </span>
+          <input
+            value={week.knowledge}
+            readOnly
+            disabled
+            className="w-full cursor-not-allowed border border-white/10 bg-[#0B192C] px-3 py-2 text-sm text-white/70 outline-none"
+            title="Este conocimiento viene del Mapa Semanal confirmado y no puede modificarse aqui."
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Habilidad</span>
+          <input value={week.skill || ''} onChange={(event) => onChange({ ...week, skill: event.target.value })} className="w-full border border-white/10 bg-[#162A45] px-3 py-2 text-sm text-white outline-none focus:border-[#00B4D8]/60" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Actividad didactica</span>
+          <textarea value={week.activity} onChange={(event) => onChange({ ...week, activity: event.target.value })} rows={7} className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Evidencia</span>
+          <input value={week.evidence} onChange={(event) => onChange({ ...week, evidence: event.target.value })} className="w-full border border-white/10 bg-[#162A45] px-3 py-2 text-sm text-white outline-none focus:border-[#00B4D8]/60" />
+        </label>
       </div>
-    </div>
+    </GlassModal>
   );
 }
 
@@ -551,39 +549,36 @@ function RegenerateDialog({
   onRegenerate: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl border border-[#E9B44C]/35 bg-[#0B192C] p-5 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-4 border-b border-white/10 pb-4">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">Reintento IA</p>
-            <h2 className="mt-1 text-base font-bold text-white">Regenerar unidad</h2>
-          </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white">
-            <X size={15} />
-          </button>
-        </div>
-        <label className="block">
-          <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Instruccion docente</span>
-          <textarea
-            value={instruction}
-            onChange={(event) => onChange(event.target.value)}
-            rows={7}
-            className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-            placeholder="Ejemplo: enfoca la unidad en talleres practicos usando revision de pares y casos breves."
-          />
-        </label>
-        <div className="mt-3 border border-white/10 bg-[#162A45] px-3 py-2 text-[11px] text-white/58">
-          Semanas bloqueadas: {lockedWeeks.length ? lockedWeeks.join(', ') : 'ninguna'}.
-        </div>
-        <div className="mt-4 flex justify-end gap-2 border-t border-white/10 pt-4">
+    <GlassModal
+      onClose={onClose}
+      size="md"
+      accent="amber"
+      eyebrow="Reintento IA"
+      title="Regenerar unidad"
+      footer={
+        <>
           <button type="button" onClick={onClose} className="border border-white/10 px-4 py-2 text-[11px] font-bold text-white/58 hover:text-white">Cancelar</button>
           <button type="button" onClick={onRegenerate} disabled={loading} className="flex items-center gap-2 bg-[#00A896] px-4 py-2 text-[11px] font-bold text-white disabled:opacity-50">
             {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
             Regenerar unidad
           </button>
-        </div>
+        </>
+      }
+    >
+      <label className="block">
+        <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Instruccion docente</span>
+        <textarea
+          value={instruction}
+          onChange={(event) => onChange(event.target.value)}
+          rows={7}
+          className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
+          placeholder="Ejemplo: enfoca la unidad en talleres practicos usando revision de pares y casos breves."
+        />
+      </label>
+      <div className="mt-3 border border-white/10 bg-[#162A45] px-3 py-2 text-[11px] text-white/58">
+        Semanas bloqueadas: {lockedWeeks.length ? lockedWeeks.join(', ') : 'ninguna'}.
       </div>
-    </div>
+    </GlassModal>
   );
 }
 
@@ -597,83 +592,51 @@ function ProductReferenceDialog({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">Referencia PA</p>
-            <h2 className="mt-1 text-base font-bold text-white">Producto y linea de tiempo</h2>
-          </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white">
-            <X size={15} />
-          </button>
+    <GlassModal
+      onClose={onClose}
+      size="lg"
+      eyebrow="Referencia PA"
+      title="Producto y linea de tiempo"
+    >
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)]">
+        <div className="border border-white/10 bg-[#162A45] p-4">
+          <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Producto acreditable</p>
+          <p className="mt-2 text-[13px] font-bold leading-6 text-white">{product?.title || 'Producto pendiente'}</p>
+          <p className="mt-4 text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Objeto de trabajo</p>
+          <p className="mt-2 text-[12px] leading-6 text-white/70">{product?.work_object || 'Objeto pendiente de contextualizacion'}</p>
         </div>
 
-        <div className="grid min-h-0 gap-4 overflow-y-auto p-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)]">
-          <div className="border border-white/10 bg-[#162A45] p-4">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Producto acreditable</p>
-            <p className="mt-2 text-[13px] font-bold leading-6 text-white">{product?.title || 'Producto pendiente'}</p>
-            <p className="mt-4 text-[9px] font-bold uppercase tracking-[0.16em] text-white/34">Objeto de trabajo</p>
-            <p className="mt-2 text-[12px] leading-6 text-white/70">{product?.work_object || 'Objeto pendiente de contextualizacion'}</p>
-          </div>
-
-          <div className="border border-[#E9B44C]/25 bg-[#162A45] p-4">
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#F2C260]">Linea PA</p>
-            <div className="mt-3 grid gap-2">
-              {timeline.length ? timeline.map(([code, value]) => (
-                <div key={String(code)} className="border border-white/10 bg-[#0B192C] px-3 py-2">
-                  <p className="font-jetbrains text-[10px] font-bold text-[#00B4D8]">{code}</p>
-                  <p className="mt-1 text-[11px] leading-5 text-white/68">{String(value)}</p>
-                </div>
-              )) : (
-                <p className="text-[11px] leading-5 text-white/48">Sin hitos PA definidos.</p>
-              )}
-            </div>
+        <div className="border border-[#E9B44C]/25 bg-[#162A45] p-4">
+          <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#F2C260]">Linea PA</p>
+          <div className="mt-3 grid gap-2">
+            {timeline.length ? timeline.map(([code, value]) => (
+              <div key={String(code)} className="border border-white/10 bg-[#0B192C] px-3 py-2">
+                <p className="font-jetbrains text-[10px] font-bold text-[#00B4D8]">{code}</p>
+                <p className="mt-1 text-[11px] leading-5 text-white/68">{String(value)}</p>
+              </div>
+            )) : (
+              <p className="text-[11px] leading-5 text-white/48">Sin hitos PA definidos.</p>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </GlassModal>
   );
 }
 
 function NotebookHelpDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col border border-[#00B4D8]/35 bg-[#0B192C] shadow-2xl">
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/10 p-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">NotebookLM</p>
-            <h2 className="mt-1 text-base font-bold text-white">Guia rapida para traer el consolidado</h2>
-          </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center border border-white/10 text-white/48 hover:text-white">
-            <X size={15} />
-          </button>
-        </div>
-        <div className="min-h-0 overflow-y-auto p-5">
-          <img src={NOTEBOOK_IMAGE} alt="Video guia NotebookLM" className="aspect-video w-full border border-white/10 bg-black object-cover" />
-          <p className="mt-4 text-[12px] leading-6 text-white/68">
-            Usa este video/placeholder como referencia visual: copia el prompt, pegalo en NotebookLM y trae el consolidado completo para esta unidad.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BlockingLoader({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
-      <div className="w-full max-w-sm border border-[#00B4D8]/35 bg-[#0B192C] p-6 text-center shadow-2xl shadow-cyan-950/40">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#00B4D8]/35 bg-[#00B4D8]/10">
-          <Loader2 size={26} className="animate-spin text-[#6FE9F5]" />
-        </div>
-        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4AF37]">{title}</p>
-        <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
-        <div className="mt-5 h-1 overflow-hidden bg-white/10">
-          <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
-        </div>
-      </div>
-    </div>
+    <GlassModal
+      onClose={onClose}
+      size="lg"
+      eyebrow="NotebookLM"
+      title="Guia rapida para traer el consolidado"
+    >
+      <img src={NOTEBOOK_IMAGE} alt="Video guia NotebookLM" className="aspect-video w-full border border-white/10 bg-black object-cover" />
+      <p className="mt-4 text-[12px] leading-6 text-white/68">
+        Usa este video/placeholder como referencia visual: copia el prompt, pegalo en NotebookLM y trae el consolidado completo para esta unidad.
+      </p>
+    </GlassModal>
   );
 }
 
@@ -695,6 +658,7 @@ export default function Step8_ProgramaProgresivo() {
   const [jobStatusText, setJobStatusText] = useState('');
   const [productReferenceOpen, setProductReferenceOpen] = useState(false);
   const [notebookHelpOpen, setNotebookHelpOpen] = useState(false);
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   const unitCount = useMemo(
     () => resolveUnitCount(state, draftPerformances),
@@ -963,17 +927,16 @@ export default function Step8_ProgramaProgresivo() {
 
   return (
     <>
-    {loading ? (
-      <BlockingLoader
-        title={activeJobId ? 'Generando unidad' : 'Procesando programa'}
-        message={jobStatusText || 'Estamos guardando los cambios del programa progresivo.'}
-      />
-    ) : null}
+    <OverlayLoader
+      show={loading}
+      title={activeJobId ? 'Generando unidad' : 'Procesando programa'}
+      message={jobStatusText || 'Estamos guardando los cambios del programa progresivo.'}
+    />
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
       <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-            Paso 11 de 12 - Programa progresivo
+            Paso {stepCurrent} de {stepTotal} - Programa progresivo
           </p>
           <h1 className="font-playfair text-2xl font-bold text-white">
             {currentScreen === 'context' ? 'Contexto docente de unidad' : 'Sugerencia IA de unidad'}

@@ -16,6 +16,8 @@ import { api } from '../../api/client';
 import type { CourseDetail } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 const PREVIEW_ASSETS = {
   sumilla: '/SumillaICONcargado.png',
@@ -280,6 +282,7 @@ export default function Step1_Repositorio() {
   const [detail, setDetail] = useState<CourseDetail | null>(ctxDetail);
   const [loading, setLoading] = useState(!ctxDetail);
   const [confirming, setConfirming] = useState(false);
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   useEffect(() => {
     if (ctxDetail) {
@@ -324,6 +327,15 @@ export default function Step1_Repositorio() {
 
   return (
     <div className="h-full overflow-x-hidden overflow-y-auto bg-[#041A3A] px-3 py-3 text-white sm:px-4">
+      <OverlayLoader
+        show={loading || confirming}
+        title={confirming ? 'Iniciando sílabo' : 'Cargando curso'}
+        message={
+          confirming
+            ? 'Estamos preparando tu borrador y abriendo las fuentes documentales...'
+            : 'Recuperando los datos curriculares oficiales del curso...'
+        }
+      />
       <div className="mb-4 flex items-start gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-[#D4A351]/45 bg-[#D4A351]/10 text-[#D4A351] shadow-[0_10px_24px_rgba(212,163,81,0.12)]">
           <BookOpen size={22} />
@@ -331,7 +343,7 @@ export default function Step1_Repositorio() {
 
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4A351]">
-            PASO 3 DE 8 - REPOSITORIO CURRICULAR
+            Paso {stepCurrent} de {stepTotal} - REPOSITORIO CURRICULAR
           </p>
           <h1 className="font-playfair text-[1.6rem] font-bold text-white">
             Repositorio curricular oficial

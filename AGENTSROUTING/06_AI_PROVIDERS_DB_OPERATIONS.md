@@ -186,6 +186,7 @@ Do not assume `auth.uid()` equals the app `users.id`. The app uses custom JWT au
 - OpenRouter models may reject native JSON mode; service may retry without `response_format`.
 - Usage logs should stay lightweight JSONL/file-based unless a central telemetry system is approved.
 - Server writes own job records; frontend never sees provider/model details.
+- Frontend auth (SPEC-02, owner-approved): single `AuthProvider` singleton in `silabos-frontend/src/context/AuthContext.tsx` owns session state; `useAuth` is a context consumer (no per-component `useState`). Session (`silabos_token`/`silabos_user`) and academic context (`context_{semestre}`) moved from `sessionStorage` to `localStorage` for multi-tab coherence + survival across window close (soft migration of legacy values). `clearSession` runs ONLY on 401/403 (real token rejection) or explicit logout; network/5xx during `/me` validation keeps an optimistic session, shows a non-blocking retry banner, and retries once with backoff. Multi-tab `storage` event syncs logout/login across tabs. Backend auth untouched.
 
 ## Known Risks And Anti-Patterns
 

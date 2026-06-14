@@ -18,6 +18,8 @@ import { api } from '../../api/client';
 import type { BibliographyReference } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 const SOURCE_ACTION_ICONS = {
   notebook: '/ICONEMPEZARNOTEBOOKLM.png',
@@ -439,6 +441,8 @@ export default function Step2_Fuentes() {
   const [notebookImportText, setNotebookImportText] = useState('');
   const [importingNotebookText, setImportingNotebookText] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
   const [tableDateLabel] = useState(() => formatTodayLabel());
   const notebookReferences = dedupeTextItems((uploadedBiblio?.references || []).map(cleanNotebookReference));
   const notebookReferenceKeys = new Set(notebookReferences.map((reference) => reference.toLowerCase()));
@@ -727,7 +731,10 @@ export default function Step2_Fuentes() {
       setShowSearchModal(false);
       showToast(`${nextRefs.length} referencias cargadas`, 'success');
 
-      if (continueAfter) navigate('/creator/desempenos');
+      if (continueAfter) {
+        setLeaving(true);
+        navigate('/creator/desempenos');
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al buscar bibliografía';
       showToast(message, 'error');
@@ -738,30 +745,47 @@ export default function Step2_Fuentes() {
 
   const handleSkip = async () => {
     setShowSearchModal(false);
-    await saveStep('bibliography', {
-      doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
-      references: bibliographyReferences,
-      sources_consulted: bibliographySources,
-    });
-    navigate('/creator/desempenos');
+    setLeaving(true);
+    try {
+      await saveStep('bibliography', {
+        doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
+        references: bibliographyReferences,
+        sources_consulted: bibliographySources,
+      });
+      navigate('/creator/desempenos');
+    } catch {
+      setLeaving(false);
+      showToast('No se pudo guardar la bibliografía', 'error');
+    }
   };
 
   const handleContinue = async () => {
-    await saveStep('bibliography', {
-      doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
-      references: bibliographyReferences,
-      sources_consulted: bibliographySources,
-    });
-    navigate('/creator/desempenos');
+    setLeaving(true);
+    try {
+      await saveStep('bibliography', {
+        doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
+        references: bibliographyReferences,
+        sources_consulted: bibliographySources,
+      });
+      navigate('/creator/desempenos');
+    } catch {
+      setLeaving(false);
+      showToast('No se pudo guardar la bibliografía', 'error');
+    }
   };
 
   return (
     <>
+      <OverlayLoader
+        show={leaving}
+        title="Preparando desempeños"
+        message="Guardando la bibliografía y abriendo los desempeños oficiales..."
+      />
       <div className="h-full overflow-y-auto overflow-x-hidden bg-[#041A3A] px-4 py-4 text-white sm:px-6">
         <div className="mx-auto max-w-[1440px]">
           <div className="mb-4">
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4A351]">
-              PASO 4 DE 8 - FUENTES Y SOPORTE DOCUMENTAL
+              Paso {stepCurrent} de {stepTotal} - FUENTES Y SOPORTE DOCUMENTAL
             </p>
             <h1 className="font-playfair text-[2rem] font-bold leading-tight text-white">
               Fuentes del curso y soporte documental

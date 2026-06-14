@@ -12,6 +12,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { ProgressiveCurriculumState, ProgressiveUnitGeneration } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 function weeksCount(generation: ProgressiveUnitGeneration) {
   return Array.isArray(generation.output_json) ? generation.output_json.length : 0;
@@ -43,6 +45,7 @@ export default function Step9_CierreProgresivo() {
   const [state, setState] = useState<ProgressiveCurriculumState | null>(null);
   const [loading, setLoading] = useState(true);
   const [assembling, setAssembling] = useState(false);
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
 
   const statePerformanceCount = state?.performances?.length || 0;
   const unitCount = Math.max(1, draftPerformances.length || statePerformanceCount || state?.unit_generations?.length || 1);
@@ -128,10 +131,19 @@ export default function Step9_CierreProgresivo() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
+      <OverlayLoader
+        show={loading || assembling}
+        title={assembling ? 'Ensamblando sílabo' : 'Cargando cierre'}
+        message={
+          assembling
+            ? 'La IA está integrando unidades, producto, evaluación y trazabilidad. Puede tardar varios minutos; mantén esta pantalla abierta...'
+            : 'Recuperando las unidades aprobadas y el estado del programa progresivo...'
+        }
+      />
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-            Paso 12 de 12 - Ensamblaje final
+            Paso {stepCurrent} de {stepTotal} - Ensamblaje final
           </p>
           <h1 className="font-playfair text-2xl font-bold text-white">Cierre del motor progresivo</h1>
           <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/62">

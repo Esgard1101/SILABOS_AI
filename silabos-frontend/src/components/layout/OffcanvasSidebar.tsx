@@ -22,7 +22,6 @@ import { getStoredUser, useAuth } from '../../hooks/useAuth';
 interface OffcanvasSidebarProps {
   open: boolean;
   onClose: () => void;
-  isAuthenticated: boolean;
 }
 
 type NavItem = {
@@ -63,10 +62,10 @@ function getRoleLabel(role?: string) {
   return 'Docente';
 }
 
-export default function OffcanvasSidebar({ open, onClose, isAuthenticated }: OffcanvasSidebarProps) {
+export default function OffcanvasSidebar({ open, onClose }: OffcanvasSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout, user } = useAuth();
+  const { logout, user, isAuthenticated } = useAuth();
   const { clearContext } = useAppContext();
   const currentUser = user || getStoredUser();
   const role = currentUser?.role;

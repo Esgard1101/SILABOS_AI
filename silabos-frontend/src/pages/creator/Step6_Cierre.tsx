@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { GradingRow, ProgressiveProductOption } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import OverlayLoader from '../../components/ui/OverlayLoader';
+import { useWizardStep } from './wizardSteps';
 
 const SEGMENT_COLORS = ['#D4A351', '#00B4CC', '#6C85C2', '#A8D8A8', '#E8A0A0', '#C4A0D8'];
 
@@ -172,23 +174,6 @@ function compactPaEvidenceRows(rows: GradingRow[]) {
 
 function sameRows(left: GradingRow[], right: GradingRow[]) {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function BlockingLoader({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#061224]/85 px-4 text-white backdrop-blur-md">
-      <div className="w-full max-w-sm border border-[#00B4D8]/35 bg-[#0B192C] p-6 text-center shadow-2xl shadow-cyan-950/40">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#00B4D8]/35 bg-[#00B4D8]/10">
-          <Loader2 size={26} className="animate-spin text-[#6FE9F5]" />
-        </div>
-        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-[#D4AF37]">{title}</p>
-        <p className="mt-2 text-[12px] leading-5 text-white/68">{message}</p>
-        <div className="mt-5 h-1 overflow-hidden bg-white/10">
-          <div className="h-full w-1/2 animate-pulse bg-gradient-to-r from-[#00B4D8] via-[#6FE9F5] to-[#D4AF37]" />
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function isLegacyDefault(rows: GradingRow[], productCount = 2) {
@@ -368,6 +353,7 @@ export default function Step6_Cierre() {
   const [selectedProduct, setSelectedProduct] = useState<ProgressiveProductOption | null>(null);
   const [appliedProductKey, setAppliedProductKey] = useState('');
   const [loadingProductState, setLoadingProductState] = useState(Boolean(draftId));
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
   const selectedProductKey = productKey(selectedProduct);
   const productCount = Math.max(1, draftPerformances.length || productTimelineCount(selectedProduct) || 2);
 
@@ -469,21 +455,18 @@ export default function Step6_Cierre() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
-      {loadingProductState ? (
-        <BlockingLoader
-          title="Sincronizando evaluacion"
-          message="Estamos recuperando el producto seleccionado y aplicando sus avances PA antes de mostrar la tabla."
-        />
-      ) : null}
-      {savingEvaluation ? (
-        <BlockingLoader
-          title="Guardando evaluacion"
-          message="Estamos consolidando pesos, evidencias y cronograma para continuar al programa semanal."
-        />
-      ) : null}
+      <OverlayLoader
+        show={loadingProductState || savingEvaluation}
+        title={loadingProductState ? 'Sincronizando evaluacion' : 'Guardando evaluacion'}
+        message={
+          loadingProductState
+            ? 'Estamos recuperando el producto seleccionado y aplicando sus avances PA antes de mostrar la tabla.'
+            : 'Estamos consolidando pesos, evidencias y cronograma para continuar al programa semanal.'
+        }
+      />
       <div className="mb-4">
         <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">
-          Paso 9 de 11 - Sistema de evaluacion
+          Paso {stepCurrent} de {stepTotal} - Sistema de evaluacion
         </p>
         <h1 className="font-playfair text-2xl font-bold text-white">Cronologia de evaluacion</h1>
         <p className="mt-1 text-[11px] text-white/60">

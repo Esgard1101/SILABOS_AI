@@ -4160,6 +4160,122 @@ class SupabaseService:
             logger.error(f"Error al guardar step block {step_key} en {syllabus_id}: {e}")
             return None
 
+    # ── Resume / autosave de posición (SPEC-05) ────────────────────────────────
+
+    def _guardar_resume_state_sync(
+        self,
+        syllabus_id: str,
+        user_id: str,
+        resume: dict,
+    ) -> Optional[dict]:
+        if not user_id:
+            raise ValueError("user_id es obligatorio para guardar el resume state")
+
+        with self._Session() as sesion:
+            row = sesion.execute(
+                text("SELECT payload_json FROM syllabi WHERE id = :id AND user_id = :uid"),
+                {"id": syllabus_id, "uid": user_id},
+            ).mappings().first()
+
+            # Ownership estricto: si no es del usuario, no existe para él.
+            if not row:
+                return None
+
+            payload = row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if not isinstance(payload, dict):
+                payload = {}
+
+            meta = payload.get("_meta")
+            if not isinstance(meta, dict):
+                meta = {}
+                payload["_meta"] = meta
+
+            meta["resume"] = {
+                "last_route": str(resume.get("last_route") or ""),
+                "last_step": resume.get("last_step"),
+                "step_label": str(resume.get("step_label") or ""),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            sesion.execute(
+                text("""
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload_json AS JSONB),
+                        autosaved_at = now(),
+                        updated_at = now()
+                    WHERE id = :id AND user_id = :uid
+                """),
+                {
+                    "id": syllabus_id,
+                    "uid": user_id,
+                    "payload_json": json.dumps(payload, ensure_ascii=False),
+                },
+            )
+            sesion.commit()
+
+        return {"syllabus_id": syllabus_id, "saved": True}
+
+    async def guardar_resume_state(
+        self,
+        syllabus_id: str,
+        user_id: str,
+        resume: dict,
+    ) -> Optional[dict]:
+        try:
+            return await self._ejecutar(
+                self._guardar_resume_state_sync,
+                syllabus_id, user_id, resume,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar resume state en {syllabus_id}: {e}")
+            return None
+
+    def _obtener_latest_drafts_resumibles_sync(
+        self,
+        user_id: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        if not user_id:
+            raise ValueError("user_id es obligatorio para listar drafts resumibles")
+
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text("""
+                    SELECT s.id, s.course_id, s.user_id, s.semester, s.status, s.payload_json,
+                           s.wizard_version, s.program_id, s.current_step,
+                           s.created_at, s.updated_at,
+                           c.name AS course_name,
+                           p.name AS program_name
+                    FROM syllabi s
+                    LEFT JOIN courses c ON c.id = s.course_id
+                    LEFT JOIN programs p ON p.id = s.program_id
+                    WHERE s.user_id = :uid
+                      AND s.wizard_version = 'v3-progressive'
+                      AND s.status = 'draft'
+                    ORDER BY s.updated_at DESC NULLS LAST, s.created_at DESC
+                    LIMIT :limit
+                """),
+                {"uid": user_id, "limit": limit},
+            ).mappings().all()
+
+        return [self._mapear_silabo_fila(fila) for fila in filas if fila]
+
+    async def obtener_latest_drafts_resumibles(
+        self,
+        user_id: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        try:
+            return await self._ejecutar(
+                self._obtener_latest_drafts_resumibles_sync,
+                user_id, limit,
+            )
+        except Exception as e:
+            logger.error(f"Error al listar drafts resumibles de {user_id}: {e}")
+            return []
+
     def _marcar_envio_validacion_academica_sync(self, syllabus_id: str) -> bool:
         with self._Session() as sesion:
             row = sesion.execute(

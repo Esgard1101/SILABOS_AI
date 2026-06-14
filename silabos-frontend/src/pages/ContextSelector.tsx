@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Landmark,
   Loader2,
   RefreshCw,
@@ -9,6 +10,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { BASE_URL } from '../api/client';
 import { getCurrentSemester, useAppContext } from '../hooks/useAppContext';
+import { useWizardStep } from './creator/wizardSteps';
+import CourseSelectModal from '../components/CourseSelectModal';
 
 interface Faculty {
   id: string;
@@ -112,6 +115,7 @@ function addWeeks(value: string, weeks = 16) {
 
 export default function ContextSelector() {
   const navigate = useNavigate();
+  const { current: stepCurrent, total: stepTotal } = useWizardStep();
   const { setContext, isContextSet } = useAppContext();
 
   const [faculties, setFaculties] = useState<Faculty[]>([]);
@@ -123,6 +127,7 @@ export default function ContextSelector() {
   const [selectedCareer, setSelectedCareer] = useState<Career | null>(null);
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [courseModalOpen, setCourseModalOpen] = useState(false);
   const [semester, setSemester] = useState(getCurrentSemester());
   const [startDate, setStartDate] = useState(nearestMonday());
   const endDate = addWeeks(startDate);
@@ -184,6 +189,22 @@ export default function ContextSelector() {
       .catch(() => setError('No se pudieron cargar los cursos.'))
       .finally(() => setLoadingCourses(false));
   }, [selectedProgram]);
+
+  // Misma lógica que el <select> anterior: fija el curso de la lista y luego enriquece
+  // con el detalle completo (prerequisitos/horas) para que el payload de contexto sea idéntico.
+  const handlePickCourse = async (picked: { id: string }) => {
+    const course = courses.find((c: Course) => c.id === picked.id) || null;
+    setCourseModalOpen(false);
+    setSelectedCourse(course);
+    if (course?.id) {
+      try {
+        const detail = await fetchCourse(course.id);
+        if (detail) setSelectedCourse({ ...course, ...detail });
+      } catch {
+        // The selector can continue with the list payload if detail is unavailable.
+      }
+    }
+  };
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -257,33 +278,38 @@ export default function ContextSelector() {
           <div className="flex w-full items-start justify-end gap-4 lg:w-auto lg:items-center lg:gap-8">
             <div className="flex w-full max-w-[340px] flex-col items-end lg:mr-4">
               <div className="flex items-center">
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                {Array.from({ length: stepTotal }, (_, index) => index + 1).map((n) => (
                   <React.Fragment key={n}>
                     <div
-                      className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold transition ${
-                        n === 2
+                      className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold transition ${
+                        n === stepCurrent
                           ? 'border-2 border-[#D4A351] bg-transparent text-white'
-                          : n < 2
+                          : n < stepCurrent
                             ? 'bg-[#00B4CC] text-white'
                             : 'border border-white/25 text-white/40'
                       }`}
                     >
                       {n}
                     </div>
-                    {n < 8 && <div className="h-px w-4 bg-white/20" />}
+                    {n < stepTotal && <div className="h-px w-1.5 bg-white/20" />}
                   </React.Fragment>
                 ))}
               </div>
 
               <span className="mt-4 self-center text-sm font-medium text-white/80">
-                Paso 2 de 8
+                Paso {stepCurrent} de {stepTotal}
               </span>
 
               <div className="mt-4 flex w-full items-center justify-between gap-3">
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15">
-                  <div className="h-full w-1/4 rounded-full bg-[#00B4CC]" />
+                  <div
+                    className="h-full rounded-full bg-[#00B4CC] transition-all"
+                    style={{ width: `${((stepCurrent - 1) / (stepTotal - 1)) * 100}%` }}
+                  />
                 </div>
-                <span className="shrink-0 text-[10px] text-white/60">25% completado</span>
+                <span className="shrink-0 text-[10px] text-white/60">
+                  {Math.round(((stepCurrent - 1) / (stepTotal - 1)) * 100)}% completado
+                </span>
               </div>
             </div>
 
@@ -420,33 +446,22 @@ export default function ContextSelector() {
                 {loadingCourses ? (
                   LOADING_FIELD
                 ) : (
-                  <select
-                    className={SELECT_CLS}
-                    value={selectedCourse?.id || ''}
+                  <button
+                    type="button"
                     disabled={!selectedProgram}
-                    onChange={async (e: React.ChangeEvent<HTMLSelectElement>) => {
-                      const course = courses.find((c: Course) => c.id === e.target.value) || null;
-                      setSelectedCourse(course);
-                      if (course?.id) {
-                        try {
-                          const detail = await fetchCourse(course.id);
-                          if (detail) setSelectedCourse({ ...course, ...detail });
-                        } catch {
-                          // The selector can continue with the list payload if detail is unavailable.
-                        }
-                      }
-                    }}
+                    onClick={() => setCourseModalOpen(true)}
+                    title={!selectedProgram ? 'Primero elige programa' : 'Seleccionar curso'}
+                    className={`${SELECT_CLS} flex items-center justify-between gap-2`}
                   >
-                    <option value="">
-                      {selectedProgram ? 'Seleccione...' : 'Primero elige programa'}
-                    </option>
-                    {courses.map((course) => (
-                      <option key={course.id} value={course.id}>
-                        {course.name}
-                        {course.cycle != null ? ` (Ciclo ${course.cycle})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    <span className={`truncate ${selectedCourse ? 'text-white' : 'text-white/40'}`}>
+                      {selectedCourse
+                        ? `${selectedCourse.name}${selectedCourse.cycle != null ? ` (Ciclo ${selectedCourse.cycle})` : ''}`
+                        : selectedProgram
+                          ? 'Seleccione...'
+                          : 'Primero elige programa'}
+                    </span>
+                    <ChevronDown size={13} className="shrink-0 text-white/40" />
+                  </button>
                 )}
               </div>
 
@@ -552,6 +567,17 @@ export default function ContextSelector() {
             </div>
           </div>
         </form>
+
+        {courseModalOpen ? (
+          <CourseSelectModal
+            courses={courses}
+            selectedId={selectedCourse?.id}
+            programName={selectedProgram?.name}
+            loading={loadingCourses}
+            onSelect={handlePickCourse}
+            onClose={() => setCourseModalOpen(false)}
+          />
+        ) : null}
       </div>
     </div>
   );

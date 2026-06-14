@@ -30,7 +30,7 @@ import BibliographyGuide from '../components/BibliographyGuide';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
 import { useAppContext } from '../hooks/useAppContext';
-import { useAuth } from '../hooks/useAuth';
+import { getStoredUser, useAuth } from '../hooks/useAuth';
 
 const REVIEW_MODULE_MESSAGE =
   'Módulo de revisión académica en desarrollo. Estará disponible próximamente.';
@@ -814,8 +814,7 @@ export default function SyllabusEditor() {
     try {
       const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || 'null') as SyllabusData | null;
       const payloadToSave = current || syllabus;
-      const rawUser = sessionStorage.getItem('silabos_user');
-      const currentUser = rawUser ? (JSON.parse(rawUser) as { full_name?: string }) : null;
+      const currentUser = getStoredUser();
       const response = await api.updateSyllabus(syllabusId, payloadToSave as Record<string, unknown>, {
         status: 'draft',
         changed_by: currentUser?.full_name || dg.docente || 'sistema',

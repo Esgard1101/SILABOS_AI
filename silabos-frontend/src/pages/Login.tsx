@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { Brain, Eye, EyeOff, FileText, Lock, ShieldCheck, User, Users } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import GoogleSignInButton from '../components/GoogleSignInButton';
+import OverlayLoader from '../components/ui/OverlayLoader';
 import { useAuth } from '../hooks/useAuth';
 
 type NoticeTone = 'neutral' | 'warning' | 'error';
@@ -48,6 +49,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState<LoginNotice | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -58,16 +60,19 @@ export default function Login() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNotice(null);
+    setSubmitting(true);
     try {
       const loggedUser = await login(email, password);
       navigate(getPostLoginPath(loggedUser.role), { replace: true });
     } catch {
       // hook surfaces the error
+      setSubmitting(false);
     }
   };
 
   const handleGoogleLogin = async (credential: string) => {
     setNotice(null);
+    setSubmitting(true);
     try {
       const result = await loginWithGoogle(credential);
       if (result.account_status === 'active') {
@@ -75,8 +80,10 @@ export default function Login() {
         return;
       }
       setNotice(resolveGoogleNotice(result.account_status, result.message));
+      setSubmitting(false);
     } catch {
       // hook surfaces the error
+      setSubmitting(false);
     }
   };
 
@@ -89,6 +96,7 @@ export default function Login() {
 
   return (
     <div className="relative w-full h-full overflow-hidden">
+      <OverlayLoader show={submitting} title="Ingresando" message="Validando credenciales institucionales..." />
       {/* Background: university building image + overlays */}
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"

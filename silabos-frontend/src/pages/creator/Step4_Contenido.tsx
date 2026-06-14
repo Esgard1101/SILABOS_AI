@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { HabilidadPorDesempeno, SkillDB, SuggestedPerformance } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
+import OverlayLoader from '../../components/ui/OverlayLoader';
 
 type ContentKind = 'knowledge' | 'skills';
 
@@ -635,6 +636,11 @@ export default function Step4_Contenido() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#041A3A] px-4 py-4 text-white sm:px-6">
+      <OverlayLoader
+        show={saving}
+        title="Guardando contenido"
+        message="Estamos guardando el programa de contenidos y abriendo la selección de método..."
+      />
       <div className="mb-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_470px]">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4A351]">CONTENIDO DERIVADO</p>

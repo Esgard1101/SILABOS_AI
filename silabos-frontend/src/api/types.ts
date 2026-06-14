@@ -498,6 +498,14 @@ export interface CourseDetail extends CourseListItem {
   temas_conocimientos?: string[] | null;
   habilidades_desempenos?: string[] | null;
   actividades_metodo?: string[] | null;
+  // Contexto institucional (devuelto por obtener_curso) — usado para reconstruir
+  // el ActiveContext al retomar un draft (SPEC-05).
+  program_id?: string | null;
+  program_name?: string | null;
+  career_id?: string | null;
+  career_name?: string | null;
+  faculty_id?: string | null;
+  faculty_name?: string | null;
 }
 
 export interface MethodItem {
@@ -728,11 +736,36 @@ export interface BiblioBlock {
   sources_consulted?: string[];
 }
 
+export interface ResumeState {
+  last_route: string;
+  last_step: number | null;
+  step_label: string;
+  updated_at: string;
+}
+
 export interface ProgressiveDraftMeta {
   wizard_version: string;
   current_step: string;
   requires_academic_validation: boolean;
   academic_validation_status: 'not_required' | 'pending' | 'approved' | 'returned';
+  resume?: ResumeState;
+}
+
+// Resumen del último draft en progreso (SPEC-05) — alimenta "continuar último sílabo".
+export interface ProgressiveDraftSummary {
+  id: string;
+  course_id: string;
+  course_name: string;
+  program_id: string | null;
+  program_name: string;
+  semester: string;
+  last_route: string;
+  last_step: number | null;
+  step_label: string;
+  progress_pct: number;
+  fecha_inicio?: string;
+  fecha_fin?: string;
+  updated_at: string;
 }
 
 export interface ProgressiveDraft {

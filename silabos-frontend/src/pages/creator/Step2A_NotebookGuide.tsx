@@ -104,7 +104,7 @@ interface PromptVideoModalProps {
   promptLabel?: string;
   copyLabel?: string;
   copiedLabel?: string;
-  steps: string[];
+  steps: readonly string[];
   note?: string;
   onClose: () => void;
 }

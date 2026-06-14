@@ -1,6 +1,8 @@
 // useAppContext.ts — Gestión del contexto de sesión por ciclo académico
-// Almacena en sessionStorage con clave dinámica por semestre
-// Al cerrar la pestaña se borra automáticamente (comportamiento correcto)
+// Almacena en localStorage con clave dinámica por semestre (`context_{semestre}`).
+// Decisión SPEC-02 (aceptada por el owner): se migró de sessionStorage a localStorage
+// para coherencia multi-pestaña (CA-05) — la pestaña B abre con el mismo contexto.
+// Migración suave: si quedó un valor viejo en sessionStorage, se mueve una sola vez.
 
 export interface ActiveContext {
   faculty_id: string;
@@ -30,10 +32,25 @@ export function getCurrentSemester(): string {
 
 const STORAGE_KEY = () => `context_${getCurrentSemester()}`;
 
+// Mueve un context_{semestre} viejo de sessionStorage a localStorage una sola vez.
+function migrateLegacyContext(key: string): void {
+  try {
+    const legacy = sessionStorage.getItem(key);
+    if (legacy && !localStorage.getItem(key)) {
+      localStorage.setItem(key, legacy);
+    }
+    if (legacy) sessionStorage.removeItem(key);
+  } catch {
+    // storage bloqueado — sin migración
+  }
+}
+
 export function useAppContext() {
   const getContext = (): ActiveContext | null => {
     try {
-      const raw = sessionStorage.getItem(STORAGE_KEY());
+      const key = STORAGE_KEY();
+      migrateLegacyContext(key);
+      const raw = localStorage.getItem(key);
       return raw ? (JSON.parse(raw) as ActiveContext) : null;
     } catch {
       return null;
@@ -41,11 +58,11 @@ export function useAppContext() {
   };
 
   const setContext = (ctx: ActiveContext): void => {
-    sessionStorage.setItem(STORAGE_KEY(), JSON.stringify(ctx));
+    localStorage.setItem(STORAGE_KEY(), JSON.stringify(ctx));
   };
 
   const clearContext = (): void => {
-    sessionStorage.removeItem(STORAGE_KEY());
+    localStorage.removeItem(STORAGE_KEY());
   };
 
   const context = getContext();

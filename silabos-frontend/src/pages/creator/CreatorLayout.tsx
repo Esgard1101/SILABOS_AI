@@ -1,50 +1,39 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ArrowLeft, BookOpen, Loader2 } from 'lucide-react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../../api/client';
 import Toast from '../../components/Toast';
 import { SyllabusProvider, useSyllabus } from '../../context/SyllabusContext';
 import { useAppContext } from '../../hooks/useAppContext';
-
-const TOTAL_STEPS = 12;
-
-const ROUTE_STEP: Record<string, number> = {
-  '/creator/repositorio': 3,
-  '/creator/fuentes': 4,
-  '/creator/fuentes/notebook': 4,
-  '/creator/fuentes/notebook/manual': 4,
-  '/creator/fuentes/notebook/ia': 4,
-  '/creator/desempenos': 5,
-  '/creator/contenido': 6,
-  '/creator/metodo': 7,
-  '/creator/producto': 8,
-  '/creator/mapa-conocimientos': 9,
-  '/creator/evaluacion': 10,
-  '/creator/programa': 11,
-  '/creator/cierre': 12,
-};
-
-const STEP_LABELS: Record<number, string> = {
-  3: 'Repositorio',
-  4: 'Fuentes',
-  5: 'Desempenos',
-  6: 'Contenido',
-  7: 'Metodo',
-  8: 'Producto',
-  9: 'Mapa',
-  10: 'Evaluacion',
-  11: 'Programa',
-  12: 'Cierre',
-};
+import { STEP_LABELS, TOTAL_STEPS, useWizardStep } from './wizardSteps';
 
 function CreatorShell() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { context } = useAppContext();
-  const { saving, toasts, removeToast, courseDetail } = useSyllabus();
+  const { saving, toasts, removeToast, courseDetail, draftId } = useSyllabus();
 
-  const currentStep = ROUTE_STEP[pathname] ?? 3;
+  const { current: currentStep } = useWizardStep();
   const courseName = courseDetail?.name ?? context?.course_name ?? 'Selecciona curso';
   const subtitle = context ? `${courseName} - ${context.semester}` : '';
+
+  // Persiste la posición de navegación (SPEC-05). Debounce para no escribir en
+  // cada transición intermedia. Fallo no-crítico: nunca bloquea la navegación (CA-05).
+  useEffect(() => {
+    if (!draftId) return;
+    const handle = window.setTimeout(() => {
+      api
+        .saveResumeState(draftId, {
+          last_route: pathname,
+          last_step: currentStep,
+          step_label: STEP_LABELS[currentStep] ?? '',
+        })
+        .catch(() => {
+          /* no-crítico */
+        });
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [draftId, pathname, currentStep]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden text-white">

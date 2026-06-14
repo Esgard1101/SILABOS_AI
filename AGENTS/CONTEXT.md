@@ -270,7 +270,7 @@ General rule:
 Confirmed behavior:
 - context selection appears after login
 - it is shown only when there is no active session context for the current academic cycle
-- selected context is stored in `sessionStorage`
+- selected context is stored in `localStorage` (migrated from `sessionStorage` in SPEC-02 for multi-tab coherence)
 - current session key pattern: `context_{semestre}`
 - semester naming convention:
   - January to June: `YYYY-I`
@@ -279,8 +279,9 @@ Confirmed behavior:
 - dashboard filters by active context
 
 Storage rule:
-- use `sessionStorage`
-- do not switch to `localStorage`
+- use `localStorage` for both the auth session (`silabos_token` / `silabos_user`) and the academic context (`context_{semestre}`)
+- migrated from `sessionStorage` in SPEC-02 (owner-approved) for multi-tab coherence and survival across window close; a soft migration moves any legacy `sessionStorage` value once
+- the single owner of auth state is `src/context/AuthContext.tsx` (AuthProvider singleton); never reintroduce per-component `useState` of `isAuthenticated`/`user`
 
 ### Syllabus Generation Wizard
 
@@ -374,7 +375,8 @@ Session/auth notes:
 - JWT is used
 - current session expiration target is 24 hours
 - there is no refresh-token flow documented
-- active academic context is stored in `sessionStorage`
+- auth session and active academic context are stored in `localStorage` (SPEC-02); session validation (`/me`) clears the session only on 401/403, never on network/5xx (optimistic session + retry banner)
+- auth state lives in a single `AuthProvider` (`src/context/AuthContext.tsx`); `useAuth` is a context consumer
 
 ## RAG and Retrieval Rules
 
