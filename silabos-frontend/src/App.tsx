@@ -19,6 +19,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminSumillas from './pages/AdminSumillas';
 import AdminTeachingMethods from './pages/AdminTeachingMethods';
 import AdminSkills from './pages/AdminSkills';
+import AdminEvaluationPresets from './pages/AdminEvaluationPresets';
 import AdminCurriculum from './pages/AdminCurriculum';
 import Landing from './pages/Landing';
 import { useAppContext } from './hooks/useAppContext';
@@ -135,6 +136,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={['admin']}>
                 <AdminSkills />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/evaluation-presets"
+            element={
+              <ProtectedRoute roles={['admin', 'director', 'coordinador']}>
+                <AdminEvaluationPresets />
               </ProtectedRoute>
             }
           />

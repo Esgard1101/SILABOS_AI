@@ -81,6 +81,11 @@ Use Supabase MCP to inspect actual table columns, indexes, constraints, and poli
 - The concrete object of work must appear explicitly in activities and evolve into the product acreditable.
 - Product cards must expose three visible areas: Producto Acreditable (`title`), Objeto de Trabajo (`work_object`) contextualized to UNPRG/Lambayeque, and PA timeline (`timeline_json`).
 - Step9 must block final assembly when the selected product lacks `work_object`.
+- Step7 UI (SPEC-07, approved): product options render as a responsive glass card grid (1->2->3 cols), not table rows. `ProductOptionRow` was deleted. Each card: badge categoria dorado, titulo, teaser `work_object` line-clamp, chips `PAn · Sn`, CTAs "Ver desagregacion" + "Seleccionar", ring cyan + badge when selected.
+- `ProductDetailModal` is a GlassModal `lg` with a VERTICAL PA timeline (PA1->PA2->PA3 nodes + cyan rail), a highlighted "Objeto de trabajo" panel, and full justification prose. No more 3 truncated columns.
+- Accumulated-options dedupe is UI-only and deterministic: show the 3 most recent non-selected options (by `created_at` desc; missing `created_at` = freshly generated = newest) plus the selected one if any. No DB writes.
+- Week chips ("S6", "Semana 6") are derived locally via regex `/semana\s+(\d+)/i` over `timeline_json` values. No new AI calls in render (CA-04).
+- Card/modal "Seleccionar" is disabled when `work_object` is missing/pendiente (CA-01) and while a suggest job runs (CA-05). Select payload unchanged: `selectProgressiveProduct(draftId, option.id)`.
 
 ## Concrete Object Rule
 

@@ -1,7 +1,7 @@
 # SPEC-07 — Selección de producto: 3 cards dashboard + modal timeline liquid glass
 
 **Proyecto:** SIGEISIL · **Sobre:** frontend `silabos-frontend` (Step7 `/creator/producto`)
-**Estado:** LISTO PARA EJECUTAR (mockup pendiente de aprobación)
+**Estado:** ✅ DONE (implementado y aprobado en navegador; build verde). Mockup HTML no se generó — implementado directo desde prompt §4.
 **Routing previo:** `AGENTSROUTING/README.md` + `AGENTSROUTING/02_PRODUCT_EVALUATION_HORIZON.md` (OBLIGATORIO: contrato de product options, regla del objeto concreto, riesgo de opciones acumuladas)
 
 ---
@@ -84,4 +84,4 @@ Hoy las opciones de producto acreditable se muestran como filas de tabla densas 
 
 | Tarea | Tipo | Mockup | Depende de | Asignado a |
 |---|---|---|---|---|
-| T7 (esta SPEC) | Redesign UI E2E | SÍ | T2 (GlassModal) | [ ] |
+| T7 (esta SPEC) | Redesign UI E2E | SÍ | T2 (GlassModal) | [x] DONE |

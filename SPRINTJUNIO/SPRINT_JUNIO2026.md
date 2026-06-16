@@ -78,7 +78,7 @@ Crea el componente base liquid glass con scroll interno garantizado y repara el 
 Gap detectado en recon: 9 archivos con "PASO X DE Y" hardcodeado y desincronizado (denominadores 8, 11 y 12 conviviendo). Se centraliza en `ROUTE_STEP` de `CreatorLayout`.
 - **Depende de:** ninguna.
 
-### ÉPICA 2 — Continuidad (nunca perder avance)
+### ÉPICA 2 YA ESTA  — Continuidad (nunca perder avance)
 
 **T4 — Autosave reforzado + resume state persistido** → [SPEC-05](SPEC-05_AUTOSAVE_RESUME.md)
 `saveStep` ya persiste bloques; se agrega `payload_json._meta.resume` (última ruta, paso, timestamp) + endpoint de "último draft en progreso" + flujo de restauración completa (contexto desde `course_snapshot` + hidratación + navegación al paso exacto).
@@ -90,13 +90,14 @@ Card prominente de resume (curso, paso, % avance, CTA) + rediseño de la vista M
 
 ### ÉPICA 3 — UX de selección
 
-**T6 — Selector de cursos: modal glass con búsqueda + agrupación por ciclo** → [SPEC-04](SPEC-04_SELECTOR_CURSOS_MODAL.md)
+**T6 YA ESTA — Selector de cursos: modal glass con búsqueda + agrupación por ciclo** → [SPEC-04](SPEC-04_SELECTOR_CURSOS_MODAL.md)
 Reemplaza el `<select>` nativo de cursos (40+ items) en `/select-context`.
 - **Depende de:** T2 (GlassModal).
 
-**T7 — Selección de producto: 3 cards dashboard + modal timeline liquid glass** → [SPEC-07](SPEC-07_PRODUCT_CARDS_TIMELINE.md)
+**T7 — Selección de producto: 3 cards dashboard + modal timeline liquid glass** → [SPEC-07](SPEC-07_PRODUCT_CARDS_TIMELINE.md) ✅ DONE
 Reemplaza por completo las filas/tabla de opciones del Step7. Incluye dedupe de opciones acumuladas (riesgo conocido del módulo 02).
 - **Depende de:** T2 (GlassModal).
+- **Entregado:** card grid glass + modal timeline vertical; `ProductOptionRow` eliminado; dedupe determinista; payload select intacto; build verde. Bonus: mismo estilo glass aplicado a Step9 WeekCard.
 
 **T8 — Estandarización de evidencias PA en cronograma (cero IA)** → [SPEC-08](SPEC-08_ESTANDARIZACION_EVIDENCIAS.md)
 `evidencia = "Producto Acreditable N"` + sigla + semana; el detalle largo del timeline queda como texto secundario de UI y en `selected_product.timeline_json`. Verifica mapping a export (Sistema de Evaluación/Calificación).
@@ -131,6 +132,6 @@ Módulo fuera del wizard: guía redactable para estudiantes del producto acredit
 | T4 | Drafts | Feature E2E | SPEC-05 | T1 | SyllabusContext, progressive.py | [ ] |
 | T5 | Dashboard | Feature E2E | SPEC-06 | T4 | Dashboard, SyllabusList | [ ] |
 | T6 | Contexto | Feature UI E2E | SPEC-04 | T2 | ContextSelector | [ ] |
-| T7 | Producto | Redesign E2E | SPEC-07 | T2 | Step7_ProductoIntegrador | [ ] |
+| T7 | Producto | Redesign E2E | SPEC-07 | T2 | Step7_ProductoIntegrador | [x] DONE |
 | T8 | Evaluación | Normalización | SPEC-08 | — (serializar c/ T7) | Step6_Cierre, SyllabusContext | [ ] |
 | T9a/b/c | Doc Proyecto | Módulo nuevo | SPEC-09 | T2 | router nuevo, tabla nueva, página nueva | [ ] |

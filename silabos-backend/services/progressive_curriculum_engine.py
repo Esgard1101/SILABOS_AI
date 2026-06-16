@@ -2386,7 +2386,7 @@ class ProgressiveCurriculumEngine:
                     "Respeta exactamente las semanas bloqueadas.",
                     "Aplica la triple coherencia sin volverla literal: fase del metodo + operacion sobre conocimiento + habilidad + tecnica + evidencia.",
                     "El PA es horizonte integrador del curso, no una entrega semanal. No conviertas todas las evidencias en PA.",
-                    "Solo las semanas listadas en static_context.pa_milestones son semanas PA/hito. En esas semanas, la evidencia puede iniciar con PA1, PA2, etc. y debe nombrar el objeto concreto.",
+                    "static_context.pa_milestones proviene de la matriz de evaluacion del docente y es AUTORITATIVO. En EXACTAMENTE esas semanas la evidencia DEBE ser el avance sumativo correspondiente (PA1, PA2, ...), nombrando el objeto concreto. No muevas un PA a otra semana, no adelantes ni atrases hitos y no omitas ninguno.",
                     "En semanas que NO aparecen en pa_milestones, la evidencia debe ser formativa y breve: ficha, matriz, registro, borrador, reporte breve, lista de cotejo o bitacora. Prohibido iniciar con PA1, PA2, PAFinal o 'avance acreditable'.",
                     "El objeto de trabajo puede orientar el contexto, pero no lo pegues al final de cada actividad o evidencia. Mencionalo solo cuando sea natural o cuando la semana sea PA/hito.",
                     "No termines repetidamente evidencias con frases como 'para/sobre/orientado a' + central_work_object.",

@@ -720,6 +720,24 @@ export interface GradingRow {
   sigla: string;
   porcentaje: number;
   cronograma: string;
+  /** Catálogo elegido al agregar la fila (null = fila libre). SPEC-08 8a/8c. */
+  preset_id?: string;
+}
+
+/** Modo de evaluación. 'global' = tabla plana (suma 100). 'per_unit' = matriz por unidad. SPEC-08 8b. */
+export type GradingMode = 'global' | 'per_unit';
+
+/**
+ * Unidad de la matriz por unidad (SPEC-08 8b). N unidades = nro de perfomances.
+ * `weight_pct` es la cuota global de la unidad en la nota final; los `rows`
+ * internos son sub-pesos que suman 100 DENTRO de la unidad.
+ */
+export interface GradingUnit {
+  unit_index: number;
+  unit_label: string;
+  performance_id?: string;
+  weight_pct: number;
+  rows: GradingRow[];
 }
 
 export interface GradingBlock {
@@ -728,6 +746,22 @@ export interface GradingBlock {
   total_percent: number;
   teacher_notes: string;
   approval_state: StepBlockStatus;
+  /** SPEC-08 8b. Ausente o 'global' en drafts legacy. */
+  mode?: GradingMode;
+  /** SPEC-08 8b. Presente solo si mode==='per_unit'. */
+  units?: GradingUnit[];
+  /** SPEC-08 8b. Filas transversales (TA/Permanente) en modo per_unit. */
+  transversal?: GradingRow[];
+}
+
+/** Catálogo administrable de items de evaluación (SPEC-08 8c). program_id null = global. */
+export interface EvaluationItemPreset {
+  id: string;
+  sigla: string;
+  nombre: string;
+  pct_sugerido?: number | null;
+  program_id?: string | null;
+  activo?: boolean;
 }
 
 export interface BiblioBlock {

@@ -2,13 +2,16 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { api } from '../api/client';
 import type {
   CourseDetail,
+  GradingMode,
   GradingRow,
+  GradingUnit,
   HabilidadPorDesempeno,
   SuggestedPerformance,
   WorkflowState,
 } from '../api/types';
 import { useToast } from '../components/Toast';
 import { useAppContext } from '../hooks/useAppContext';
+import { buildAccreditableRows } from '../pages/creator/gradingModel';
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -79,6 +82,12 @@ interface SyllabusCtxValue {
   // Grading
   gradingRows: GradingRow[];
   setGradingRows: React.Dispatch<React.SetStateAction<GradingRow[]>>;
+  gradingMode: GradingMode;
+  setGradingMode: React.Dispatch<React.SetStateAction<GradingMode>>;
+  gradingUnits: GradingUnit[];
+  setGradingUnits: React.Dispatch<React.SetStateAction<GradingUnit[]>>;
+  gradingTransversal: GradingRow[];
+  setGradingTransversal: React.Dispatch<React.SetStateAction<GradingRow[]>>;
   gradingOrigin: GradingOrigin;
   setGradingOrigin: React.Dispatch<React.SetStateAction<GradingOrigin>>;
   gradingNotes: string;
@@ -161,13 +170,12 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
   const [selectedMethodSequence, setSelectedMethodSequence] = useState('');
   const [methodNotes, setMethodNotes] = useState('');
 
-  const [gradingRows, setGradingRows] = useState<GradingRow[]>([
-    { evidencia: 'Tareas', sigla: 'TA', porcentaje: 15, cronograma: 'Permanente' },
-    { evidencia: 'Producto Acreditable 1', sigla: 'PA1', porcentaje: 15, cronograma: 'Semana 4' },
-    { evidencia: 'Producto Acreditable 2', sigla: 'PA2', porcentaje: 20, cronograma: 'Semana 8' },
-    { evidencia: 'Examen Parcial', sigla: 'EP', porcentaje: 15, cronograma: 'Semana 12' },
-    { evidencia: 'Producto Acreditable 3', sigla: 'PA3', porcentaje: 35, cronograma: 'Semana 16' },
-  ]);
+  // Default desde la única fuente buildAccreditableRows (SPEC-08 8b): evita la
+  // divergencia previa entre este default y el de Step6.
+  const [gradingRows, setGradingRows] = useState<GradingRow[]>(() => buildAccreditableRows(3));
+  const [gradingMode, setGradingMode] = useState<GradingMode>('global');
+  const [gradingUnits, setGradingUnits] = useState<GradingUnit[]>([]);
+  const [gradingTransversal, setGradingTransversal] = useState<GradingRow[]>([]);
   const [gradingOrigin, setGradingOrigin] = useState<GradingOrigin>('none');
   const [gradingNotes, setGradingNotes] = useState('');
 
@@ -261,6 +269,9 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
         setGradingRows(g.rows as GradingRow[]);
         setGradingOrigin((g.template_origin as GradingOrigin) || 'none');
         setGradingNotes((g.teacher_notes as string) || '');
+        setGradingMode((g.mode as GradingMode) === 'per_unit' ? 'per_unit' : 'global');
+        setGradingUnits(Array.isArray(g.units) ? (g.units as GradingUnit[]) : []);
+        setGradingTransversal(Array.isArray(g.transversal) ? (g.transversal as GradingRow[]) : []);
       }
 
       const b = pl.bibliography;
@@ -343,6 +354,9 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
     selectedMethodSequence, setSelectedMethodSequence,
     methodNotes, setMethodNotes,
     gradingRows, setGradingRows,
+    gradingMode, setGradingMode,
+    gradingUnits, setGradingUnits,
+    gradingTransversal, setGradingTransversal,
     gradingOrigin, setGradingOrigin,
     gradingNotes, setGradingNotes,
     assembled, setAssembled,

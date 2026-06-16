@@ -2670,6 +2670,159 @@ class SupabaseService:
             return False
 
     # ══════════════════════════════════════════════════════════════
+    # SPEC-08 8c — EVALUATION ITEM PRESETS (catálogo de items)
+    # ══════════════════════════════════════════════════════════════
+
+    def _mapear_evaluation_preset(self, fila) -> dict:
+        item = dict(fila)
+        for campo in ("id", "program_id", "created_by"):
+            if item.get(campo) is not None:
+                item[campo] = str(item[campo])
+        for campo in ("created_at", "updated_at"):
+            if campo in item:
+                item[campo] = self._serializar_fecha(item.get(campo))
+        return item
+
+    def _listar_evaluation_presets_sync(
+        self, program_id: Optional[str] = None, include_inactive: bool = False
+    ) -> list:
+        conditions = [] if include_inactive else ["activo = true"]
+        params: dict = {}
+        if program_id:
+            # Presets globales (program_id NULL) + los del programa pedido.
+            conditions.append("(program_id IS NULL OR program_id = :pid)")
+            params["pid"] = program_id
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        with self._Session() as sesion:
+            filas = sesion.execute(
+                text(f"""
+                    SELECT id, sigla, nombre, pct_sugerido, program_id, activo,
+                           created_by, created_at, updated_at
+                    FROM evaluation_item_presets
+                    {where}
+                    ORDER BY program_id NULLS FIRST, sigla ASC
+                """),
+                params,
+            ).mappings().all()
+        return [self._mapear_evaluation_preset(f) for f in filas]
+
+    async def listar_evaluation_presets(
+        self, program_id: Optional[str] = None, include_inactive: bool = False
+    ) -> list:
+        try:
+            return await self._ejecutar(
+                self._listar_evaluation_presets_sync, program_id, include_inactive
+            )
+        except Exception as e:
+            logger.error(f"Error al listar evaluation_item_presets: {e}")
+            return []
+
+    def _obtener_evaluation_preset_sync(self, preset_id: str) -> Optional[dict]:
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    SELECT id, sigla, nombre, pct_sugerido, program_id, activo,
+                           created_by, created_at, updated_at
+                    FROM evaluation_item_presets WHERE id = :id
+                """),
+                {"id": preset_id},
+            ).mappings().first()
+        return self._mapear_evaluation_preset(fila) if fila else None
+
+    async def obtener_evaluation_preset(self, preset_id: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._obtener_evaluation_preset_sync, preset_id)
+        except Exception as e:
+            logger.error(f"Error al obtener evaluation_item_preset {preset_id}: {e}")
+            return None
+
+    def _crear_evaluation_preset_sync(self, data: dict, changed_by: str) -> Optional[dict]:
+        pid = str(uuid.uuid4())
+        with self._Session() as sesion:
+            fila = sesion.execute(
+                text("""
+                    INSERT INTO evaluation_item_presets
+                        (id, sigla, nombre, pct_sugerido, program_id, created_by)
+                    VALUES (:id, :sigla, :nombre, :pct, :program_id, :by)
+                    RETURNING id, sigla, nombre, pct_sugerido, program_id, activo,
+                              created_by, created_at, updated_at
+                """),
+                {
+                    "id": pid,
+                    "sigla": data.get("sigla"),
+                    "nombre": data.get("nombre"),
+                    "pct": data.get("pct_sugerido"),
+                    "program_id": data.get("program_id"),
+                    "by": changed_by,
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._mapear_evaluation_preset(fila) if fila else None
+
+    async def crear_evaluation_preset(self, data: dict, changed_by: str) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._crear_evaluation_preset_sync, data, changed_by)
+        except Exception as e:
+            logger.error(f"Error al crear evaluation_item_preset: {e}")
+            return None
+
+    def _actualizar_evaluation_preset_sync(self, preset_id: str, data: dict) -> Optional[dict]:
+        with self._Session() as sesion:
+            previo = sesion.execute(
+                text("SELECT id FROM evaluation_item_presets WHERE id = :id"),
+                {"id": preset_id},
+            ).first()
+            if not previo:
+                return None
+            fila = sesion.execute(
+                text("""
+                    UPDATE evaluation_item_presets
+                    SET sigla = COALESCE(:sigla, sigla),
+                        nombre = COALESCE(:nombre, nombre),
+                        pct_sugerido = COALESCE(:pct, pct_sugerido),
+                        program_id = COALESCE(:program_id, program_id),
+                        activo = COALESCE(:activo, activo),
+                        updated_at = now()
+                    WHERE id = :id
+                    RETURNING id, sigla, nombre, pct_sugerido, program_id, activo,
+                              created_by, created_at, updated_at
+                """),
+                {
+                    "id": preset_id,
+                    "sigla": data.get("sigla"),
+                    "nombre": data.get("nombre"),
+                    "pct": data.get("pct_sugerido"),
+                    "program_id": data.get("program_id"),
+                    "activo": data.get("activo"),
+                },
+            ).mappings().first()
+            sesion.commit()
+        return self._mapear_evaluation_preset(fila) if fila else None
+
+    async def actualizar_evaluation_preset(self, preset_id: str, data: dict) -> Optional[dict]:
+        try:
+            return await self._ejecutar(self._actualizar_evaluation_preset_sync, preset_id, data)
+        except Exception as e:
+            logger.error(f"Error al actualizar evaluation_item_preset {preset_id}: {e}")
+            return None
+
+    def _eliminar_evaluation_preset_sync(self, preset_id: str) -> bool:
+        with self._Session() as sesion:
+            res = sesion.execute(
+                text("UPDATE evaluation_item_presets SET activo = false, updated_at = now() WHERE id = :id"),
+                {"id": preset_id},
+            )
+            sesion.commit()
+        return res.rowcount > 0
+
+    async def eliminar_evaluation_preset(self, preset_id: str) -> bool:
+        try:
+            return await self._ejecutar(self._eliminar_evaluation_preset_sync, preset_id)
+        except Exception as e:
+            logger.error(f"Error al eliminar evaluation_item_preset {preset_id}: {e}")
+            return False
+
+    # ══════════════════════════════════════════════════════════════
     # SKILLS (admin CRUD sobre skills_catalog)
     # ══════════════════════════════════════════════════════════════
 

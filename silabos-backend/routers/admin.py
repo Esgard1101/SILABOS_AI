@@ -7,12 +7,15 @@ from auth.permissions import (
     get_current_user_record,
     get_user_scopes,
     require_permission,
+    require_permission_or_roles,
     require_roles,
     check_course_scope,
 )
 from main import servicios
 from models.schemas import (
     CourseCurriculumUpdate,
+    EvaluationPresetCreate,
+    EvaluationPresetUpdate,
     MethodSkillLinkCreate,
     MethodSkillLinkUpdate,
     PerformanceCreate,
@@ -226,6 +229,84 @@ async def archive_teaching_method(
     if not ok:
         raise HTTPException(status_code=404, detail="Método no encontrado")
     return {"success": True, "data": None, "error": None}
+
+
+# ── SPEC-08 8c · Catálogo de items de evaluación ─────────────
+
+def _assert_preset_scope(user: dict, program_id, user_scopes: list) -> None:
+    """admin: todo. director/coordinador: solo presets de su programa (no globales)."""
+    if user.get("role") == "admin":
+        return
+    if not program_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo admin puede gestionar presets globales",
+        )
+    scope_program_ids = {s["scope_id"] for s in user_scopes if s["scope_type"] == "program"}
+    if str(program_id) not in scope_program_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Fuera de tu scope de programa",
+        )
+
+
+@router.get("/evaluation-presets")
+async def list_evaluation_presets(
+    program_id: Optional[str] = Query(default=None),
+    include_inactive: bool = Query(default=False),
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Lectura abierta a cualquier usuario activo: el wizard la usa para el selector."""
+    supabase = _get_supabase()
+    items = await supabase.listar_evaluation_presets(program_id, include_inactive)
+    return {"success": True, "data": {"items": items}, "error": None}
+
+
+@router.post("/evaluation-presets")
+async def create_evaluation_preset(
+    payload: EvaluationPresetCreate,
+    current_user: dict = Depends(require_permission_or_roles("catalog.evaluation.manage", "director", "coordinador")),
+    user_scopes: list = Depends(get_user_scopes),
+):
+    _assert_preset_scope(current_user, payload.program_id, user_scopes)
+    supabase = _get_supabase()
+    item = await supabase.crear_evaluation_preset(payload.model_dump(), str(current_user["id"]))
+    if not item:
+        raise HTTPException(status_code=500, detail="No se pudo crear el preset")
+    return {"success": True, "data": item, "error": None}
+
+
+@router.put("/evaluation-presets/{preset_id}")
+async def update_evaluation_preset(
+    preset_id: str,
+    payload: EvaluationPresetUpdate,
+    current_user: dict = Depends(require_permission_or_roles("catalog.evaluation.manage", "director", "coordinador")),
+    user_scopes: list = Depends(get_user_scopes),
+):
+    supabase = _get_supabase()
+    existing = await supabase.obtener_evaluation_preset(preset_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Preset no encontrado")
+    _assert_preset_scope(current_user, existing.get("program_id"), user_scopes)
+    if payload.program_id is not None:
+        _assert_preset_scope(current_user, payload.program_id, user_scopes)
+    item = await supabase.actualizar_evaluation_preset(preset_id, payload.model_dump(exclude_none=True))
+    return {"success": True, "data": item, "error": None}
+
+
+@router.delete("/evaluation-presets/{preset_id}")
+async def delete_evaluation_preset(
+    preset_id: str,
+    current_user: dict = Depends(require_permission_or_roles("catalog.evaluation.manage", "director", "coordinador")),
+    user_scopes: list = Depends(get_user_scopes),
+):
+    supabase = _get_supabase()
+    existing = await supabase.obtener_evaluation_preset(preset_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Preset no encontrado")
+    _assert_preset_scope(current_user, existing.get("program_id"), user_scopes)
+    ok = await supabase.eliminar_evaluation_preset(preset_id)
+    return {"success": True, "data": {"archived": ok}, "error": None}
 
 
 # ── Vínculos método ↔ habilidad ──────────────────────────────

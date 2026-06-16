@@ -25,6 +25,7 @@
   InstitutionalSkillsResponse,
   LoginRequest,
   LoginResponse,
+  EvaluationItemPreset,
   MethodItem,
   MethodSkillLink,
   MethodSuggest,
@@ -598,6 +599,37 @@ export const api = {
   restoreMethod: (methodId: string) =>
     request<APIResponse>(`/api/admin/teaching-methods/${encodeURIComponent(methodId)}/restore`, {
       method: 'POST',
+    }),
+
+  // ── Admin — Evaluation item presets (SPEC-08 8c) ──────────────────────────
+
+  listEvaluationPresets: (programId?: string | null, includeInactive = false) => {
+    const params = new URLSearchParams();
+    if (programId) params.set('program_id', programId);
+    if (includeInactive) params.set('include_inactive', 'true');
+    const q = params.toString();
+    return request<APIResponse<{ items: EvaluationItemPreset[] }>>(
+      `/api/admin/evaluation-presets${q ? `?${q}` : ''}`,
+    );
+  },
+
+  createEvaluationPreset: (data: Partial<EvaluationItemPreset>) =>
+    request<APIResponse<EvaluationItemPreset>>('/api/admin/evaluation-presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  updateEvaluationPreset: (presetId: string, data: Partial<EvaluationItemPreset>) =>
+    request<APIResponse<EvaluationItemPreset>>(`/api/admin/evaluation-presets/${encodeURIComponent(presetId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  deleteEvaluationPreset: (presetId: string) =>
+    request<APIResponse>(`/api/admin/evaluation-presets/${encodeURIComponent(presetId)}`, {
+      method: 'DELETE',
     }),
 
   // ── Admin — Method-Skill Links ────────────────────────────────────────────

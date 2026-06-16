@@ -85,6 +85,7 @@ Audit shape (`audit_json`):
 - Multi-agent unit memory (`approved_unit_memory`) is included in `traceability_context` so unit N+1 avoids repeating activities/evidences/redaction of unit N.
 - The unit prompt receives `mandatory_knowledge_by_week` as a hard rule; `_normalize_unit_weeks` enforces the mandatory `knowledge` value even if AI tries to override it.
 - Existing syllabi without confirmed map are blocked from generating new units until they create and confirm one.
+- Step9 UI (approved): the 16 `WeekCard` use the shared liquid-glass card style (`rounded-3xl`, `bg-white/[0.06]`, `backdrop-blur-xl`, hover lift + cyan border), consistent with the Step7 product cards (see [02_PRODUCT_EVALUATION_HORIZON.md](02_PRODUCT_EVALUATION_HORIZON.md), SPEC-07). State semantics are unchanged (empty=rose, soft warning=amber, locked=cyan ring, confirmed=no hover). Cosmetic only: card info, edit/lock/reprompt/confirm logic untouched. Do not revert to the flat `bg-[#0B192C]` rows.
 
 ## Known Risks And Anti-Patterns
 

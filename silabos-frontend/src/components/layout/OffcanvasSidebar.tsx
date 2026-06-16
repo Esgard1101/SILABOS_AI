@@ -52,6 +52,7 @@ const ADMIN_EXTRA_NAV_ITEMS: NavItem[] = [
   { path: '/admin/sumillas', label: 'Gestion de Sumillas', icon: PenSquare },
   { path: '/admin/methods', label: 'Metodologias', icon: BrainCircuit },
   { path: '/admin/skills', label: 'Habilidades', icon: GraduationCap },
+  { path: '/admin/evaluation-presets', label: 'Items de Evaluacion', icon: ClipboardCheck },
   { path: '/admin/curriculum', label: 'Curriculum', icon: ClipboardCheck },
 ];
 

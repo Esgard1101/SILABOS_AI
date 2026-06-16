@@ -324,6 +324,24 @@ class TeachingMethodUpdate(BaseModel):
 
 
 # ─────────────────────────────────────────────
+# SPEC-08 8c — Catálogo de items de evaluación
+# ─────────────────────────────────────────────
+class EvaluationPresetCreate(BaseModel):
+    sigla: str = Field(..., min_length=1, max_length=12)
+    nombre: str = Field(..., min_length=2)
+    pct_sugerido: Optional[int] = Field(default=None, ge=0, le=100)
+    program_id: Optional[str] = None  # None = preset global (solo admin)
+
+
+class EvaluationPresetUpdate(BaseModel):
+    sigla: Optional[str] = Field(default=None, min_length=1, max_length=12)
+    nombre: Optional[str] = Field(default=None, min_length=2)
+    pct_sugerido: Optional[int] = Field(default=None, ge=0, le=100)
+    program_id: Optional[str] = None
+    activo: Optional[bool] = None
+
+
+# ─────────────────────────────────────────────
 # ITERACIÓN 1 — Skills Admin
 # ─────────────────────────────────────────────
 class SkillCreate(BaseModel):
