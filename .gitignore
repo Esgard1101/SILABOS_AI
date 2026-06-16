@@ -1,0 +1,53 @@
+# ============================================================
+# Root .gitignore — secret & noise hardening (public repo)
+# Sub-projects keep their own .gitignore too; this is belt-and-suspenders.
+# ============================================================
+
+# --- Secrets / env (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.env
+.env.local
+.env.*.local
+
+# MCP / local agent config (may contain tokens or project refs)
+.mcp.json
+.mcp.local.json
+
+# Credentials / keys
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+**/credentials
+database/credentials
+secrets/
+*.secret
+
+# AI usage / logs
+ai_usage.jsonl
+*.log
+
+# --- Dependencies / build ---
+node_modules/
+dist/
+build/
+coverage/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.venv/
+.pytest_cache/
+
+# --- Editor / OS ---
+.DS_Store
+.vercel
+.idea/
+*.swp
+
+# --- Local-only artifacts (uncomment if you don't want them tracked) ---
+# hackathon-bases-2026.pdf
