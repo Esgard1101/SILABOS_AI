@@ -153,7 +153,7 @@ export default function SyllabusFinalDelivery() {
         if (stored && storedId === queryId) {
           setSyllabus(stored);
         } else {
-          showToast(getResponseErrorMessage(error, 'No se pudo cargar el silabo generado'), 'error');
+          showToast(getResponseErrorMessage(error, 'No se pudo cargar el sílabo generado'), 'error');
         }
       } finally {
         if (active) {
@@ -227,7 +227,7 @@ export default function SyllabusFinalDelivery() {
               Entrega final
             </p>
             <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-normal text-slate-950 sm:text-5xl">
-              Tu silabo esta listo
+              Tu sílabo está listo
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
               Descarga el documento oficial o inicia un nuevo flujo cuando lo necesites.
@@ -246,25 +246,25 @@ export default function SyllabusFinalDelivery() {
               title="Descargar Word"
               helper="Archivo DOCX editable para entrega, ajustes finos o respaldo institucional."
               image="/descargarword.png"
-              alt="Descargar silabo en Word"
+              alt="Descargar sílabo en Word"
               busy={downloading === 'docx'}
               actionLabel="Descargar Word"
               onClick={() => handleDownload('docx')}
             />
             <DeliveryActionCard
               title="Descargar PDF"
-              helper="Version PDF lista para compartir, revisar o subir al aula virtual."
+              helper="Versión PDF lista para compartir, revisar o subir al aula virtual."
               image="/descargarPDF.png"
-              alt="Descargar silabo en PDF"
+              alt="Descargar sílabo en PDF"
               busy={downloading === 'pdf'}
               actionLabel="Descargar PDF"
               onClick={() => handleDownload('pdf')}
             />
             <DeliveryActionCard
-              title="Crear nuevo silabo"
-              helper="Vuelve al flujo de creacion con el contexto correcto para el siguiente curso."
+              title="Crear nuevo sílabo"
+              helper="Vuelve al flujo de creación con el contexto correcto para el siguiente curso."
               image="/crearnuevosilaboflujofinal.png"
-              alt="Crear nuevo silabo"
+              alt="Crear nuevo sílabo"
               actionLabel="Crear nuevo"
               onClick={handleCreateNew}
             />

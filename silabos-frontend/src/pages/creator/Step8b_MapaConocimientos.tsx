@@ -164,12 +164,12 @@ function VideoModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       size="lg"
       eyebrow="NotebookLM"
-      title="Guia rapida para traer el consolidado"
+      title="Guía rápida para traer el consolidado"
       description="Por ahora se muestra una imagen placeholder. Sera reemplazada por el video definitivo."
     >
       <img
         src={NOTEBOOK_VIDEO_PLACEHOLDER}
-        alt="Guia visual NotebookLM"
+        alt="Guía visual NotebookLM"
         className="aspect-video w-full border border-white/10 bg-black object-cover"
       />
     </GlassModal>
@@ -625,7 +625,7 @@ function RepromptDialog({
 
       <label className="block">
         <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">
-          Instruccion docente
+          Instrucción docente
         </span>
         <textarea
           value={instruction}
@@ -859,7 +859,7 @@ export default function Step8b_MapaConocimientos() {
       return;
     }
     if (!repromptInstruction.trim()) {
-      showToast('Escribe una instruccion para la IA', 'warning');
+      showToast('Escribe una instrucción para la IA', 'warning');
       return;
     }
     setLoading(true);
@@ -957,12 +957,12 @@ export default function Step8b_MapaConocimientos() {
               Paso {stepCurrent} de {stepTotal} - Mapa Semanal de Conocimientos
             </p>
             <h1 className="font-playfair text-2xl font-bold text-white">
-              {screen === 'context' ? 'Trae tu consolidado de NotebookLM' : 'Linea de tiempo - 16 semanas'}
+              {screen === 'context' ? 'Trae tu consolidado de NotebookLM' : 'Línea de tiempo - 16 semanas'}
             </h1>
             <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/62">
               {screen === 'context'
-                ? 'Pantalla 1 de 2. Lleva el prompt a NotebookLM, trae el consolidado disciplinar y pegalo aqui antes de generar el mapa.'
-                : 'Pantalla 2 de 2. Esta es la verdad curricular del curso. Una vez confirmado, el motor de unidades respetara estos conocimientos exactos.'}
+                ? 'Pantalla 1 de 2. Lleva el prompt a NotebookLM, trae el consolidado disciplinar y pégalo aquí antes de generar el mapa.'
+                : 'Pantalla 2 de 2. Esta es la verdad curricular del curso. Una vez confirmado, el motor de unidades respetará estos conocimientos exactos.'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1018,7 +1018,7 @@ export default function Step8b_MapaConocimientos() {
               <button
                 type="button"
                 onClick={() => setVideoModalOpen(true)}
-                title="Ver guia visual de NotebookLM"
+                title="Ver guía visual de NotebookLM"
                 className="flex h-20 w-20 shrink-0 items-center justify-center transition hover:brightness-110"
               >
                 <img
@@ -1030,12 +1030,12 @@ export default function Step8b_MapaConocimientos() {
 
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#E9B44C]">
-                  Como llenar esta pantalla
+                  Cómo llenar esta pantalla
                 </p>
                 <ol className="mt-2 list-inside list-decimal space-y-1 text-[12px] leading-5 text-white/72">
-                  <li>Copia el prompt y pegalo en NotebookLM con tus fuentes oficiales del curso.</li>
-                  <li>Trae el consolidado disciplinar y pegalo en el textarea de abajo.</li>
-                  <li>Genera el mapa para pasar a la pantalla 2 con la linea de tiempo de 16 semanas.</li>
+                  <li>Copia el prompt y pégalo en NotebookLM con tus fuentes oficiales del curso.</li>
+                  <li>Trae el consolidado disciplinar y pégalo en el cuadro de abajo.</li>
+                  <li>Genera el mapa para pasar a la pantalla 2 con la línea de tiempo de 16 semanas.</li>
                 </ol>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1062,7 +1062,7 @@ export default function Step8b_MapaConocimientos() {
                     className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap border border-white/10 bg-[#0B192C] px-3 text-[11px] font-bold text-white/55 transition hover:border-[#E9B44C]/45 hover:text-[#E9B44C]"
                   >
                     <Eye size={13} />
-                    Ver guia visual
+                    Ver guía visual
                   </button>
                 </div>
               </div>
@@ -1077,7 +1077,7 @@ export default function Step8b_MapaConocimientos() {
                 <span
                   className={`font-jetbrains text-[10px] ${contextReady ? 'text-emerald-300' : 'text-[#E9B44C]'}`}
                 >
-                  {notebookContext.trim().length}/{MIN_NOTEBOOK_CHARS} caracteres minimos
+                  {notebookContext.trim().length}/{MIN_NOTEBOOK_CHARS} caracteres mínimos
                 </span>
               </div>
               <textarea
@@ -1086,7 +1086,7 @@ export default function Step8b_MapaConocimientos() {
                 rows={10}
                 disabled={!canEditNotebookContext}
                 className="w-full resize-none border border-white/10 bg-[#0B192C] px-3 py-3 text-[12px] leading-5 text-white outline-none placeholder:text-white/24 focus:border-[#00B4D8]/60 disabled:opacity-60"
-                placeholder="Pega aqui el consolidado de NotebookLM (temas, casos, secuencia disciplinar) o apuntes docentes."
+                placeholder="Pega aquí el consolidado de NotebookLM (temas, casos, secuencia disciplinar) o apuntes docentes."
               />
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button

@@ -651,7 +651,7 @@ export default function Step2_Fuentes() {
 
       showToast(`${parsedRefs.length} fuentes importadas desde NotebookLM`, 'success');
     } catch {
-      showToast('El bloque no tiene un formato valido. Vuelve a copiarlo completo desde NotebookLM.', 'error');
+      showToast('El bloque no tiene un formato válido. Vuelve a copiarlo completo desde NotebookLM.', 'error');
     } finally {
       setImportingNotebookText(false);
     }
@@ -791,7 +791,7 @@ export default function Step2_Fuentes() {
               Fuentes del curso y soporte documental
             </h1>
             <p className="mt-1 max-w-[58rem] text-[11px] text-white/60">
-              Gestiona las fuentes del curso con NotebookLM o curaduria asistida por IA. Revisa la tabla antes de continuar.
+              Gestiona las fuentes del curso con NotebookLM o curaduría asistida por IA. Revisa la tabla antes de continuar.
             </p>
           </div>
 
@@ -808,13 +808,13 @@ export default function Step2_Fuentes() {
               </div>
 
               <p className="mt-3 text-[11px] leading-5 text-white/60">
-                Usa la guia visual para preparar el cuaderno en NotebookLM y traer sus fuentes a SIGEISIL.
+                Usa la guía visual para preparar el cuaderno en NotebookLM y traer sus fuentes a SIGEISIL.
               </p>
 
               <div className="mt-3">
                 <ActionVisualCard
                   title="Abrir roadmap NotebookLM"
-                  description="Guia visual para cargar fuentes en NotebookLM y traerlas a SIGEISIL."
+                  description="Guía visual para cargar fuentes en NotebookLM y traerlas a SIGEISIL."
                   imageSrc={SOURCE_ACTION_ICONS.notebook}
                   imageAlt="NotebookLM"
                   onClick={() => navigate('/creator/fuentes/notebook')}
@@ -827,7 +827,7 @@ export default function Step2_Fuentes() {
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold text-white">Pegar bloque de fuentes de NotebookLM</p>
                     <p className="mt-1 text-[10px] leading-5 text-white/55">
-                      Usa el roadmap, copia la respuesta generada por NotebookLM y pegala aqui para llenar la tabla.
+                      Usa el roadmap, copia la respuesta generada por NotebookLM y pégala aquí para llenar la tabla.
                     </p>
                   </div>
                   <span className="shrink-0 rounded-full bg-[#A8D8A8]/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#A8D8A8]">
@@ -838,13 +838,13 @@ export default function Step2_Fuentes() {
                 <textarea
                   value={notebookImportText}
                   onChange={(event) => setNotebookImportText(event.target.value)}
-                  placeholder="Pega aqui el bloque completo generado por NotebookLM."
+                  placeholder="Pega aquí el bloque completo generado por NotebookLM."
                   className="mt-3 min-h-[104px] w-full resize-y rounded-xl border border-[#A8D8A8]/18 bg-[#061F45] px-3 py-2 text-[10.5px] leading-5 text-white outline-none placeholder:text-white/28 focus:border-[#A8D8A8]/45 focus:ring-1 focus:ring-[#A8D8A8]/15"
                 />
 
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="max-w-[25rem] text-[9.5px] leading-4 text-white/42">
-                    No necesitas editar el texto. SIGEISIL extrae las fuentes y marca para revision las incompletas.
+                    No necesitas editar el texto. SIGEISIL extrae las fuentes y marca para revisión las incompletas.
                   </p>
                   <button
                     type="button"
@@ -961,7 +961,7 @@ export default function Step2_Fuentes() {
               </div>
 
               <p className="mt-3 text-[11px] leading-5 text-white/60">
-                Solicita sugerencias academicas verificables segun el curso. Los resultados se agregan a la tabla para revision docente.
+                Solicita sugerencias académicas verificables según el curso. Los resultados se agregan a la tabla para revisión docente.
               </p>
 
               <div className="mt-3">
@@ -1020,7 +1020,7 @@ export default function Step2_Fuentes() {
                 <div>
                   <p className="text-[13px] font-semibold text-white">Fuentes activas del curso</p>
                   <p className="mt-0.5 text-[10px] text-white/55">
-                    Revisa, consulta o elimina las fuentes que se usaran en el silabo.
+                    Revisa, consulta o elimina las fuentes que se usarán en el sílabo.
                   </p>
                 </div>
               </div>
@@ -1046,7 +1046,7 @@ export default function Step2_Fuentes() {
               <div className="mt-3 rounded-2xl border border-dashed border-white/14 bg-[#041A3A]/80 px-5 py-8 text-center">
                 <p className="text-[13px] font-semibold text-white">Aún no hay fuentes activas en la tabla</p>
                 <p className="mx-auto mt-2 max-w-[40rem] text-[11px] leading-5 text-white/52">
-                  Pega el bloque generado por NotebookLM o ejecuta la curaduria IA. En cuanto haya datos, esta tabla se llenara automaticamente.
+                  Pega el bloque generado por NotebookLM o ejecuta la curaduría IA. En cuanto haya datos, esta tabla se llenará automáticamente.
                 </p>
               </div>
             ) : (
@@ -1132,7 +1132,7 @@ export default function Step2_Fuentes() {
             )}
 
             <p className="mt-3 text-[10px] leading-5 text-[#D4A351]/72">
-              Estas fuentes seran consideradas por SIGEISIL para construir los siguientes pasos del silabo.
+              Estas fuentes serán consideradas por SIGEISIL para construir los siguientes pasos del sílabo.
             </p>
           </section>
 

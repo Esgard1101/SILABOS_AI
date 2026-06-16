@@ -72,12 +72,12 @@ function NotebookHelpModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       size="lg"
       eyebrow="NotebookLM"
-      title="Guia para traer el consolidado del producto"
-      description="Copia el prompt, pegalo en NotebookLM y trae el consolidado para que la IA proponga productos con objeto de trabajo."
+      title="Guía para traer el consolidado del producto"
+      description="Copia el prompt, pégalo en NotebookLM y trae el consolidado para que la IA proponga productos con objeto de trabajo."
     >
       <img
         src={NOTEBOOK_VIDEO_PLACEHOLDER}
-        alt="Guia visual NotebookLM"
+        alt="Guía visual NotebookLM"
         className="aspect-video w-full bg-black object-cover"
       />
       <p className="mt-3 text-[11px] leading-5 text-white/58">
@@ -551,7 +551,7 @@ export default function Step7_ProductoIntegrador() {
             <button
               type="button"
               onClick={() => setNotebookHelpOpen(true)}
-              title="Ver guia visual de NotebookLM"
+              title="Ver guía visual de NotebookLM"
               className="h-14 w-14 shrink-0 transition hover:brightness-110"
             >
               <img src={NOTEBOOK_ICON} alt="NotebookLM" className="h-14 w-14 object-contain" />
@@ -561,7 +561,7 @@ export default function Step7_ProductoIntegrador() {
                 Subir consolidado de Notebook para plantear producto
               </p>
               <p className="mt-1 text-[10px] leading-4 text-white/45">
-                Pega aqui la recomendacion investigada para que el motor proponga productos con grounding disciplinar.
+                Pega aquí la recomendación investigada para que el motor proponga productos con grounding disciplinar.
               </p>
             </div>
           </div>

@@ -109,6 +109,20 @@ Reemplaza por completo las filas/tabla de opciones del Step7. Incluye dedupe de 
 Módulo fuera del wizard: guía redactable para estudiantes del producto acreditable, estructuras precargadas por metodología, APA 7, generación IA por sección con Human-in-the-loop, export DOCX propio (NO toca el DOCX del sílabo).
 - **Depende de:** T2 (GlassModal), producto seleccionado existente. Gatillo de degradación real → 3 sub-slices verticales (T9a estructura+editor, T9b IA por sección, T9c export).
 
+### ÉPICA 5 — Ronda QA post-SPEC-08
+
+**T10 — Correcciones QA: ortografía + selector + modal RSU + textos dev (sub-slices a/b/c/d)** → [SPEC-10](SPEC-10_QA_CORRECCIONES.md)
+T10a ortografía en strings estáticos de UI (no IA, no payload) · T10b limpieza del selector de cursos vía SQL manual del owner (+ filtro defensivo opcional) · T10c reemplaza el textarea apretado de RSU por `GlassModal` editor amplio en Step Habilidades y SyllabusEditor · T10d barrido global de textos dev/placeholder visibles al usuario (crítico hackathon).
+- **Depende de:** T2 (GlassModal). "Matriz de evidencias" del listado QA = ya cerrada (SPEC-08); NO entra aquí. T10d comparte limpieza con T11.
+
+**T11 — Roadmap NotebookLM: timeline vertical + botón "Ir a NotebookLM" + paso obligatorio** → [SPEC-11](SPEC-11_ROADMAP_NOTEBOOK.md)
+Rediseño del roadmap a **timeline vertical de 1 dirección** (público 30-49), 6 cards → 5 pasos consolidados, progreso marcable. La card "Crear cuaderno" deja de auto-abrir la pestaña; el botón "Ir a NotebookLM" vive dentro del `PromptVideoModal`. Step Fuentes se vuelve **obligatorio** (gate: quitar "Omitir", bloquear "CONTINUAR" hasta ≥1 fuente) porque los motores de generación de unidades dependen de NotebookLM.
+- **Depende de:** T2, Step2_Fuentes + Step2A_NotebookGuide. Hacer T10d antes/junto.
+
+**T13 — Producto Acreditable con HITL: cuestionario antes de generar** → [SPEC-13](SPEC-13_PRODUCTOS_HITL.md)
+Gemela del RSU HITL (T10c) aplicada a productos. Antes de que la IA proponga las 3 opciones, un `GlassModal` con 4 inputs (tipo/vínculo/alcance/formato) + 3-4 preguntas a medida (opciones cerradas + idea propia) generadas desde curso+método+grading+fuentes NotebookLM. Endpoint nuevo `products/questions` + `products/suggest` extendido con `hitl` opcional (sin romper el flujo legacy). NO rediseña el Step7 estable.
+- **Depende de:** T2, Step7 (SPEC-07 DONE), Fuentes obligatorio (SPEC-11). No hay SPEC-12 (el RSU HITL vive en SPEC-10 T10c por decisión).
+
 ---
 
 ## ⚠️ Limitaciones y guías para Capa 2
@@ -135,3 +149,7 @@ Módulo fuera del wizard: guía redactable para estudiantes del producto acredit
 | T7 | Producto | Redesign E2E | SPEC-07 | T2 | Step7_ProductoIntegrador | [x] DONE |
 | T8 | Evaluación | Normalización | SPEC-08 | — (serializar c/ T7) | Step6_Cierre, SyllabusContext | [ ] |
 | T9a/b/c | Doc Proyecto | Módulo nuevo | SPEC-09 | T2 | router nuevo, tabla nueva, página nueva | [ ] |
+| T10b | QA selector | Limpieza DB | SPEC-10 | — | faculties (owner ejecutó SQL) | [x] DONE |
+| T10a/c/d | QA | Correcciones | SPEC-10 | T2 | Step4_Contenido, SyllabusEditor, barrido global | [ ] |
+| T11 | Notebook | Redesign E2E | SPEC-11 | T2 (+T10d) | Step2_Fuentes, Step2A_NotebookGuide | [ ] |
+| T13 | Producto HITL | Feature E2E | SPEC-13 | T2, SPEC-07, SPEC-11 | Step7_ProductoIntegrador, progressive_curriculum(.py/_engine), gemini_service | [ ] |

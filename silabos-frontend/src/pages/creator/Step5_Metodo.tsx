@@ -458,7 +458,7 @@ export default function Step5_Metodo() {
           <p className="mb-1 text-[7.5px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Paso {stepCurrent} de {stepTotal} - método didáctico</p>
           <h1 className="font-playfair text-[1.45rem] font-bold leading-none text-white">Método y secuencia didáctica</h1>
           <p className="mt-1.5 max-w-3xl text-[8.5px] leading-4 text-white/62">
-            Selecciona el metodo que mejor conecta el proposito del silabo con sus actividades, evidencias y evaluacion.
+            Selecciona el método que mejor conecta el propósito del sílabo con sus actividades, evidencias y evaluación.
           </p>
         </div>
 
@@ -518,7 +518,7 @@ export default function Step5_Metodo() {
         <>
           <section className="rounded-[22px] border border-[#D4A351]/20 bg-gradient-to-br from-[#0A2753] via-[#08224A] to-[#041A3A] p-3">
             <div className="mb-2">
-              <p className="text-[9px] font-bold text-white">1. Metodo propuesto por el sistema</p>
+              <p className="text-[9px] font-bold text-white">1. Método propuesto por el sistema</p>
               <p className="mt-1 text-[8px] leading-4 text-white/56">
                 El método seleccionado concentra la narrativa principal y su relación con actividades y evidencias.
               </p>
@@ -535,7 +535,7 @@ export default function Step5_Metodo() {
                   Selecciona uno de los 11 métodos con ícono o usa la sugerencia automática.
                 </p>
                 <p className="mt-1 text-[8px] leading-4 text-white/56">
-                  En cuanto elijas un metodo, aqui aparecera su ficha, la razon de eleccion y su relacion con actividades y evidencias.
+                  En cuanto elijas un método, aquí aparecerá su ficha, la razón de elección y su relación con actividades y evidencias.
                 </p>
               </div>
             )}

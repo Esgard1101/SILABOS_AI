@@ -513,7 +513,7 @@ function EditWeekDialog({
             readOnly
             disabled
             className="w-full cursor-not-allowed border border-white/10 bg-[#0B192C] px-3 py-2 text-sm text-white/70 outline-none"
-            title="Este conocimiento viene del Mapa Semanal confirmado y no puede modificarse aqui."
+            title="Este conocimiento viene del Mapa Semanal confirmado y no puede modificarse aquí."
           />
         </label>
         <label className="block">
@@ -521,7 +521,7 @@ function EditWeekDialog({
           <input value={week.skill || ''} onChange={(event) => onChange({ ...week, skill: event.target.value })} className="w-full border border-white/10 bg-[#162A45] px-3 py-2 text-sm text-white outline-none focus:border-[#00B4D8]/60" />
         </label>
         <label className="block">
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Actividad didactica</span>
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Actividad didáctica</span>
           <textarea value={week.activity} onChange={(event) => onChange({ ...week, activity: event.target.value })} rows={7} className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60" />
         </label>
         <label className="block">
@@ -566,13 +566,13 @@ function RegenerateDialog({
       }
     >
       <label className="block">
-        <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Instruccion docente</span>
+        <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-white/42">Instrucción docente</span>
         <textarea
           value={instruction}
           onChange={(event) => onChange(event.target.value)}
           rows={7}
           className="w-full resize-none border border-white/10 bg-[#162A45] px-3 py-2 text-sm leading-6 text-white outline-none focus:border-[#00B4D8]/60"
-          placeholder="Ejemplo: enfoca la unidad en talleres practicos usando revision de pares y casos breves."
+          placeholder="Ejemplo: enfoca la unidad en talleres prácticos usando revisión de pares y casos breves."
         />
       </label>
       <div className="mt-3 border border-white/10 bg-[#162A45] px-3 py-2 text-[11px] text-white/58">
@@ -630,11 +630,11 @@ function NotebookHelpDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       size="lg"
       eyebrow="NotebookLM"
-      title="Guia rapida para traer el consolidado"
+      title="Guía rápida para traer el consolidado"
     >
-      <img src={NOTEBOOK_IMAGE} alt="Video guia NotebookLM" className="aspect-video w-full border border-white/10 bg-black object-cover" />
+      <img src={NOTEBOOK_IMAGE} alt="Video guía NotebookLM" className="aspect-video w-full border border-white/10 bg-black object-cover" />
       <p className="mt-4 text-[12px] leading-6 text-white/68">
-        Usa este video/placeholder como referencia visual: copia el prompt, pegalo en NotebookLM y trae el consolidado completo para esta unidad.
+        Usa este video como referencia visual: copia el prompt, pégalo en NotebookLM y trae el consolidado completo para esta unidad.
       </p>
     </GlassModal>
   );
@@ -774,7 +774,7 @@ export default function Step8_ProgramaProgresivo() {
   const handleSaveContextAndContinue = async () => {
     if (!draftId) return;
     if (!contextReady) {
-      showToast('Pega un resumen o apuntes mas completos antes de continuar', 'warning');
+      showToast('Pega un resumen o apuntes más completos antes de continuar', 'warning');
       return;
     }
     setLoading(true);
@@ -904,7 +904,7 @@ export default function Step8_ProgramaProgresivo() {
     setJobStatusText(
       selectedUnit < unitCount
         ? 'Aprobando unidad y preparando la siguiente...'
-        : 'Aprobando la ultima unidad y cerrando el programa progresivo...',
+        : 'Aprobando la última unidad y cerrando el programa progresivo...',
     );
     try {
       await api.approveProgressiveUnit(draftId, selectedUnit, currentGeneration.id);
@@ -1086,13 +1086,13 @@ export default function Step8_ProgramaProgresivo() {
                     type="button"
                     onClick={() => setNotebookHelpOpen(true)}
                     className="mb-3 flex aspect-video w-full items-center justify-center border border-[#00B4D8]/20 bg-[#061224] p-5 transition hover:border-[#00B4D8]/55 hover:bg-[#00B4D8]/8"
-                    title="Ver guia visual de NotebookLM"
+                    title="Ver guía visual de NotebookLM"
                   >
                     <img src={NOTEBOOK_ICON} alt="NotebookLM" className="max-h-full max-w-full object-contain opacity-95" />
                   </button>
                   <p className="text-[11px] font-bold text-white">Prompt para NotebookLM</p>
                   <p className="mt-1 text-[10px] leading-5 text-white/52">
-                    Copia esta instruccion, pegala en NotebookLM y trae el consolidado. Haz click en el icono para ver la guia visual; el prompt ya indica que esta unidad abarca semanas {unitWeekRange.start} a {unitWeekRange.end}.
+                    Copia esta instrucción, pégala en NotebookLM y trae el consolidado. Haz clic en el ícono para ver la guía visual; el prompt ya indica que esta unidad abarca semanas {unitWeekRange.start} a {unitWeekRange.end}.
                   </p>
                   <button
                     type="button"
@@ -1106,7 +1106,7 @@ export default function Step8_ProgramaProgresivo() {
                     <div className="flex gap-2">
                       <AlertCircle size={14} className="mt-0.5 shrink-0 text-[#E9B44C]" />
                       <p className="text-[10px] leading-5 text-[#F2C260]/82">
-                        Este contexto es obligatorio para reducir respuestas genericas. No reemplaza los desempenos oficiales; solo aterriza la didactica.
+                        Este contexto es obligatorio para reducir respuestas genéricas. No reemplaza los desempeños oficiales; solo aterriza la didáctica.
                       </p>
                     </div>
                   </div>

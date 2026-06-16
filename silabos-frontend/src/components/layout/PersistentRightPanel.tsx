@@ -86,8 +86,8 @@ export default function PersistentRightPanel() {
             </button>
           </div>
           <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-500">
-            Tu avance queda guardado. Puedes continuar mas tarde con
-            <span className="font-semibold text-[#0A8797]"> Continuar ultimo silabo</span>.
+            Tu avance queda guardado. Puedes continuar más tarde con
+            <span className="font-semibold text-[#0A8797]"> Continuar último sílabo</span>.
           </p>
         </div>
       ) : null}

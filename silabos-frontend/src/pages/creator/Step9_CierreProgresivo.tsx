@@ -123,7 +123,7 @@ export default function Step9_CierreProgresivo() {
       showToast('Silabo ensamblado con el motor progresivo', 'success');
       navigate(`/final-delivery?id=${draftId}`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No se pudo ensamblar el silabo progresivo', 'error');
+      showToast(error instanceof Error ? error.message : 'No se pudo ensamblar el sílabo progresivo', 'error');
     } finally {
       setAssembling(false);
     }
@@ -147,7 +147,7 @@ export default function Step9_CierreProgresivo() {
           </p>
           <h1 className="font-playfair text-2xl font-bold text-white">Cierre del motor progresivo</h1>
           <p className="mt-1 max-w-3xl text-[11px] leading-5 text-white/62">
-            Consolida el contenido aprobado por unidad y prepara el silabo final con trazabilidad.
+            Consolida el contenido aprobado por unidad y prepara el sílabo final con trazabilidad.
           </p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
@@ -200,7 +200,7 @@ export default function Step9_CierreProgresivo() {
                 <span className="text-white/66">{value}</span>
               </div>
             )) : (
-              <p className="text-[11px] text-white/42">Sin linea de tiempo definida.</p>
+              <p className="text-[11px] text-white/42">Sin línea de tiempo definida.</p>
             )}
           </div>
         </div>
@@ -290,13 +290,13 @@ export default function Step9_CierreProgresivo() {
           className="flex items-center gap-2 bg-gradient-to-r from-[#007A8A] to-[#00B4D8] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:opacity-45"
         >
           {assembling ? <Loader2 size={13} className="animate-spin" /> : <BookOpenCheck size={13} />}
-          {assembling ? 'Ensamblando silabo final...' : 'Ensamblar y preparar entrega'}
+          {assembling ? 'Ensamblando sílabo final...' : 'Ensamblar y preparar entrega'}
         </button>
       </div>
       {assembling ? (
         <p className="mt-3 text-right text-[11px] leading-5 text-white/52">
-          Este cierre puede tardar varios minutos porque la IA esta integrando unidades, producto, evaluacion y
-          trazabilidad. Mantén esta pantalla abierta; si ya se guardo, te llevaremos a la entrega final.
+          Este cierre puede tardar varios minutos porque la IA está integrando unidades, producto, evaluación y
+          trazabilidad. Mantén esta pantalla abierta; si ya se guardó, te llevaremos a la entrega final.
         </p>
       ) : null}
     </div>

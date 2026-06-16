@@ -52,7 +52,7 @@ function CreatorShell() {
               <BookOpen size={14} className="text-[#00B4CC]" />
             </div>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold leading-none text-white">Nuevo silabo</p>
+              <p className="text-[11px] font-bold leading-none text-white">Nuevo sílabo</p>
               <p className="mt-0.5 truncate text-[10px] leading-none text-white/50">{subtitle}</p>
             </div>
           </div>
