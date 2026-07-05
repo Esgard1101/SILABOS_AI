@@ -81,6 +81,7 @@ Generated week output must stay compatible with:
 
 - Unit context is mandatory in UI to reduce generic output.
 - NotebookLM provides inputs and weekly suggestions, not final syllabus text.
+- (SPEC-11) Because unit engines depend on NotebookLM-sourced didactics, the wizard's Step Fuentes is mandatory upstream (gate: >=1 source before CONTINUAR). See [01_WIZARD_OFFICIAL_DATA.md](01_WIZARD_OFFICIAL_DATA.md).
 - Unit generation must be specialized and didactic, not generic.
 - Activity phase and technique must be integrated naturally in prose.
 - Do not show `Momento` or `Proposito` labels in final activity text.

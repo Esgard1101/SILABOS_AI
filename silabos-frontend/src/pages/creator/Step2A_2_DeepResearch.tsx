@@ -167,7 +167,7 @@ function GuideModal({
               ) : (
                 <>
                   <p className="text-[12px] font-semibold leading-5 text-white">Mira el video y replica el paso en NotebookLM.</p>
-                  <p className="mt-1 text-[10px] leading-5 text-white/50">Cuando subas el video final, esta pantalla queda lista para reemplazar la imagen.</p>
+                  <p className="mt-1 text-[10px] leading-5 text-white/50">Sigue el proceso tal como se muestra y vuelve a SIGEISIL al terminar.</p>
                 </>
               )}
             </div>

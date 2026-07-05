@@ -281,14 +281,12 @@ function AIBiblioModal({
   query,
   onQueryChange,
   onSearch,
-  onSkip,
   searching,
   onClose,
 }: {
   query: string;
   onQueryChange: (value: string) => void;
   onSearch: (continueAfter: boolean) => void;
-  onSkip: () => void;
   searching: boolean;
   onClose: () => void;
 }) {
@@ -341,13 +339,6 @@ function AIBiblioModal({
             className="flex items-center gap-1.5 rounded-xl border border-white/20 px-4 py-2 text-[11px] font-semibold text-white/70 transition hover:text-white disabled:opacity-50"
           >
             Buscar y continuar
-          </button>
-          <button
-            type="button"
-            onClick={onSkip}
-            className="rounded-xl px-3 py-2 text-[10px] text-white/40 transition hover:text-white/70"
-          >
-            Omitir bibliografía
           </button>
         </div>
       </div>
@@ -743,22 +734,6 @@ export default function Step2_Fuentes() {
     }
   };
 
-  const handleSkip = async () => {
-    setShowSearchModal(false);
-    setLeaving(true);
-    try {
-      await saveStep('bibliography', {
-        doc_ids: uploadedBiblio ? [uploadedBiblio.docId] : [],
-        references: bibliographyReferences,
-        sources_consulted: bibliographySources,
-      });
-      navigate('/creator/desempenos');
-    } catch {
-      setLeaving(false);
-      showToast('No se pudo guardar la bibliografía', 'error');
-    }
-  };
-
   const handleContinue = async () => {
     setLeaving(true);
     try {
@@ -1048,6 +1023,9 @@ export default function Step2_Fuentes() {
                 <p className="mx-auto mt-2 max-w-[40rem] text-[11px] leading-5 text-white/52">
                   Pega el bloque generado por NotebookLM o ejecuta la curaduría IA. En cuanto haya datos, esta tabla se llenará automáticamente.
                 </p>
+                <p className="mx-auto mt-2 max-w-[40rem] text-[10px] leading-5 text-[#77E3F0]/75">
+                  Este paso es necesario: las fuentes que agregues aquí alimentan la generación de las unidades del sílabo.
+                </p>
               </div>
             ) : (
               <div className="mt-2.5 overflow-hidden rounded-xl border border-[#D4A351]/22 bg-[#041A3A]/82">
@@ -1146,22 +1124,15 @@ export default function Step2_Fuentes() {
               Atrás
             </button>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSkip}
-                className="rounded-xl border border-white/15 px-4 py-2 text-[10px] font-semibold text-white/60 transition hover:text-white"
-              >
-                Omitir
-              </button>
-              <button
-                type="button"
-                onClick={handleContinue}
-                className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#007A8A] to-[#00B4CC] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110"
-              >
-                CONTINUAR <ArrowRight size={12} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleContinue}
+              disabled={sourceRows.length === 0}
+              title={sourceRows.length === 0 ? 'Trae al menos una fuente (NotebookLM o IA) para continuar' : undefined}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#007A8A] to-[#00B4CC] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:brightness-100"
+            >
+              CONTINUAR <ArrowRight size={12} />
+            </button>
           </div>
         </div>
       </div>
@@ -1171,7 +1142,6 @@ export default function Step2_Fuentes() {
           query={aiQuery}
           onQueryChange={setAiQuery}
           onSearch={handleSearch}
-          onSkip={handleSkip}
           searching={searching}
           onClose={() => setShowSearchModal(false)}
         />
