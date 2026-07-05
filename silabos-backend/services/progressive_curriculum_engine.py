@@ -61,6 +61,31 @@ def _clean_text(value: Any, fallback: str = "") -> str:
     return text_value or fallback
 
 
+def _teacher_design_from_hitl(hitl: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Normaliza el bloque HITL (inputs + respuestas del cuestionario) para el prompt de productos."""
+    if not isinstance(hitl, dict):
+        return None
+    inputs = hitl.get("inputs") if isinstance(hitl.get("inputs"), dict) else {}
+    respuestas = [
+        {
+            "pregunta": _clean_text(item.get("pregunta")),
+            "eleccion": _clean_text(item.get("eleccion")),
+        }
+        for item in (hitl.get("respuestas") or [])
+        if isinstance(item, dict) and _clean_text(item.get("eleccion"))
+    ]
+    design = {
+        "tipo_producto": _clean_text(inputs.get("tipo_producto")),
+        "vinculo_problema": _clean_text(inputs.get("vinculo_problema")),
+        "alcance": _clean_text(inputs.get("alcance")),
+        "formato_evidencia": _clean_text(inputs.get("formato_evidencia")),
+        "respuestas": respuestas,
+    }
+    if not any(design[key] for key in ("tipo_producto", "vinculo_problema", "alcance", "formato_evidencia")) and not respuestas:
+        return None
+    return design
+
+
 def _normalize(value: Any) -> str:
     text_value = unicodedata.normalize("NFKD", str(value or ""))
     text_value = "".join(char for char in text_value if not unicodedata.combining(char))
@@ -642,6 +667,7 @@ class ProgressiveCurriculumEngine:
         total_units: int = 1,
         ai_service: Any | None = None,
         force_provider: str | None = None,
+        hitl: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         category = _canonical_product_category(category)
         prompt = self._product_prompt(
@@ -651,6 +677,7 @@ class ProgressiveCurriculumEngine:
             category=category,
             notebook_context_text=notebook_context_text,
             total_units=total_units,
+            hitl=hitl,
         )
         if ai_service:
             try:
@@ -675,6 +702,135 @@ class ProgressiveCurriculumEngine:
                 )
         raise ProgressiveContentGenerationError(
             "No se pudo generar un Producto Acreditable con Objeto de Trabajo contextualizado mediante IA."
+        )
+
+    async def suggest_product_questions(
+        self,
+        *,
+        curso: dict[str, Any] | None,
+        method: dict[str, Any] | str | None,
+        grading_rows: list[dict[str, Any]] | None,
+        notebook_context_text: str = "",
+        inputs: dict[str, Any] | None = None,
+        total_units: int = 1,
+        ai_service: Any | None = None,
+        force_provider: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Motor HITL de productos: 3-4 preguntas a medida para que el docente diseñe el PA."""
+        prompt = self._product_questions_prompt(
+            curso=curso,
+            method=method,
+            grading_rows=grading_rows or [],
+            notebook_context_text=notebook_context_text,
+            inputs=inputs or {},
+            total_units=total_units,
+        )
+        if ai_service:
+            try:
+                payload = await ai_service.generate_json(
+                    "progressive_product_questions",
+                    prompt,
+                    force_provider=force_provider,
+                )
+                questions = self._normalize_product_questions(payload)
+                if questions:
+                    return questions
+                logger.warning(
+                    "Respuesta IA de preguntas de producto sin items normalizables | shape=%s",
+                    self._payload_shape(payload),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "No se pudieron normalizar las preguntas HITL de producto | error=%s",
+                    exc,
+                    exc_info=True,
+                )
+        raise ProgressiveContentGenerationError(
+            "No se pudieron generar preguntas de diseno del Producto Acreditable mediante IA."
+        )
+
+    def _normalize_product_questions(self, payload: Any) -> list[dict[str, Any]]:
+        raw = payload.get("preguntas") if isinstance(payload, dict) else payload
+        if not isinstance(raw, list):
+            return []
+        questions: list[dict[str, Any]] = []
+        for index, item in enumerate(raw[:4]):
+            if not isinstance(item, dict):
+                continue
+            pregunta = _clean_text(item.get("pregunta") or item.get("question"))
+            opciones = [
+                _clean_text(option)
+                for option in (item.get("opciones") or item.get("options") or [])
+                if _clean_text(option)
+            ]
+            if not pregunta or len(opciones) < 2:
+                continue
+            questions.append(
+                {
+                    "id": _clean_text(item.get("id")) or f"q{index + 1}",
+                    "pregunta": pregunta,
+                    "opciones": opciones[:4],
+                    "permite_idea_propia": True,
+                }
+            )
+        return questions
+
+    def _product_questions_prompt(
+        self,
+        *,
+        curso: dict[str, Any] | None,
+        method: dict[str, Any] | str | None,
+        grading_rows: list[dict[str, Any]],
+        notebook_context_text: str,
+        inputs: dict[str, Any],
+        total_units: int,
+    ) -> str:
+        profile = self._profile_for_method(method)
+        work_object_type = _work_object_type_for_profile(profile)
+        timeline_specs = self._timeline_specs(grading_rows, total_units)
+        pa_schedule = [{"code": code, "week": week} for code, week in timeline_specs]
+        teacher_inputs = {
+            "tipo_producto": _clean_text(inputs.get("tipo_producto")) or "no definido aun",
+            "vinculo_problema": _clean_text(inputs.get("vinculo_problema")) or "no definido aun",
+            "alcance": _clean_text(inputs.get("alcance")) or "no definido aun",
+            "formato_evidencia": _clean_text(inputs.get("formato_evidencia")) or "no definido aun",
+        }
+        return json.dumps(
+            {
+                "role": "Especialista en diseno curricular universitario en Peru",
+                "task": (
+                    "El docente va a DISENAR su Producto Acreditable. NO decidas por el: genera 3 a 4 preguntas "
+                    "concretas que lo ayuden a cerrar las decisiones que faltan para que la IA luego proponga "
+                    "3 opciones de producto a su medida."
+                ),
+                "rules": [
+                    "Genera entre 3 y 4 preguntas. Cada una aborda una decision DISTINTA del diseno del producto (por ejemplo: objeto de trabajo territorial concreto, enfoque disciplinar, hito de avance en las semanas PA, publico o beneficiario, nivel de profundidad de la evidencia).",
+                    "NO repitas decisiones que el docente ya tomo en teacher_inputs; usa esas respuestas para afinar las preguntas, no para volver a preguntarlas.",
+                    "Cada pregunta trae 3 a 4 opciones CONCRETAS y contextualizadas al curso, al metodo y al calendario PA. Nada generico ni de relleno.",
+                    TERRITORIAL_CONTEXT_BLOCK,
+                    "Si notebook_research_context trae fuentes o hallazgos, ancla al menos una pregunta u opcion en ese material.",
+                    "Cada pregunta permite idea propia del docente (permite_idea_propia siempre true).",
+                    "Nivel: docencia universitaria. Tono academico, claro y directo para docentes de 30-49 anos.",
+                ],
+                "course": curso or {},
+                "method_profile": profile,
+                "expected_work_object_type": work_object_type,
+                "pa_schedule": pa_schedule,
+                "grading_rows": grading_rows,
+                "teacher_inputs": teacher_inputs,
+                "notebook_research_context": _clean_text(notebook_context_text)[:6000],
+                "response_schema": {
+                    "preguntas": [
+                        {
+                            "id": "q1",
+                            "pregunta": "...",
+                            "opciones": ["...", "...", "..."],
+                            "permite_idea_propia": True,
+                        }
+                    ]
+                },
+            },
+            ensure_ascii=False,
         )
 
     async def extract_unit_context(
@@ -2225,6 +2381,7 @@ class ProgressiveCurriculumEngine:
         category: str,
         notebook_context_text: str = "",
         total_units: int = 1,
+        hitl: dict[str, Any] | None = None,
     ) -> str:
         profile = self._profile_for_method(method)
         work_object_type = _work_object_type_for_profile(profile)
@@ -2233,8 +2390,8 @@ class ProgressiveCurriculumEngine:
             code: f"Semana {week}: avance especifico del mismo producto"
             for code, week in timeline_specs
         }
-        return json.dumps(
-            {
+        teacher_design = _teacher_design_from_hitl(hitl)
+        prompt_payload = {
                 "role": "Experto en diseno curricular universitario",
                 "task": "Proponer 3 productos acreditables integradores concretos para un curso universitario.",
                 "rules": [
@@ -2274,9 +2431,16 @@ class ProgressiveCurriculumEngine:
                         }
                     ]
                 },
-            },
-            ensure_ascii=False,
-        )
+        }
+        if teacher_design:
+            prompt_payload["rules"].append(
+                "DISENO DEL DOCENTE (restricciones duras): las 3 opciones DEBEN respetar el tipo de producto, "
+                "el vinculo con el problema/contexto, el alcance, el formato de evidencia y las respuestas "
+                "registradas en teacher_design. No las contradigas, no las ignores y no las diluyas: el docente "
+                "es el arquitecto y la IA ejecuta su diseno."
+            )
+            prompt_payload["teacher_design"] = teacher_design
+        return json.dumps(prompt_payload, ensure_ascii=False)
 
     def _context_prompt(self, raw_context_text: str) -> str:
         return json.dumps(

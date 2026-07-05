@@ -32,7 +32,8 @@ Read this before touching:
 ## Endpoints And Contracts
 
 - `GET /api/syllabi/{id}/progressive/state`
-- `POST /api/syllabi/{id}/progressive/products/suggest`
+- `POST /api/syllabi/{id}/progressive/products/questions` (SPEC-13, async job `progressive_product_questions`)
+- `POST /api/syllabi/{id}/progressive/products/suggest` (accepts optional `hitl` block since SPEC-13)
 - `GET /api/jobs/{job_id}`
 - `POST /api/syllabi/{id}/progressive/products/select`
 - `PATCH /api/syllabi/{id}/steps/grading`
@@ -86,6 +87,10 @@ Use Supabase MCP to inspect actual table columns, indexes, constraints, and poli
 - Accumulated-options dedupe is UI-only and deterministic: show the 3 most recent non-selected options (by `created_at` desc; missing `created_at` = freshly generated = newest) plus the selected one if any. No DB writes.
 - Week chips ("S6", "Semana 6") are derived locally via regex `/semana\s+(\d+)/i` over `timeline_json` values. No new AI calls in render (CA-04).
 - Card/modal "Seleccionar" is disabled when `work_object` is missing/pendiente (CA-01) and while a suggest job runs (CA-05). Select payload unchanged: `selectProgressiveProduct(draftId, option.id)`.
+- (SPEC-13) Product HITL pattern (twin of RSU HITL): before generating options the teacher DESIGNS via `ProductDesignModal.tsx` (GlassModal lg cyan, 2 stages). Stage 1 = 4 fixed inputs (tipo_producto, vinculo_problema, alcance, formato_evidencia) + optional NotebookLM block (copiable prompt + paste box, shared with Step7's `notebookProductContext`). Stage 2 = 3-4 AI-tailored questions (chips + "mi propia idea"). "Generar 3 opciones" in Step7 opens this modal; a discreet "Generar sin cuestionario" link keeps the legacy no-hitl flow.
+- (SPEC-13) `products/questions` is an async job (job_type `progressive_product_questions`, AI task `progressive_product_questions` on `gemini_light`). Engine method `suggest_product_questions` grounds questions in curso + method profile + grading/PA schedule + `payload.bibliography.references` + pasted notebook text; it must NOT re-ask what teacher_inputs already answered. No synthetic fallback: visible failure if AI fails.
+- (SPEC-13) `products/suggest` accepts optional `hitl: {inputs, respuestas, notebook_context_text}`. `tipo_producto` maps to `category` (non-catalog values canonicalize to "Libre de proponer por IA" — the real constraint travels in the prompt's `teacher_design` hard block). Without `hitl` the legacy behavior is byte-identical. `selected_product`/`timeline_json` shapes unchanged.
+- (SPEC-13) On suggest-with-hitl the backend persists `payload_json.progressive_curriculum.product_hitl` (via `supabase.guardar_product_hitl`); `/progressive/state` returns it inside `progressive_curriculum`, and Step7 prefills the questionnaire from it on regenerate (answers re-matched by question id/text).
 
 ## Concrete Object Rule
 

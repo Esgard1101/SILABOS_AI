@@ -1067,10 +1067,27 @@ export const api = {
     );
   },
 
+  generateProductQuestions: (
+    syllabusId: string,
+    body: import('./types').ProductHitlInputs & { notebook_context_text?: string },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').AiGenerationJobQueued>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/progressive/products/questions${q}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+      300000,
+    );
+  },
+
   suggestProgressiveProducts: (
     syllabusId: string,
     category: string,
-    options?: { forceProvider?: 'gemini' | 'openrouter'; notebookContextText?: string },
+    options?: {
+      forceProvider?: 'gemini' | 'openrouter';
+      notebookContextText?: string;
+      hitl?: import('./types').ProductHitl | null;
+    },
   ) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
     return request<APIResponse<import('./types').AiGenerationJobQueued>>(
@@ -1078,7 +1095,11 @@ export const api = {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category, notebook_context_text: options?.notebookContextText || '' }),
+        body: JSON.stringify({
+          category,
+          notebook_context_text: options?.notebookContextText || '',
+          ...(options?.hitl ? { hitl: options.hitl } : {}),
+        }),
       },
       300000,
     );

@@ -10,13 +10,8 @@ const NOTEBOOK_URL = 'https://notebooklm.google.com';
 const NOTEBOOK_VIDEOS = {
   openNotebook: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777685690/paso1_abrirnotebook_d3bvlq.mp4',
   manualUpload: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777685611/CARGAMANUAL_s0ov29.mp4',
-  chatSetup: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777700733/configurarchat_diqdio.mp4',
   sourcesExport: 'https://res.cloudinary.com/dmkk2x0fq/video/upload/v1777700960/0501_ug5k8u.mp4',
 } as const;
-
-function buildChatSetupPrompt(): string {
-  return `Responde solo con JSON válido. Extrae datos reales de las fuentes: autor, año, título, fuente, url, tipo, requiere_revision y motivo_revision. No agregues explicaciones ni Markdown. No uses citas internas como [1] o [2]. No inventes datos: si faltan usa "S.A.", "s.f." o "".`;
-}
 
 function buildSourcesExportPrompt(courseName: string): string {
   return `Extrae TODAS las fuentes cargadas en este cuaderno para el curso "${courseName || 'el curso'}" y devuelve un arreglo JSON válido.
@@ -325,7 +320,7 @@ export default function Step2A_NotebookGuide() {
       id: 2,
       icon: '/notebooklmICONS/iconnotebook2viamanual.png',
       title: 'Agregar fuentes',
-      description: 'Carga tus materiales manualmente o busca bibliografía con Deep Research.',
+      description: 'Dos opciones dentro de la guía: carga manual de materiales o Deep Research con IA (prompt listo para copiar).',
       eyebrow: 'Paso 2 · Carga de materiales',
       tabs: [
         {
@@ -381,37 +376,10 @@ export default function Step2A_NotebookGuide() {
     },
     {
       id: 4,
-      icon: '/ajustarchat.png',
-      title: 'Ajustar chat',
-      description: 'Configura NotebookLM para responder en el formato que SIGEISIL puede importar.',
-      eyebrow: 'Paso 4 · Preparación',
-      tabs: [
-        {
-          label: 'Ajustar chat',
-          content: {
-            image: VIDEO_POSTER,
-            videoUrl: NOTEBOOK_VIDEOS.chatSetup,
-            prompt: buildChatSetupPrompt(),
-            promptLabel: 'Prompt de ajuste del chat',
-            copyLabel: 'Copiar ajuste',
-            copiedLabel: 'Ajuste copiado',
-            steps: [
-              'Abre la configuración del chat en NotebookLM.',
-              'Elige la opción Personalizado y pega este ajuste.',
-              'Selecciona respuesta Más larga para cuadernos con muchas fuentes.',
-              'Guarda la configuración antes de pedir la exportación.',
-            ],
-            note: 'Este ajuste ayuda a que NotebookLM responda en un bloque limpio y evita gastar consultas corrigiendo el formato.',
-          },
-        },
-      ],
-    },
-    {
-      id: 5,
       icon: '/pegarpromptDEJSON (1).png',
       title: 'Traer fuentes a SIGEISIL',
       description: 'Genera el bloque de fuentes y pégalo en el paso Fuentes.',
-      eyebrow: 'Paso 5 · Exportación hacia SIGEISIL',
+      eyebrow: 'Paso 4 · Exportación hacia SIGEISIL',
       tabs: [
         {
           label: 'Traer fuentes',
@@ -423,7 +391,7 @@ export default function Step2A_NotebookGuide() {
             copyLabel: 'Copiar instrucción',
             copiedLabel: 'Instrucción copiada',
             steps: [
-              'Pega esta instrucción en el chat de NotebookLM ya configurado.',
+              'Pega esta instrucción en el chat de NotebookLM.',
               'Espera a que termine la respuesta completa.',
               'Copia todo el bloque generado por NotebookLM.',
               'Vuelve a SIGEISIL y pégalo en la caja "Pegar bloque de fuentes" del paso Fuentes.',
@@ -461,7 +429,7 @@ export default function Step2A_NotebookGuide() {
             </p>
             <h1 className="font-playfair text-2xl font-bold text-white">Guía NotebookLM</h1>
             <p className="mt-1 text-[11px] text-white/60">
-              Sigue estos 5 pasos de arriba hacia abajo para cargar, verificar y traer tus fuentes a SIGEISIL.
+              Sigue estos {TIMELINE_STEPS.length} pasos de arriba hacia abajo para cargar, verificar y traer tus fuentes a SIGEISIL.
               Marca cada paso cuando lo termines.
             </p>
             <p className="mt-2 inline-flex rounded-full bg-white/[0.06] px-3 py-1 text-[10px] font-semibold text-[#77E3F0] ring-1 ring-[#00B4CC]/25 backdrop-blur">

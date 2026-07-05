@@ -4942,6 +4942,58 @@ class SupabaseService:
             logger.error(f"Error al seleccionar producto {option_id}: {e}")
             return None
 
+    def _guardar_product_hitl_sync(
+        self,
+        syllabus_id: str,
+        hitl: dict,
+        user_id: Optional[str] = None,
+    ) -> bool:
+        """Persiste el diseño HITL del Producto Acreditable (inputs + respuestas) en payload_json
+        bajo progressive_curriculum.product_hitl, para trazabilidad y precarga del cuestionario."""
+        access_clause, access_params = self._progressive_syllabus_access_clause(user_id)
+        with self._Session() as sesion:
+            syllabus_row = sesion.execute(
+                text(f"SELECT id, payload_json FROM syllabi s WHERE s.id = :sid{access_clause}"),
+                {"sid": syllabus_id, **access_params},
+            ).mappings().first()
+            if not syllabus_row:
+                return False
+            payload = syllabus_row["payload_json"]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if not isinstance(payload, dict):
+                payload = {}
+            progressive = payload.setdefault("progressive_curriculum", {})
+            progressive["product_hitl"] = hitl
+            progressive["updated_at"] = datetime.now(timezone.utc).isoformat()
+            sesion.execute(
+                text(
+                    """
+                    UPDATE syllabi
+                    SET payload_json = CAST(:payload AS JSONB), updated_at = now()
+                    WHERE id = :sid
+                    """
+                ),
+                {"sid": syllabus_id, "payload": json.dumps(payload, ensure_ascii=False)},
+            )
+            sesion.commit()
+            return True
+
+    async def guardar_product_hitl(
+        self,
+        syllabus_id: str,
+        hitl: dict,
+        user_id: Optional[str] = None,
+    ) -> bool:
+        try:
+            return await self._ejecutar(
+                self._guardar_product_hitl_sync,
+                syllabus_id, hitl, user_id,
+            )
+        except Exception as e:
+            logger.error(f"Error al guardar product_hitl de {syllabus_id}: {e}")
+            return False
+
     def _upsert_unit_context_sync(
         self,
         syllabus_id: str,

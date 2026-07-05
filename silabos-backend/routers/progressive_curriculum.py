@@ -82,9 +82,37 @@ METHOD_INSTRUMENT_MAPPING: list[tuple[tuple[str, ...], dict[str, Any]]] = [
 ]
 
 
+class ProductHitlInputs(BaseModel):
+    tipo_producto: str = ""
+    vinculo_problema: str = ""
+    alcance: str = ""
+    formato_evidencia: str = ""
+
+
+class ProductHitlAnswer(BaseModel):
+    id: str = ""
+    pregunta: str = ""
+    eleccion: str = ""
+
+
+class ProductHitl(BaseModel):
+    inputs: ProductHitlInputs = Field(default_factory=ProductHitlInputs)
+    respuestas: list[ProductHitlAnswer] = Field(default_factory=list)
+    notebook_context_text: str = ""
+
+
+class ProductQuestionsInput(BaseModel):
+    tipo_producto: str = ""
+    vinculo_problema: str = ""
+    alcance: str = ""
+    formato_evidencia: str = ""
+    notebook_context_text: str = ""
+
+
 class ProductSuggestInput(BaseModel):
     category: str = "Libre de proponer por IA"
     notebook_context_text: str = ""
+    hitl: ProductHitl | None = None
 
 
 class ProductSelectInput(BaseModel):
@@ -1092,6 +1120,22 @@ async def _generate_or_regenerate_unit(
     return result
 
 
+def _bibliography_refs_context(payload: dict) -> str:
+    """Fuentes NotebookLM/IA ya guardadas en el draft, como bloque de texto para prompts."""
+    refs = _as_list(((payload or {}).get("bibliography") or {}).get("references"))
+    lines = [f"- {str(ref).strip()}" for ref in refs[:12] if str(ref).strip()]
+    return "FUENTES DEL CURSO (NotebookLM / curaduria IA):\n" + "\n".join(lines) if lines else ""
+
+
+def _merge_notebook_context(*parts: str) -> str:
+    seen: list[str] = []
+    for part in parts:
+        cleaned = str(part or "").strip()
+        if cleaned and cleaned not in seen:
+            seen.append(cleaned)
+    return "\n\n".join(seen)
+
+
 async def _suggest_product_options(
     *,
     syllabus_id: str,
@@ -1105,29 +1149,85 @@ async def _suggest_product_options(
     user_id = _current_user_id(current_user)
     context = await _course_context(supabase=supabase, syllabus_id=syllabus_id, user_id=user_id)
 
+    hitl_data = None
+    if body.hitl is not None:
+        hitl_data = body.hitl.model_dump() if hasattr(body.hitl, "model_dump") else body.hitl.dict()
+    category = body.category
+    notebook_context_text = body.notebook_context_text
+    if hitl_data:
+        tipo_producto = str((hitl_data.get("inputs") or {}).get("tipo_producto") or "").strip()
+        if tipo_producto:
+            category = tipo_producto
+        notebook_context_text = _merge_notebook_context(
+            body.notebook_context_text,
+            hitl_data.get("notebook_context_text") or "",
+        )
+
     options = await engine.suggest_products(
         curso=context["curso"],
         method=context["method"],
         grading_rows=context["grading_rows"],
-        category=body.category,
-        notebook_context_text=body.notebook_context_text,
+        category=category,
+        notebook_context_text=notebook_context_text,
         total_units=len(context["performances"] or []) or 1,
         ai_service=_optional_ai(servicios),
         force_provider=force_provider,
+        hitl=hitl_data,
     )
     saved = await supabase.guardar_curricular_product_options(
         syllabus_id,
         options,
         user_id=user_id,
     )
+    if hitl_data:
+        await supabase.guardar_product_hitl(syllabus_id, hitl_data, user_id=user_id)
     await supabase.guardar_ai_suggestion(
         syllabus_id,
         "progressive_product_options",
-        {"category": body.category, "has_notebook_context": bool(body.notebook_context_text.strip())},
+        {
+            "category": body.category,
+            "has_notebook_context": bool(body.notebook_context_text.strip()),
+            "has_hitl": bool(hitl_data),
+        },
         {"options": saved or options},
         user_id=user_id,
     )
     return {"options": saved or options}
+
+
+async def _product_questions_payload(
+    *,
+    syllabus_id: str,
+    body: ProductQuestionsInput,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> dict:
+    supabase = _require_db(servicios)
+    engine = get_progressive_curriculum_engine()
+    user_id = _current_user_id(current_user)
+    context = await _course_context(supabase=supabase, syllabus_id=syllabus_id, user_id=user_id)
+
+    notebook_context_text = _merge_notebook_context(
+        body.notebook_context_text,
+        _bibliography_refs_context(context["payload"]),
+    )
+    preguntas = await engine.suggest_product_questions(
+        curso=context["curso"],
+        method=context["method"],
+        grading_rows=context["grading_rows"],
+        notebook_context_text=notebook_context_text,
+        inputs={
+            "tipo_producto": body.tipo_producto,
+            "vinculo_problema": body.vinculo_problema,
+            "alcance": body.alcance,
+            "formato_evidencia": body.formato_evidencia,
+        },
+        total_units=len(context["performances"] or []) or 1,
+        ai_service=_optional_ai(servicios),
+        force_provider=force_provider,
+    )
+    return {"preguntas": preguntas}
 
 
 async def _extract_unit_context_payload(
@@ -1213,6 +1313,38 @@ async def _run_product_suggestion_job(
             job_id,
             JOB_HIGH_DEMAND_MESSAGE,
             {"code": "UNEXPECTED_PRODUCT_JOB_ERROR", "detail": str(exc)},
+        )
+
+
+async def _run_product_questions_job(
+    *,
+    job_id: str,
+    syllabus_id: str,
+    body_data: dict,
+    servicios: dict,
+    current_user: dict,
+    force_provider: str | None,
+) -> None:
+    supabase = _require_db(servicios)
+    await supabase.marcar_ai_generation_job_running(job_id)
+    try:
+        result = await _product_questions_payload(
+            syllabus_id=syllabus_id,
+            body=ProductQuestionsInput(**body_data),
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+        await supabase.completar_ai_generation_job(job_id, result)
+    except HTTPException as exc:
+        message, payload = _job_error_payload(exc)
+        await supabase.fallar_ai_generation_job(job_id, message, payload)
+    except Exception as exc:
+        logger.exception("Fallo inesperado en job %s de preguntas HITL de producto", job_id)
+        await supabase.fallar_ai_generation_job(
+            job_id,
+            JOB_HIGH_DEMAND_MESSAGE,
+            {"code": "UNEXPECTED_PRODUCT_QUESTIONS_JOB_ERROR", "detail": str(exc)},
         )
 
 
@@ -1335,6 +1467,49 @@ async def obtener_progressive_state(
     if not state:
         raise HTTPException(404, "Estado progresivo no encontrado")
     return APIResponse(success=True, data=state, error=None)
+
+
+@router.post("/syllabi/{syllabus_id}/progressive/products/questions", response_model=APIResponse)
+async def generar_preguntas_producto(
+    syllabus_id: str,
+    body: ProductQuestionsInput,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    current_user: dict = Depends(get_current_user_record),
+    force_provider: str | None = Query(default=None),
+):
+    """Motor HITL de productos: encola la generacion de 3-4 preguntas a medida del curso."""
+    force_provider = _validate_force_provider(force_provider)
+    servicios = _sv(request)
+    supabase = _require_db(servicios)
+    user_id = _current_user_id(current_user)
+    body_data = _dump_model(body)
+    job = await _queue_ai_generation_job(
+        supabase=supabase,
+        syllabus_id=syllabus_id,
+        job_type="progressive_product_questions",
+        request_payload={"body": body_data, "force_provider": force_provider},
+        user_id=user_id,
+        unit_number=None,
+    )
+    if not job.get("reused"):
+        background_tasks.add_task(
+            _run_product_questions_job,
+            job_id=str(job["id"]),
+            syllabus_id=syllabus_id,
+            body_data=body_data,
+            servicios=servicios,
+            current_user=current_user,
+            force_provider=force_provider,
+        )
+    response.status_code = status.HTTP_202_ACCEPTED
+    message = (
+        "Ya hay preguntas de producto en proceso"
+        if job.get("reused")
+        else "Generacion de preguntas de producto enviada a cola"
+    )
+    return APIResponse(success=True, data=_job_public_payload(job, message=message), error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/progressive/products/suggest", response_model=APIResponse)

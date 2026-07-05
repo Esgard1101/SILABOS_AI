@@ -13,10 +13,11 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { ProgressiveProductOption } from '../../api/types';
+import type { ProductHitl, ProgressiveProductOption } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import GlassModal from '../../components/ui/GlassModal';
 import OverlayLoader from '../../components/ui/OverlayLoader';
+import ProductDesignModal from './ProductDesignModal';
 import { useWizardStep } from './wizardSteps';
 
 const PRODUCT_CATEGORIES = [
@@ -81,7 +82,7 @@ function NotebookHelpModal({ onClose }: { onClose: () => void }) {
         className="aspect-video w-full bg-black object-cover"
       />
       <p className="mt-3 text-[11px] leading-5 text-white/58">
-        Este espacio queda preparado para reemplazar la imagen por un video tutorial cuando este listo.
+        Sigue la guía en tu cuaderno NotebookLM y vuelve a esta pantalla para pegar el consolidado.
       </p>
     </GlassModal>
   );
@@ -334,6 +335,8 @@ export default function Step7_ProductoIntegrador() {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [detailOption, setDetailOption] = useState<ProgressiveProductOption | null>(null);
   const [notebookHelpOpen, setNotebookHelpOpen] = useState(false);
+  const [designOpen, setDesignOpen] = useState(false);
+  const [productHitl, setProductHitl] = useState<ProductHitl | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatusText, setJobStatusText] = useState('');
   const [loadingState, setLoadingState] = useState(Boolean(draftId));
@@ -378,6 +381,7 @@ export default function Step7_ProductoIntegrador() {
         const fromState = response.data.progressive_curriculum?.selected_product;
         const fromList = (response.data.product_options || []).find((option) => option.selected);
         setSelected(fromList || fromState || null);
+        setProductHitl(response.data.progressive_curriculum?.product_hitl ?? null);
       })
       .catch(() => {
         if (active) setOptions([]);
@@ -390,7 +394,7 @@ export default function Step7_ProductoIntegrador() {
     };
   }, [draftId]);
 
-  const handleSuggest = async () => {
+  const handleSuggest = async (hitl: ProductHitl | null = null) => {
     if (!draftId) return;
     setLoading(true);
     setActiveJobId(null);
@@ -398,6 +402,7 @@ export default function Step7_ProductoIntegrador() {
     try {
       const queued = await api.suggestProgressiveProducts(draftId, category, {
         notebookContextText: notebookProductContext,
+        hitl,
       });
       const jobId = queued.data.job_id || queued.data.id;
       if (!jobId) throw new Error('El servidor no devolvio job_id para la sugerencia');
@@ -482,6 +487,22 @@ export default function Step7_ProductoIntegrador() {
       }
     />
     {notebookHelpOpen ? <NotebookHelpModal onClose={() => setNotebookHelpOpen(false)} /> : null}
+    {designOpen && draftId ? (
+      <ProductDesignModal
+        draftId={draftId}
+        notebookPrompt={notebookPrompt}
+        initialHitl={productHitl}
+        initialNotebookText={notebookProductContext}
+        onGenerate={(hitl, notebookText) => {
+          setDesignOpen(false);
+          if (notebookText) setNotebookProductContext(notebookText);
+          if (hitl) setProductHitl(hitl);
+          void handleSuggest(hitl);
+        }}
+        onClose={() => setDesignOpen(false)}
+        showToast={showToast}
+      />
+    ) : null}
     <div className="h-full overflow-y-auto bg-[#0B192C] px-4 py-5 text-white sm:px-6">
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -538,7 +559,7 @@ export default function Step7_ProductoIntegrador() {
           </div>
           <button
             type="button"
-            onClick={handleSuggest}
+            onClick={() => setDesignOpen(true)}
             disabled={loading || !draftId}
             className="flex h-10 items-center justify-center gap-2 bg-[#00A896] px-4 text-[11px] font-bold text-white transition hover:bg-[#00B4D8] disabled:opacity-50"
           >

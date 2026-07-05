@@ -331,6 +331,30 @@ export function SyllabusProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Autocuración: si hay draft activo pero courseDetail se perdió (recarga de página,
+  // regreso al wizard sin pasar por "Continuar último sílabo", contexto que cargó
+  // después que el sentinel de resume), rehidratamos curso + bloques desde el
+  // contexto académico. Sin esto, los steps muestran "Selecciona un curso antes de..."
+  // aunque el draft esté intacto en el backend.
+  const selfHealAttempted = useRef(false);
+  useEffect(() => {
+    const courseId = context?.course_id;
+    if (!draftId || courseDetail || !courseId || selfHealAttempted.current) return;
+    selfHealAttempted.current = true;
+    void (async () => {
+      try {
+        const res = await api.getCourse(courseId);
+        const course = res.data ?? null;
+        if (!course) return;
+        _setCourseDetail(course);
+        await createOrLoadDraft(course);
+      } catch {
+        // Permitimos reintentar en el próximo cambio de contexto/draft.
+        selfHealAttempted.current = false;
+      }
+    })();
+  }, [draftId, courseDetail, context?.course_id, createOrLoadDraft]);
+
   const value: SyllabusCtxValue = {
     draftId, courseDetail, workflow, saving,
     setCourseDetail, createOrLoadDraft, saveStep,

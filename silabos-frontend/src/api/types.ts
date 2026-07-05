@@ -913,6 +913,36 @@ export interface RsuSuggestResponse {
   responsabilidad_social: string;
 }
 
+export interface ProductHitlInputs {
+  tipo_producto: string;
+  vinculo_problema: string;
+  alcance: string;
+  formato_evidencia: string;
+}
+
+export interface ProductQuestion {
+  id: string;
+  pregunta: string;
+  opciones: string[];
+  permite_idea_propia?: boolean;
+}
+
+export interface ProductQuestionsResponse {
+  preguntas: ProductQuestion[];
+}
+
+export interface ProductHitlAnswer {
+  id: string;
+  pregunta: string;
+  eleccion: string;
+}
+
+export interface ProductHitl {
+  inputs: ProductHitlInputs;
+  respuestas: ProductHitlAnswer[];
+  notebook_context_text?: string;
+}
+
 export interface GradingSuggestion {
   rows: GradingRow[];
   origin: 'method_template' | 'ai_suggested';
@@ -1027,6 +1057,7 @@ export interface ProgressiveCurriculumState {
   syllabus_id: string;
   progressive_curriculum?: {
     selected_product?: ProgressiveProductOption;
+    product_hitl?: ProductHitl;
     engine_version?: string;
     assembled_units?: number;
     content_plan?: ProgressiveUnitWeek[];

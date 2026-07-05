@@ -187,6 +187,12 @@ TASK_CONFIGS: dict[str, TaskConfig] = {
         max_output_tokens=2048,
         json_mode=False,
     ),
+    "progressive_product_questions": TaskConfig(
+        provider="gemini_light",
+        temperature=0.35,
+        max_output_tokens=2048,
+        json_mode=False,
+    ),
     "progressive_knowledge_map_suggest": TaskConfig(
         provider="gemini_unit",
         temperature=0.2,
