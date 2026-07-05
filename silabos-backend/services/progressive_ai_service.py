@@ -245,12 +245,104 @@ REGLAS:
             "content_plan": {"units": []},
         }
 
+    async def generar_preguntas_rsu(
+        self,
+        curso: dict,
+        desempenos: list[dict],
+        conocimientos: list[str] | None = None,
+        habilidades: list[str] | None = None,
+        bibliografia_refs: list[str] | None = None,
+        ambito: str = "",
+        evidencia: str = "",
+        force_provider: str | None = None,
+    ) -> list[dict]:
+        """Motor HITL: genera 3-4 preguntas a medida del curso para que el docente
+        diseñe la actividad de RSU eligiendo opciones concretas o aportando su idea."""
+        desempenos_texto = "\n".join(
+            f"- [{d.get('code') or d.get('codigo') or f'D{i + 1}'}] {d.get('statement') or d.get('descripcion') or ''}"
+            for i, d in enumerate((desempenos or [])[:5])
+        )
+        conocimientos_ctx = "\n".join(f"- {item}" for item in (conocimientos or [])[:10])
+        habilidades_ctx = "\n".join(f"- {item}" for item in (habilidades or [])[:10])
+        biblio_ctx = "\n".join(f"- {r}" for r in (bibliografia_refs or [])[:6])
+        docente_inputs = ""
+        if str(ambito or "").strip() or str(evidencia or "").strip():
+            docente_inputs = (
+                "\nINTENCION DEL DOCENTE (usala para afinar las preguntas):\n"
+                f"- Ambito / comunidad objetivo: {str(ambito or '').strip() or 'no definido aun'}\n"
+                f"- Evidencia / entregable esperado: {str(evidencia or '').strip() or 'no definido aun'}"
+            )
+
+        prompt = f"""Eres especialista en diseno curricular y responsabilidad social universitaria en Peru.
+El docente va a DISENAR la actividad de RSU de su curso. Tu tarea NO es decidir por el,
+sino generar 3 a 4 preguntas concretas que lo ayuden a tomar decisiones a medida de SU curso.
+
+{TERRITORIAL_CONTEXT_BLOCK}
+
+CURSO: {curso.get("name", "")}
+SUMILLA: {str(curso.get("sumilla", ""))[:550]}
+COMPETENCIA: {str(curso.get("competencia_egreso") or curso.get("competencia") or "")[:350]}
+CAPACIDAD: {str(curso.get("capacidad") or "")[:350]}
+
+DESEMPENOS OFICIALES:
+{desempenos_texto or "- No especificados"}
+
+CONOCIMIENTOS:
+{conocimientos_ctx or "- No especificados"}
+
+HABILIDADES:
+{habilidades_ctx or "- No especificadas"}
+
+FUENTES / REFERENCIAS DEL CURSO:
+{biblio_ctx or "- No especificadas"}
+{docente_inputs}
+
+REGLAS:
+- Genera entre 3 y 4 preguntas. Cada pregunta aborda una decision distinta del diseno de la RSU
+  (por ejemplo: lugar/comunidad concreta, problema o necesidad real, accion estudiantil, evidencia/entregable).
+- Cada pregunta trae 3 a 4 opciones CONCRETAS y LOCALES, contextualizadas al tema del curso y al area de influencia de la UNPRG.
+  Nunca opciones genericas ni de relleno; deben nombrar lugares, actores o entregables reales y verificables.
+- Las opciones deben apoyarse en el contexto territorial: elige distritos/lugares con sentido semantico con el curso.
+- Cada pregunta permite que el docente escriba su propia idea (permite_idea_propia siempre true).
+- Responde SOLO JSON valido con esta forma exacta:
+{{"preguntas": [
+  {{"id": "q1", "pregunta": "...", "opciones": ["...", "...", "..."], "permite_idea_propia": true}}
+]}}"""
+
+        payload = await self._generate_json(
+            task="progressive_rsu_questions",
+            prompt=prompt,
+            force_provider=force_provider,
+        )
+        preguntas_raw = payload.get("preguntas") if isinstance(payload, dict) else payload
+        if not isinstance(preguntas_raw, list):
+            return []
+        preguntas: list[dict] = []
+        for i, item in enumerate(preguntas_raw[:4]):
+            if not isinstance(item, dict):
+                continue
+            texto = str(item.get("pregunta") or "").strip()
+            opciones = [str(o).strip() for o in (item.get("opciones") or []) if str(o).strip()]
+            if not texto or not opciones:
+                continue
+            preguntas.append({
+                "id": str(item.get("id") or f"q{i + 1}").strip() or f"q{i + 1}",
+                "pregunta": texto,
+                "opciones": opciones[:4],
+                "permite_idea_propia": True,
+            })
+        return preguntas
+
     async def sugerir_responsabilidad_social(
         self,
         curso: dict,
         desempenos: list[dict],
         conocimientos: list[str] | None = None,
         habilidades: list[str] | None = None,
+        bibliografia_refs: list[str] | None = None,
+        ambito: str = "",
+        evidencia: str = "",
+        respuestas: list[dict] | None = None,
         force_provider: str | None = None,
     ) -> str:
         desempenos_texto = "\n".join(
@@ -259,6 +351,27 @@ REGLAS:
         )
         conocimientos_ctx = "\n".join(f"- {item}" for item in (conocimientos or [])[:10])
         habilidades_ctx = "\n".join(f"- {item}" for item in (habilidades or [])[:10])
+        biblio_ctx = "\n".join(f"- {r}" for r in (bibliografia_refs or [])[:6])
+
+        # Restricciones HITL: el RSU DEBE reflejar las decisiones del docente.
+        restricciones = ""
+        ambito_s = str(ambito or "").strip()
+        evidencia_s = str(evidencia or "").strip()
+        respuestas_lines = [
+            f"- {str(r.get('pregunta') or '').strip()} -> {str(r.get('eleccion') or '').strip()}"
+            for r in (respuestas or [])
+            if isinstance(r, dict) and str(r.get("eleccion") or "").strip()
+        ]
+        if ambito_s or evidencia_s or respuestas_lines:
+            partes = ["\nDECISIONES DEL DOCENTE (restricciones duras, el RSU DEBE reflejarlas):"]
+            if ambito_s:
+                partes.append(f"- Ambito / comunidad objetivo: {ambito_s}")
+            if evidencia_s:
+                partes.append(f"- Evidencia / entregable esperado: {evidencia_s}")
+            if respuestas_lines:
+                partes.append("- Respuestas del docente:")
+                partes.extend(f"  {line[2:]}" for line in respuestas_lines)
+            restricciones = "\n".join(partes)
 
         prompt = f"""Eres especialista en diseno curricular universitario y responsabilidad social universitaria en Peru.
 Redacta una actividad de Responsabilidad Social Universitaria para un silabo de la Universidad Nacional Pedro Ruiz Gallo.
@@ -279,9 +392,14 @@ CONOCIMIENTOS:
 HABILIDADES:
 {habilidades_ctx or "- No especificadas"}
 
+FUENTES / REFERENCIAS DEL CURSO:
+{biblio_ctx or "- No especificadas"}
+{restricciones}
+
 REGLAS:
 - Escribe 4 a 5 lineas, en tono institucional y natural.
 - Propón una actividad concreta del mundo real, vinculada al proposito del curso o a la aplicacion social del aprendizaje.
+- Si el docente definio ambito, evidencia o respuestas, el texto DEBE respetarlos exactamente (no los reinterpretes ni los ignores).
 - Debe incluir: necesidad/contexto local en UN SOLO lugar elegido del contexto territorial, accion de los estudiantes, aplicacion de conocimientos/habilidades y evidencia verificable.
 - No debe sonar decorativa, ceremonial ni aislada.
 - No uses bullets ni numeracion.

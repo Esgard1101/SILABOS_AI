@@ -15,7 +15,7 @@
 Cerrar tres correcciones de QA que degradan la percepción de calidad, sin redesigns:
 
 1. **T10a — Ortografía:** corregir errores ortográficos en strings estáticos de UI (labels, botones, placeholders, títulos hardcodeados en `.tsx`). **No** toca salida generada por IA ni prompts del backend.
-2. **T10b — Selector limpio desde la DB:** el selector de cursos/programas muestra basura/datos fuera de Educación. Se entrega **script SQL de limpieza** que el owner ejecuta manual en Supabase (los agentes no corren DDL/DML en prod). Opcional: filtro defensivo en frontend.
+2. **T10b — Selector limpio desde la DB:** el selector de cursos/programas muestra basura/datos fuera de Educación. Se entrega **script SQL de limpieza** que el owner ejecuta manual en Supabase (los agentes no corren DDL/DML en prod). Opcional: filtro defensivo en frontend.limpieza de selector desde la db es mas q sufciente
 3. **T10c — Módulo RSU con Human-in-the-Loop:** el RSU deja de ser "texto que la IA suelta y el docente edita en una caja apretada". Pasa a un flujo HITL donde **el docente es arquitecto del proceso**: llena 2 inputs + responde 3-4 preguntas generadas a medida del curso (con sus fuentes NotebookLM), y solo entonces la IA redacta el RSU, aún editable. Todo dentro de un `GlassModal`. En SyllabusEditor queda el editor amplio (sin motor de preguntas).
 4. **T10d — Barrido de textos dev:** eliminar de toda la UI el texto interno de desarrollo visible al docente (leyendas de colores, badges "Placeholder", notas "se reemplazará al subir al cloud"). Crítico para la demo de hackathon.
 
@@ -88,13 +88,11 @@ Ya escrito y específico al hallazgo:
 - **Fase 1** — re-verificación (SELECT de facultades con conteos).
 - **Fase 2** — `DELETE FROM faculties WHERE NOT EXISTS (carrera)` (borra solo las vacías), dentro de transacción, comentado. Incluye variante por IDs explícitos.
 
-### Defensa en frontend (parte del slice)
-En `ContextSelector.tsx`: tras cargar facultades, **ocultar las que no traen carreras/programas**. Blinda el selector aunque reentre una facultad vacía. No ocultar la facultad real.
-
 ### Reglas duras
 - El agente **no ejecuta** `DELETE` en prod; el `.sql` va comentado en la fase destructiva.
 - No tocar la facultad con data ni sus cursos/programas.
 
+limpieza de selector desde la db es mas q sufciente
 ### DoD-Técnico
 - `.sql` entregado (hecho).
 - Filtro frontend aplicado: `npm run build` verde, facultad real intacta.

@@ -22,11 +22,13 @@ import {
   Rocket,
   Save,
   Send,
+  Edit3,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import { CourseDetail, CriterioEvaluacion, EvaluacionMatrizRow, SyllabusData, SyllabusStatus, UnidadTematica, ValidationObservation, ValidationResult } from '../api/types';
 import BibliographyGuide from '../components/BibliographyGuide';
+import GlassModal from '../components/ui/GlassModal';
 import StatusBadge from '../components/StatusBadge';
 import Toast, { useToast } from '../components/Toast';
 import { useAppContext } from '../hooks/useAppContext';
@@ -638,6 +640,8 @@ export default function SyllabusEditor() {
   const desempenos = useMemo(() => (syllabus ? normalizeDesempenos(syllabus) : ['D1. —']), [syllabus]);
   const unitSections = useMemo(() => (syllabus ? buildUnitSections(syllabus, desempenos) : []), [desempenos, syllabus]);
   const [editableUnits, setEditableUnits] = useState<UnitSection[]>([]);
+  const [rsuEditOpen, setRsuEditOpen] = useState(false);
+  const [rsuDraft, setRsuDraft] = useState('');
 
   useEffect(() => {
     setEditableUnits(unitSections);
@@ -717,6 +721,16 @@ export default function SyllabusEditor() {
           }
         : prev,
     );
+  };
+
+  const saveResponsabilidadSocial = (value: string) => {
+    const next = value.trim();
+    const current = JSON.parse(sessionStorage.getItem('currentSyllabus') || '{}');
+    sessionStorage.setItem(
+      'currentSyllabus',
+      JSON.stringify({ ...current, responsabilidad_social: next }),
+    );
+    setSyllabus((prev) => (prev ? { ...prev, responsabilidad_social: next } : prev));
   };
 
   const updateUnitCell = (
@@ -1258,7 +1272,19 @@ export default function SyllabusEditor() {
           </section>
 
           <section id="responsabilidad-social" className="mb-8 scroll-mt-24">
-            <h3 className="text-base font-bold uppercase border-b border-slate-300 pb-1 mb-4">XI. Responsabilidad Social</h3>
+            <div className="flex items-center justify-between border-b border-slate-300 pb-1 mb-4">
+              <h3 className="text-base font-bold uppercase">XI. Responsabilidad Social</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setRsuDraft(responsabilidadSocial === '—' ? '' : responsabilidadSocial);
+                  setRsuEditOpen(true);
+                }}
+                className="print:hidden flex items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-cyan-500 hover:text-cyan-700"
+              >
+                <Edit3 size={13} /> Editar
+              </button>
+            </div>
             <p className="text-sm leading-7">{responsabilidadSocial}</p>
           </section>
 
@@ -1386,6 +1412,46 @@ export default function SyllabusEditor() {
           ))}
         </div>
       </aside>
+      {rsuEditOpen ? (
+        <GlassModal
+          onClose={() => setRsuEditOpen(false)}
+          size="lg"
+          accent="cyan"
+          eyebrow="Responsabilidad Social Universitaria"
+          title="Editar actividad de RSU"
+          description="Ajusta el texto de la actividad de RSU del sílabo."
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setRsuEditOpen(false)}
+                className="rounded-xl border border-white/12 px-4 py-2 text-[11px] font-semibold text-white/65 transition hover:text-white"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  saveResponsabilidadSocial(rsuDraft);
+                  setRsuEditOpen(false);
+                  showToast('Responsabilidad Social actualizada ✓', 'success');
+                }}
+                className="rounded-xl bg-gradient-to-r from-[#007A8A] to-[#00B4CC] px-5 py-2 text-[11px] font-bold text-white transition hover:brightness-110"
+              >
+                Guardar
+              </button>
+            </>
+          }
+        >
+          <textarea
+            value={rsuDraft}
+            onChange={(e) => setRsuDraft(e.target.value)}
+            rows={9}
+            placeholder="Actividad de RSU concreta, vinculada al propósito del curso y a la aplicación social del aprendizaje..."
+            className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-[12px] leading-5 text-white outline-none focus:border-[#00B4D8]/45"
+          />
+        </GlassModal>
+      ) : null}
       <Toast toasts={toasts} removeToast={removeToast} />
     </div>
   );

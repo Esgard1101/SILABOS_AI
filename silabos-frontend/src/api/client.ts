@@ -924,6 +924,32 @@ export const api = {
     );
   },
 
+  generateRsuQuestions: (
+    syllabusId: string,
+    body: { ambito: string; evidencia: string },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').RsuQuestionsResponse>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/rsu/questions${q}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+      60000,
+    );
+  },
+
+  suggestRsu: (
+    syllabusId: string,
+    body: { ambito: string; evidencia: string; respuestas: import('./types').RsuAnswer[] },
+    options?: { forceProvider?: 'gemini' | 'openrouter' },
+  ) => {
+    const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
+    return request<APIResponse<import('./types').RsuSuggestResponse>>(
+      `/api/syllabi/${encodeURIComponent(syllabusId)}/steps/rsu/suggest${q}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+      60000,
+    );
+  },
+
   suggestMethodProgressive: (syllabusId: string, options?: { forceProvider?: 'gemini' | 'openrouter' }) => {
     const q = options?.forceProvider ? `?force_provider=${encodeURIComponent(options.forceProvider)}` : '';
     return request<APIResponse<import('./types').MethodSuggest>>(

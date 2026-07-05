@@ -94,6 +94,23 @@ class SaveResumeStateInput(BaseModel):
     step_label: str | None = None
 
 
+class RsuQuestionsInput(BaseModel):
+    ambito: str = ""
+    evidencia: str = ""
+
+
+class RsuAnswerInput(BaseModel):
+    id: str
+    pregunta: str = ""
+    eleccion: str = ""
+
+
+class RsuSuggestInput(BaseModel):
+    ambito: str = ""
+    evidencia: str = ""
+    respuestas: list[RsuAnswerInput] = []
+
+
 # ── Resume / autosave de posición (SPEC-05) ───────────────────────────────────
 # El "resume" es telemetría de navegación (no un bloque curricular): vive en
 # payload_json._meta.resume y deja al docente retomar el draft en el paso exacto.
@@ -2104,6 +2121,133 @@ async def sugerir_contenido(
     )
 
     return APIResponse(success=True, data=sugerencia, error=None)
+
+
+async def _build_rsu_context(supabase, draft: dict) -> dict:
+    """Arma el contexto del curso para el motor HITL de RSU desde el draft guardado.
+
+    Reusa propósito, contenido y las fuentes ya traídas (NotebookLM/IA). Si por algún
+    draft viejo no hay fuentes, degrada con curso+desempeños (no bloquea)."""
+    payload = draft.get("payload_json") or {}
+    course_id = payload.get("course_snapshot", {}).get("course_id") or draft.get("course_id")
+    purpose_block = payload.get("purpose", {}) or {}
+    content_block = payload.get("content", {}) or {}
+
+    curso = await supabase.obtener_curso(str(course_id)) if course_id else {}
+    notebooklm_refs = await supabase.obtener_referencias_curso(str(course_id)) if course_id else []
+    bibliografia_refs = _merge_unique_texts(
+        notebooklm_refs,
+        (payload.get("bibliography", {}) or {}).get("references", []),
+    )
+    return {
+        "curso": curso or {},
+        "desempenos": purpose_block.get("performances", []) or [],
+        "conocimientos": content_block.get("knowledge_items", []) or [],
+        "habilidades": content_block.get("habilidades_sugeridas", []) or [],
+        "bibliografia_refs": bibliografia_refs,
+    }
+
+
+@router.post("/syllabi/{syllabus_id}/steps/rsu/questions", response_model=APIResponse)
+async def generar_preguntas_rsu(
+    syllabus_id: str,
+    body: RsuQuestionsInput,
+    request: Request,
+    force_provider: str | None = Query(default=None),
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Motor HITL: 3-4 preguntas a medida del curso para que el docente diseñe la RSU."""
+    sv = _sv(request)
+    supabase = _require_db(sv)
+    user_id = str(current_user["id"])
+    progressive_ai = get_progressive_ai_service()
+
+    draft = await supabase.obtener_draft_progresivo(syllabus_id, user_id)
+    if not draft:
+        raise HTTPException(404, "Draft no encontrado")
+
+    ctx = await _build_rsu_context(supabase, draft)
+    try:
+        preguntas = await progressive_ai.generar_preguntas_rsu(
+            ctx["curso"],
+            ctx["desempenos"],
+            ctx["conocimientos"],
+            ctx["habilidades"],
+            ctx["bibliografia_refs"],
+            ambito=_clean_text(body.ambito),
+            evidencia=_clean_text(body.evidencia),
+            force_provider=_validate_force_provider(force_provider),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Error al generar preguntas RSU: %s", exc)
+        raise HTTPException(status_code=503, detail=_ai_unavailable_detail(exc)) from exc
+
+    if not preguntas:
+        raise HTTPException(status_code=503, detail="La IA no pudo generar preguntas de RSU")
+
+    return APIResponse(success=True, data={"preguntas": preguntas}, error=None)
+
+
+@router.post("/syllabi/{syllabus_id}/steps/rsu/suggest", response_model=APIResponse)
+async def sugerir_rsu_hitl(
+    syllabus_id: str,
+    body: RsuSuggestInput,
+    request: Request,
+    force_provider: str | None = Query(default=None),
+    current_user: dict = Depends(get_current_user_record),
+):
+    """Genera el RSU final reflejando ámbito + evidencia + decisiones del docente."""
+    sv = _sv(request)
+    supabase = _require_db(sv)
+    user_id = str(current_user["id"])
+    progressive_ai = get_progressive_ai_service()
+
+    draft = await supabase.obtener_draft_progresivo(syllabus_id, user_id)
+    if not draft:
+        raise HTTPException(404, "Draft no encontrado")
+
+    ctx = await _build_rsu_context(supabase, draft)
+    ambito = _clean_text(body.ambito)
+    evidencia = _clean_text(body.evidencia)
+    respuestas = [
+        {"id": r.id, "pregunta": _clean_text(r.pregunta), "eleccion": _clean_text(r.eleccion)}
+        for r in body.respuestas
+    ]
+
+    rsu_text = ""
+    try:
+        rsu_text = await progressive_ai.sugerir_responsabilidad_social(
+            ctx["curso"],
+            ctx["desempenos"],
+            ctx["conocimientos"],
+            ctx["habilidades"],
+            bibliografia_refs=ctx["bibliografia_refs"],
+            ambito=ambito,
+            evidencia=evidencia,
+            respuestas=respuestas,
+            force_provider=_validate_force_provider(force_provider),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Error al sugerir RSU HITL con IA: %s", exc)
+        rsu_text = ""
+
+    if not _clean_text(rsu_text):
+        # Fallback determinista (sin relleno sintético de IA): mantiene el flujo vivo.
+        rsu_text = _build_responsabilidad_social_activity(
+            ctx["curso"],
+            ctx["desempenos"],
+            ctx["conocimientos"],
+            ctx["habilidades"],
+        )
+
+    if not _clean_text(rsu_text):
+        raise HTTPException(status_code=503, detail="No se pudo generar la actividad de RSU")
+
+    return APIResponse(success=True, data={"responsabilidad_social": rsu_text}, error=None)
 
 
 @router.post("/syllabi/{syllabus_id}/steps/method/suggest", response_model=APIResponse)

@@ -13,9 +13,10 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { HabilidadPorDesempeno, SkillDB, SuggestedPerformance } from '../../api/types';
+import type { HabilidadPorDesempeno, RsuMeta, SkillDB, SuggestedPerformance } from '../../api/types';
 import { useSyllabus } from '../../context/SyllabusContext';
 import OverlayLoader from '../../components/ui/OverlayLoader';
+import RsuDesignModal from './RsuDesignModal';
 
 type ContentKind = 'knowledge' | 'skills';
 
@@ -504,6 +505,8 @@ export default function Step4_Contenido() {
 
   const [suggesting, setSuggesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rsuModalOpen, setRsuModalOpen] = useState(false);
+  const [rsuMeta, setRsuMeta] = useState<RsuMeta | null>(null);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skills, setSkills] = useState<SkillDB[]>([]);
   const [skillIdByName, setSkillIdByName] = useState<Map<string, string>>(new Map());
@@ -614,6 +617,7 @@ export default function Step4_Contenido() {
         selected_skill_ids: selectedSkillIds,
         knowledge_items: enrichedKnowledge,
         responsabilidad_social: responsabilidadSocial.trim(),
+        ...(rsuMeta ? { rsu_meta: rsuMeta } : {}),
         content_plan: { units: contentPlan.units, warnings: contentPlan.warnings },
         content_mode: 'confirmed',
         teacher_notes: contentNotes,
@@ -641,6 +645,22 @@ export default function Step4_Contenido() {
         title="Guardando contenido"
         message="Estamos guardando el programa de contenidos y abriendo la selección de método..."
       />
+      {rsuModalOpen && draftId ? (
+        <RsuDesignModal
+          draftId={draftId}
+          initialValue={responsabilidadSocial}
+          initialMeta={rsuMeta}
+          onClose={() => setRsuModalOpen(false)}
+          showToast={showToast}
+          onSave={(text, meta) => {
+            setResponsabilidadSocial(text);
+            setRsuMeta(meta);
+            markEditing();
+            setRsuModalOpen(false);
+            showToast('Actividad de RSU lista', 'success');
+          }}
+        />
+      ) : null}
       <div className="mb-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_470px]">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4A351]">CONTENIDO DERIVADO</p>
@@ -756,17 +776,26 @@ export default function Step4_Contenido() {
       </div>
 
       <div className="mt-3">
-        <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Responsabilidad Social Universitaria</label>
-        <textarea
-          className="mb-3 w-full resize-none rounded-xl border border-white/10 bg-[#0A2753] px-3 py-2 text-[11px] text-white outline-none focus:border-[#D4A351]/40"
-          rows={5}
-          placeholder="Actividad RSU concreta, vinculada al propósito del curso y a la aplicación social del aprendizaje..."
-          value={responsabilidadSocial}
-          onChange={(event) => {
-            setResponsabilidadSocial(event.target.value);
-            markEditing();
-          }}
-        />
+        <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm transition hover:bg-white/[0.08]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4A351]">Responsabilidad Social Universitaria</p>
+              <p className="mt-1.5 line-clamp-2 text-[11px] leading-4 text-white/65">
+                {responsabilidadSocial.trim()
+                  ? responsabilidadSocial.trim()
+                  : 'Aún sin diseñar. Define el ámbito, responde preguntas a medida de tu curso y genera una actividad concreta.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRsuModalOpen(true)}
+              disabled={!draftId}
+              className="flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-[#007A8A] to-[#00B4CC] px-4 py-2 text-[11px] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Sparkles size={13} /> Diseñar RSU
+            </button>
+          </div>
+        </div>
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">Observaciones del docente</label>
         <textarea
           className="w-full resize-none rounded-xl border border-white/10 bg-[#0A2753] px-3 py-2 text-[11px] text-white outline-none focus:border-[#D4A351]/40"

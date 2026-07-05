@@ -886,6 +886,33 @@ export interface ContentSuggestion {
   };
 }
 
+export interface RsuQuestion {
+  id: string;
+  pregunta: string;
+  opciones: string[];
+  permite_idea_propia?: boolean;
+}
+
+export interface RsuQuestionsResponse {
+  preguntas: RsuQuestion[];
+}
+
+export interface RsuAnswer {
+  id: string;
+  pregunta: string;
+  eleccion: string;
+}
+
+export interface RsuMeta {
+  ambito: string;
+  evidencia: string;
+  respuestas: RsuAnswer[];
+}
+
+export interface RsuSuggestResponse {
+  responsabilidad_social: string;
+}
+
 export interface GradingSuggestion {
   rows: GradingRow[];
   origin: 'method_template' | 'ai_suggested';
