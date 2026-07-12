@@ -1,10 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, CheckCircle2, Copy, Loader2, Sparkles } from 'lucide-react';
 import GlassModal from '../../components/ui/GlassModal';
 import { api } from '../../api/client';
 import type { ProductHitl, ProductHitlAnswer, ProductQuestion, ProductQuestionsResponse } from '../../api/types';
 
 type Stage = 'inputs' | 'questions';
+
+// Progreso del cuestionario en localStorage: click accidental fuera del modal o
+// recarga no deben costar respuestas ni otra ronda de tokens de IA.
+const productWipKey = (draftId: string) => `sigesil_product_wip_${draftId}`;
+
+interface ProductWip {
+  stage: Stage;
+  tipoChip: string;
+  tipoCustom: string;
+  vinculoProblema: string;
+  modalidad: string;
+  nivel: string;
+  formatoChip: string;
+  formatoCustom: string;
+  notebookText: string;
+  questions: ProductQuestion[];
+  choices: Record<string, string>;
+  ownIdeas: Record<string, string>;
+}
+
+function readProductWip(draftId: string): ProductWip | null {
+  try {
+    const raw = localStorage.getItem(productWipKey(draftId));
+    return raw ? (JSON.parse(raw) as ProductWip) : null;
+  } catch {
+    return null;
+  }
+}
 
 const TIPO_OPTIONS = [
   'Proyecto',
@@ -96,21 +124,37 @@ export default function ProductDesignModal({
   const initialTipo = initialInputs?.tipo_producto ?? '';
   const initialFormato = initialInputs?.formato_evidencia ?? '';
 
-  const [stage, setStage] = useState<Stage>('inputs');
-  const [tipoChip, setTipoChip] = useState(TIPO_OPTIONS.includes(initialTipo) ? initialTipo : '');
-  const [tipoCustom, setTipoCustom] = useState(TIPO_OPTIONS.includes(initialTipo) ? '' : initialTipo);
-  const [vinculoProblema, setVinculoProblema] = useState(initialInputs?.vinculo_problema ?? '');
-  const [modalidad, setModalidad] = useState(initialAlcance.modalidad);
-  const [nivel, setNivel] = useState(initialAlcance.nivel);
-  const [formatoChip, setFormatoChip] = useState(FORMATO_OPTIONS.includes(initialFormato) ? initialFormato : '');
-  const [formatoCustom, setFormatoCustom] = useState(FORMATO_OPTIONS.includes(initialFormato) ? '' : initialFormato);
-  const [notebookText, setNotebookText] = useState(initialHitl?.notebook_context_text || initialNotebookText);
+  // WIP (progreso sin generar) manda sobre el prefill del último hitl persistido.
+  const wip = useMemo(() => readProductWip(draftId), [draftId]);
+  const [stage, setStage] = useState<Stage>(wip?.stage ?? 'inputs');
+  const [tipoChip, setTipoChip] = useState(wip?.tipoChip ?? (TIPO_OPTIONS.includes(initialTipo) ? initialTipo : ''));
+  const [tipoCustom, setTipoCustom] = useState(wip?.tipoCustom ?? (TIPO_OPTIONS.includes(initialTipo) ? '' : initialTipo));
+  const [vinculoProblema, setVinculoProblema] = useState(wip?.vinculoProblema ?? initialInputs?.vinculo_problema ?? '');
+  const [modalidad, setModalidad] = useState(wip?.modalidad ?? initialAlcance.modalidad);
+  const [nivel, setNivel] = useState(wip?.nivel ?? initialAlcance.nivel);
+  const [formatoChip, setFormatoChip] = useState(wip?.formatoChip ?? (FORMATO_OPTIONS.includes(initialFormato) ? initialFormato : ''));
+  const [formatoCustom, setFormatoCustom] = useState(wip?.formatoCustom ?? (FORMATO_OPTIONS.includes(initialFormato) ? '' : initialFormato));
+  const [notebookText, setNotebookText] = useState(wip?.notebookText ?? (initialHitl?.notebook_context_text || initialNotebookText));
   const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [questions, setQuestions] = useState<ProductQuestion[]>([]);
-  const [choices, setChoices] = useState<Record<string, string>>({});
-  const [ownIdeas, setOwnIdeas] = useState<Record<string, string>>({});
+  const [questions, setQuestions] = useState<ProductQuestion[]>(wip?.questions ?? []);
+  const [choices, setChoices] = useState<Record<string, string>>(wip?.choices ?? {});
+  const [ownIdeas, setOwnIdeas] = useState<Record<string, string>>(wip?.ownIdeas ?? {});
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [questionsStatus, setQuestionsStatus] = useState('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        productWipKey(draftId),
+        JSON.stringify({
+          stage, tipoChip, tipoCustom, vinculoProblema, modalidad, nivel,
+          formatoChip, formatoCustom, notebookText, questions, choices, ownIdeas,
+        } satisfies ProductWip),
+      );
+    } catch {
+      // storage bloqueado — el progreso vive solo en memoria
+    }
+  }, [draftId, stage, tipoChip, tipoCustom, vinculoProblema, modalidad, nivel, formatoChip, formatoCustom, notebookText, questions, choices, ownIdeas]);
 
   const buildInputs = () => ({
     tipo_producto: (tipoCustom.trim() || tipoChip).trim(),
@@ -191,7 +235,16 @@ export default function ProductDesignModal({
     }
   };
 
+  const clearWip = () => {
+    try {
+      localStorage.removeItem(productWipKey(draftId));
+    } catch {
+      // noop
+    }
+  };
+
   const handleGenerateProducts = () => {
+    clearWip();
     onGenerate(
       {
         inputs: buildInputs(),
@@ -206,7 +259,7 @@ export default function ProductDesignModal({
     <>
       <button
         type="button"
-        onClick={() => onGenerate(null, notebookText.trim())}
+        onClick={() => { clearWip(); onGenerate(null, notebookText.trim()); }}
         disabled={loadingQuestions}
         className="text-[10px] text-white/38 transition hover:text-white/70 disabled:opacity-40"
       >
@@ -250,6 +303,7 @@ export default function ProductDesignModal({
       size="lg"
       accent="cyan"
       closeDisabled={loadingQuestions}
+      overlayClose={false}
       eyebrow="Producto Acreditable"
       title="Diseña tu producto antes de generarlo"
       description="Tú fijas el rumbo del producto del curso. La IA solo ejecuta tu diseño con 3 opciones a tu medida."

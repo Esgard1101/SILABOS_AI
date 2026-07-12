@@ -303,6 +303,11 @@ REGLAS:
 - Cada pregunta trae 3 a 4 opciones CONCRETAS y LOCALES, contextualizadas al tema del curso y al area de influencia de la UNPRG.
   Nunca opciones genericas ni de relleno; deben nombrar lugares, actores o entregables reales y verificables.
 - Las opciones deben apoyarse en el contexto territorial: elige distritos/lugares con sentido semantico con el curso.
+- PROHIBIDO inventar nombres propios de colegios, instituciones, empresas u organizaciones especificas
+  (ej. "I.E. San Jose de Monsefu"): no tienes forma de verificar que existan. Los UNICOS nombres propios
+  permitidos son los distritos/lugares del contexto territorial. Para instituciones usa referencias
+  genericas: "colegios publicos de primaria del distrito", "una institucion educativa rural de la zona",
+  "asociaciones de productores locales".
 - Cada pregunta permite que el docente escriba su propia idea (permite_idea_propia siempre true).
 - Responde SOLO JSON valido con esta forma exacta:
 {{"preguntas": [
@@ -401,6 +406,7 @@ REGLAS:
 - Propón una actividad concreta del mundo real, vinculada al proposito del curso o a la aplicacion social del aprendizaje.
 - Si el docente definio ambito, evidencia o respuestas, el texto DEBE respetarlos exactamente (no los reinterpretes ni los ignores).
 - Debe incluir: necesidad/contexto local en UN SOLO lugar elegido del contexto territorial, accion de los estudiantes, aplicacion de conocimientos/habilidades y evidencia verificable.
+- PROHIBIDO inventar nombres propios de colegios, instituciones u organizaciones especificas: usa referencias genericas ("colegios publicos de primaria del distrito", "una institucion educativa rural"). Solo los distritos/lugares del contexto territorial pueden nombrarse.
 - No debe sonar decorativa, ceremonial ni aislada.
 - No uses bullets ni numeracion.
 - Responde SOLO JSON valido: {{"responsabilidad_social": "texto"}}"""

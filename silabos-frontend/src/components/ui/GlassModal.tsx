@@ -39,6 +39,8 @@ interface GlassModalProps {
   children: ReactNode;
   /** Bloquea cierre (X/ESC/overlay) mientras hay una operacion en curso. */
   closeDisabled?: boolean;
+  /** Si false, el click en el overlay NO cierra (X y ESC siguen activos). Para flujos con progreso que no debe perderse por un click accidental. */
+  overlayClose?: boolean;
   /** Oculta el boton X del header. */
   hideClose?: boolean;
   /** Clases extra para el contenedor scrolleable del cuerpo. */
@@ -66,6 +68,7 @@ export default function GlassModal({
   footer,
   children,
   closeDisabled = false,
+  overlayClose = true,
   hideClose = false,
   bodyClassName,
 }: GlassModalProps) {
@@ -87,7 +90,7 @@ export default function GlassModal({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.16 }}
         onClick={() => {
-          if (!closeDisabled) onClose();
+          if (!closeDisabled && overlayClose) onClose();
         }}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm"
       >

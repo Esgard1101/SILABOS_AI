@@ -1,10 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import GlassModal from '../../components/ui/GlassModal';
 import { api } from '../../api/client';
 import type { RsuAnswer, RsuMeta, RsuQuestion } from '../../api/types';
 
 type Stage = 'inputs' | 'questions' | 'draft';
+
+// Progreso del cuestionario en localStorage: un click fuera del modal o una recarga
+// NO deben costarle al docente sus respuestas ni otra ronda de tokens de IA.
+const rsuWipKey = (draftId: string) => `sigesil_rsu_wip_${draftId}`;
+
+interface RsuWip {
+  stage: Stage;
+  ambito: string;
+  evidencia: string;
+  questions: RsuQuestion[];
+  choices: Record<string, string>;
+  ownIdeas: Record<string, string>;
+  draftText: string;
+}
+
+function readRsuWip(draftId: string): RsuWip | null {
+  try {
+    const raw = localStorage.getItem(rsuWipKey(draftId));
+    return raw ? (JSON.parse(raw) as RsuWip) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface RsuDesignModalProps {
   draftId: string;
@@ -28,15 +51,29 @@ export default function RsuDesignModal({
   onClose,
   showToast,
 }: RsuDesignModalProps) {
-  const [stage, setStage] = useState<Stage>(initialValue.trim() ? 'draft' : 'inputs');
-  const [ambito, setAmbito] = useState(initialMeta?.ambito ?? '');
-  const [evidencia, setEvidencia] = useState(initialMeta?.evidencia ?? '');
-  const [questions, setQuestions] = useState<RsuQuestion[]>([]);
-  const [choices, setChoices] = useState<Record<string, string>>({});
-  const [ownIdeas, setOwnIdeas] = useState<Record<string, string>>({});
-  const [draftText, setDraftText] = useState(initialValue);
+  // Si hay progreso sin guardar (WIP) se retoma tal cual (etapa incluida).
+  // Sin WIP, siempre arranca en el cuestionario: el docente diseña ANTES de ver texto.
+  const wip = useMemo(() => readRsuWip(draftId), [draftId]);
+  const [stage, setStage] = useState<Stage>(wip?.stage ?? 'inputs');
+  const [ambito, setAmbito] = useState(wip?.ambito ?? initialMeta?.ambito ?? '');
+  const [evidencia, setEvidencia] = useState(wip?.evidencia ?? initialMeta?.evidencia ?? '');
+  const [questions, setQuestions] = useState<RsuQuestion[]>(wip?.questions ?? []);
+  const [choices, setChoices] = useState<Record<string, string>>(wip?.choices ?? {});
+  const [ownIdeas, setOwnIdeas] = useState<Record<string, string>>(wip?.ownIdeas ?? {});
+  const [draftText, setDraftText] = useState(wip?.draftText ?? initialValue);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        rsuWipKey(draftId),
+        JSON.stringify({ stage, ambito, evidencia, questions, choices, ownIdeas, draftText } satisfies RsuWip),
+      );
+    } catch {
+      // storage bloqueado — el progreso vive solo en memoria
+    }
+  }, [draftId, stage, ambito, evidencia, questions, choices, ownIdeas, draftText]);
 
   const buildAnswers = (): RsuAnswer[] =>
     questions.map((q) => ({
@@ -94,6 +131,11 @@ export default function RsuDesignModal({
     if (!draftText.trim()) {
       showToast('El texto de RSU no puede estar vacío', 'warning');
       return;
+    }
+    try {
+      localStorage.removeItem(rsuWipKey(draftId));
+    } catch {
+      // noop
     }
     onSave(draftText.trim(), {
       ambito: ambito.trim(),
@@ -177,6 +219,7 @@ export default function RsuDesignModal({
       size="lg"
       accent="cyan"
       closeDisabled={busy}
+      overlayClose={false}
       eyebrow="Responsabilidad Social Universitaria"
       title="Diseña la actividad de RSU"
       description="Tú decides el ámbito, el problema y la evidencia. La IA solo ejecuta tu diseño."

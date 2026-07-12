@@ -581,7 +581,7 @@ export default function Step4_Contenido() {
         if (d.conocimientos?.length) setConocimientos((prev) => cleanItems([...prev, ...d.conocimientos], CONTENT_LIMITS.knowledge));
         if (d.habilidades_sugeridas?.length) setHabilidadesSugeridas((prev) => cleanItems([...prev, ...d.habilidades_sugeridas], CONTENT_LIMITS.skills));
         if (d.habilidades_por_desempeno?.length) setHabilidadesPorDesempeno(d.habilidades_por_desempeno);
-        if (d.responsabilidad_social?.trim()) setResponsabilidadSocial(d.responsabilidad_social.trim());
+        // SPEC-10 T10c: "Proponer con IA" ya no trae RSU; se diseña solo vía RsuDesignModal (HITL).
         setContentMode('proposal');
         showToast('Propuesta de contenido generada', 'success');
       }
@@ -769,8 +769,7 @@ export default function Step4_Contenido() {
           </div>
           <div className="mt-3 rounded-lg border border-white/10 bg-[#041A3A] p-3">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#D4A351]">Vista semanal lista</p>
-            <p className="mt-1 text-[11px] text-white/65">{contentPlan.units.length} unidades × 16 semanas × K/H</p>
-            <p className="mt-1 text-[10px] text-white/40">Se guarda como <span className="font-mono">content_plan.units[].weeks[]</span>.</p>
+            <p className="mt-1 text-[11px] text-white/65">{contentPlan.units.length} unidades × 16 semanas × conocimientos y habilidades</p>
           </div>
         </section>
       </div>

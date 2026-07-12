@@ -1993,28 +1993,14 @@ async def sugerir_contenido(
         fecha_inicio = _clean_text((payload.get("datos_generales") or {}).get("fecha_inicio"))
         week_dates = _compute_week_dates(draft.get("semester", ""), total_weeks=16, start_date=fecha_inicio)
         prefill = _content_prefill_from_official_performances(official_with_content, week_dates)
-        try:
-            rsu_ai = await progressive_ai.sugerir_responsabilidad_social(
-                curso,
-                official_with_content,
-                prefill["knowledge_items"],
-                prefill["habilidades_sugeridas"],
-                force_provider=_validate_force_provider(force_provider),
-            )
-        except Exception as exc:
-            logger.warning("Error al sugerir RSU con IA: %s", exc)
-            rsu_ai = ""
+        # SPEC-10 T10c: el RSU ya NO se autogenera aqui. Nace exclusivamente del flujo
+        # HITL (/steps/rsu/questions + /steps/rsu/suggest) donde el docente diseña.
         sugerencia = {
             "conocimientos": prefill["knowledge_items"],
             "habilidades_sugeridas": prefill["habilidades_sugeridas"],
             "habilidades_por_desempeno": prefill["habilidades_por_desempeno"],
             "content_plan": prefill["content_plan"],
-            "responsabilidad_social": rsu_ai or _build_responsabilidad_social_activity(
-                curso,
-                official_with_content,
-                prefill["knowledge_items"],
-                prefill["habilidades_sugeridas"],
-            ),
+            "responsabilidad_social": "",
             "origin": "official",
         }
         await supabase.guardar_ai_suggestion(
@@ -2073,25 +2059,9 @@ async def sugerir_contenido(
             sugerencia.get("habilidades_sugeridas", []),
         ), 8)
     sugerencia.pop("actitudes", None)
-    if not _clean_text(sugerencia.get("responsabilidad_social")):
-        try:
-            sugerencia["responsabilidad_social"] = await progressive_ai.sugerir_responsabilidad_social(
-                curso or {},
-                performances,
-                sugerencia.get("conocimientos", []),
-                sugerencia.get("habilidades_sugeridas", []),
-                force_provider=_validate_force_provider(force_provider),
-            )
-        except Exception as exc:
-            logger.warning("Error al sugerir RSU con IA: %s", exc)
-            sugerencia["responsabilidad_social"] = ""
-    if not _clean_text(sugerencia.get("responsabilidad_social")):
-        sugerencia["responsabilidad_social"] = _build_responsabilidad_social_activity(
-            curso or {},
-            performances,
-            sugerencia.get("conocimientos", []),
-            sugerencia.get("habilidades_sugeridas", []),
-        )
+    # SPEC-10 T10c: el RSU no se autogenera en content/suggest; el docente lo diseña
+    # via el flujo HITL. Se fuerza vacio aunque el modelo lo haya incluido en su JSON.
+    sugerencia["responsabilidad_social"] = ""
     plan_units = (
         (sugerencia.get("content_plan") or {}).get("units", [])
         if isinstance(sugerencia.get("content_plan"), dict)
